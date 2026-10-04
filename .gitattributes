@@ -1,0 +1,6 @@
+# Normalize line endings to LF so scripts and Makefiles work in WSL/Linux,
+# regardless of the committer's core.autocrlf setting.
+* text=auto eol=lf
+
+# Saved EDGAR documents are parser test fixtures: keep them byte-exact.
+tests/fixtures/** -text

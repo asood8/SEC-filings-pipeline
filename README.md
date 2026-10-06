@@ -6,10 +6,9 @@ Watches SEC EDGAR for new filings from a watchlist of public companies, parses t
 free-text filings with a small LLM, makes them searchable by keyword and by meaning, and alerts
 subscribed users. It runs on free tiers at $0/month, on a single arm64 VM.
 
-> **Status:** Phase 1 (thin vertical slice) is done: real Form 4s for the watchlist flow from
-> EDGAR through discovery, the outbox relay, Redpanda, and the parser to MongoDB, Postgres, and
-> `GET /filings`, and re-runs create no duplicates. Next is Phase 2, summarization. See the
-> [build plan](docs/PROJECT_BRIEF.md#8-build-plan).
+> **Status:** Phase 1 is done. Phase 2 (summarization) is in progress: 8-Ks are split into their
+> items, Form 4s get deterministic summaries, and history can be replayed; LLM summaries of 8-Ks
+> come next. See the [build plan](docs/PROJECT_BRIEF.md#8-build-plan).
 
 ## Architecture
 
@@ -58,6 +57,8 @@ uv run filings-discovery load-companies    # SEC ticker map -> companies table, 
 uv run filings-discovery run               # new filings -> object store + Postgres + outbox
 uv run filings-outbox-relay                # outbox -> Redpanda topics (runs until Ctrl+C)
 uv run filings-parser                      # filings.discovered -> MongoDB + filings.parsed
+uv run filings-summarizer                  # filings.parsed -> summaries + filings.ready
+uv run filings-replay parsed --form-type 4 # re-summarize history (also: discovered, to reparse)
 make api                                   # http://127.0.0.1:8000/filings, docs at /docs
 ```
 

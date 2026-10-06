@@ -32,6 +32,7 @@ class OutboundMessage:
     topic: str
     key: str
     value: bytes
+    headers: tuple[tuple[str, bytes], ...] = ()
 
 
 class Publisher(Protocol):

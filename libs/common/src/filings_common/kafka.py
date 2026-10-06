@@ -79,7 +79,11 @@ class KafkaPublisher:
 
         for m in messages:
             self._producer.produce(
-                m.topic, key=m.key.encode(), value=m.value, on_delivery=on_delivery
+                m.topic,
+                key=m.key.encode(),
+                value=m.value,
+                headers=list(m.headers),
+                on_delivery=on_delivery,
             )
         undelivered = self._producer.flush(self._flush_timeout)
         if undelivered or errors:

@@ -3,7 +3,16 @@ name = "filings-common"
 version = "0.1.0"
 description = "Shared code: config, logging, event models, EDGAR client, ObjectStore, Kafka helpers"
 requires-python = ">=3.12"
-dependencies = []
+dependencies = [
+    "alembic>=1.16",
+    "boto3>=1.40",
+    "httpx>=0.28",
+    "psycopg[binary]>=3.2",
+    "pydantic>=2.11",
+    "pydantic-settings>=2.10",
+    "redis>=6",
+    "sqlalchemy>=2.0.40",
+]
 
 [build-system]
 requires = ["uv_build>=0.12.23,<0.13.0"]

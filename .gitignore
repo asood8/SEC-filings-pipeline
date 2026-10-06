@@ -25,3 +25,6 @@ htmlcov/
 *.swp
 .DS_Store
 Thumbs.db
+
+# Local raw-filing object store (OBJECT_STORE_LOCAL_ROOT)
+/data/

@@ -1,0 +1,103 @@
+import random
+
+import httpx
+import pytest
+
+from filings_common.config import EdgarSettings
+from filings_common.edgar import EdgarClient, archive_url
+
+
+class CountingLimiter:
+    def __init__(self) -> None:
+        self.calls = 0
+
+    def acquire(self) -> float:
+        self.calls += 1
+        return 0.0
+
+
+class Harness:
+    """An EdgarClient wired to canned responses, recording requests, tokens, and sleeps."""
+
+    def __init__(self, *responses: httpx.Response | Exception, max_attempts: int = 5) -> None:
+        self.requests: list[httpx.Request] = []
+        self.sleeps: list[float] = []
+        self.limiter = CountingLimiter()
+        pending = list(responses)
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            self.requests.append(request)
+            response = pending.pop(0)
+            if isinstance(response, Exception):
+                raise response
+            return response
+
+        settings = EdgarSettings(
+            _env_file=None, contact_email="ops@example.com", max_attempts=max_attempts
+        )
+        self.client = EdgarClient(
+            settings,
+            self.limiter,
+            transport=httpx.MockTransport(handler),
+            sleep=self.sleeps.append,
+            rng=random.Random(0),
+        )
+
+
+def test_every_request_declares_user_agent_and_takes_a_token() -> None:
+    h = Harness(httpx.Response(200, json={"ok": 1}), httpx.Response(200, json={"ok": 2}))
+    h.client.get_json("https://www.sec.gov/a")
+    h.client.get_json("https://www.sec.gov/b")
+    user_agents = {r.headers["User-Agent"] for r in h.requests}
+    assert user_agents == {"sec-filings-pipeline ops@example.com"}
+    assert h.limiter.calls == 2
+
+
+def test_retries_429_and_honors_retry_after() -> None:
+    h = Harness(httpx.Response(429, headers={"Retry-After": "7"}), httpx.Response(200, text="ok"))
+    assert h.client.get("https://www.sec.gov/x").text == "ok"
+    assert h.sleeps == [7.0]
+    assert h.limiter.calls == 2  # the retry takes a token too
+
+
+def test_retries_network_errors() -> None:
+    h = Harness(httpx.ConnectError("connection refused"), httpx.Response(200, text="ok"))
+    assert h.client.get("https://www.sec.gov/x").text == "ok"
+    assert len(h.sleeps) == 1
+
+
+def test_gives_up_after_max_attempts() -> None:
+    h = Harness(*[httpx.Response(503)] * 3, max_attempts=3)
+    with pytest.raises(httpx.HTTPStatusError):
+        h.client.get("https://www.sec.gov/x")
+    assert len(h.requests) == 3
+    assert len(h.sleeps) == 2
+
+
+def test_backoff_grows_exponentially_with_jitter_and_is_capped() -> None:
+    h = Harness(*[httpx.Response(503)] * 9, httpx.Response(200), max_attempts=10)
+    h.client.get("https://www.sec.gov/x")
+    for attempt, delay in enumerate(h.sleeps, start=1):
+        ceiling = min(60.0, 2.0 ** (attempt - 1))
+        assert ceiling / 2 <= delay <= ceiling
+
+
+def test_client_errors_are_not_retried() -> None:
+    h = Harness(httpx.Response(404))
+    with pytest.raises(httpx.HTTPStatusError):
+        h.client.get("https://www.sec.gov/missing")
+    assert h.sleeps == []
+    assert h.limiter.calls == 1
+
+
+def test_submissions_url_uses_ten_digit_cik() -> None:
+    h = Harness(httpx.Response(200, json={"cik": "320193"}))
+    h.client.submissions(320193)
+    assert str(h.requests[0].url) == "https://data.sec.gov/submissions/CIK0000320193.json"
+
+
+def test_archive_url_strips_dashes_from_accession_number() -> None:
+    assert (
+        archive_url(320193, "0000320193-24-000123", "doc.htm")
+        == "https://www.sec.gov/Archives/edgar/data/320193/000032019324000123/doc.htm"
+    )

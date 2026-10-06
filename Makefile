@@ -1,5 +1,5 @@
 .DEFAULT_GOAL := help
-.PHONY: help setup sync up down ps logs lint fmt test
+.PHONY: help setup sync up down ps logs migrate lint fmt test
 
 help: ## List targets
 	@grep -E '^[a-z-]+:.*## ' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*## "} {printf "  %-7s %s\n", $$1, $$2}'
@@ -24,6 +24,9 @@ ps: ## Show local stack status
 
 logs: ## Follow local stack logs
 	docker compose logs -f
+
+migrate: ## Apply database migrations to DATABASE_URL
+	uv run alembic upgrade head
 
 lint: ## ruff (lint + format check) and mypy
 	uv run ruff check .

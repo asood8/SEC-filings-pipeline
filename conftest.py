@@ -7,12 +7,15 @@ is unreachable they are skipped, unless REQUIRE_SERVICES=1 (set in CI), which ma
 import os
 import uuid
 from collections.abc import Iterator
-from typing import NoReturn
+from typing import TYPE_CHECKING, Any, NoReturn
 
 import pytest
 import redis
 import sqlalchemy as sa
 from sqlalchemy.engine import Engine, make_url
+
+if TYPE_CHECKING:
+    from pymongo.database import Database
 
 # Defaults match .env.example. Tests use their own Redis DB and a throwaway Postgres database.
 TEST_REDIS_URL = os.environ.get("TEST_REDIS_URL", "redis://localhost:6379/15")
@@ -20,6 +23,9 @@ TEST_POSTGRES_URL = os.environ.get(
     "TEST_POSTGRES_URL", "postgresql+psycopg://filings:filings-local-dev@localhost:5432/filings"
 )
 TEST_KAFKA_BOOTSTRAP = os.environ.get("TEST_KAFKA_BOOTSTRAP", "localhost:19092")
+TEST_MONGODB_URL = os.environ.get(
+    "TEST_MONGODB_URL", "mongodb://filings:filings-local-dev@localhost:27017/?authSource=admin"
+)
 
 
 def _unavailable(service: str, exc: Exception) -> NoReturn:
@@ -50,6 +56,28 @@ def kafka_bootstrap() -> str:
     except KafkaException as exc:
         _unavailable("Redpanda", exc)
     return TEST_KAFKA_BOOTSTRAP
+
+
+@pytest.fixture
+def mongo_db() -> Iterator["Database[dict[str, Any]]"]:
+    """A throwaway MongoDB database, dropped after the test."""
+    from pymongo import MongoClient
+    from pymongo.errors import PyMongoError
+
+    client: MongoClient[dict[str, Any]] = MongoClient(
+        TEST_MONGODB_URL, serverSelectionTimeoutMS=3000
+    )
+    try:
+        client.admin.command("ping")
+    except PyMongoError as exc:
+        client.close()
+        _unavailable("MongoDB", exc)
+    name = f"filings_test_{uuid.uuid4().hex[:12]}"
+    try:
+        yield client[name]
+    finally:
+        client.drop_database(name)
+        client.close()
 
 
 @pytest.fixture(scope="session")

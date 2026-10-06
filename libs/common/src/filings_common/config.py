@@ -54,6 +54,14 @@ class RedisSettings(BaseSettings):
     redis_url: str = "redis://localhost:6379/0"
 
 
+class MongoSettings(BaseSettings):
+    model_config = _config()
+
+    # Atlas in production: mongodb+srv://user:password@cluster.example.mongodb.net/
+    mongodb_url: SecretStr
+    mongodb_database: str = "filings"
+
+
 class KafkaSettings(BaseSettings):
     model_config = _config("KAFKA_")
 

@@ -43,3 +43,12 @@ class FilingDiscovered(Event):
     form_type: str
     filed_at: date
     raw_object_key: str
+
+
+class FilingParsed(Event):
+    """The parsed payload is in MongoDB (keyed by accession number) and the filing is `parsed`."""
+
+    schema_version: Literal[1] = 1
+    cik: int
+    form_type: str
+    parser_version: int

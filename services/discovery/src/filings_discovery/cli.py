@@ -35,6 +35,7 @@ def main(argv: list[str] | None = None) -> int:
     commands.add_parser("run", help="find, store, and announce new watchlist filings")
     args = parser.parse_args(argv)
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s %(message)s")
+    logging.getLogger("httpx2").setLevel(logging.WARNING)  # one line per request is too noisy
 
     settings = DiscoverySettings()
     try:

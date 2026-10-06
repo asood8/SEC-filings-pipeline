@@ -1,7 +1,7 @@
 """Handle one `filings.discovered` event: parse the raw filing and announce `filings.parsed`.
 
 Safe to run more than once for the same filing (the consume loop delivers at least once):
-- the parsed payload is an upsert keyed by accession number;
+- the parsed payload (MongoDB) and key fields (Postgres) are upserts keyed by accession number;
 - the status moves discovered → parsed with a conditional update, and the `filings.parsed` outbox
   event is written in that same transaction only when the update happens, so a redelivery never
   announces the filing twice.
@@ -46,7 +46,12 @@ class FilingHandler:
 
         parser = self._parsers.get(event.form_type)
         if parser is None:
-            raise PermanentError(f"no parser for form type {event.form_type!r}")
+            logger.info(
+                "no parser for form %s yet; %s stays discovered",
+                event.form_type,
+                event.accession_no,
+            )
+            return
         try:
             raw = self._objects.get(event.raw_object_key)
         except ObjectNotFoundError as exc:
@@ -74,9 +79,11 @@ class FilingHandler:
                 .values(status=FilingStatus.PARSED, updated_at=sa.func.now())
                 .returning(Filing.accession_no)
             ).scalar_one_or_none()
+            if moved is None and session.get(Filing, event.accession_no) is None:
+                raise PermanentError(f"no filing row for {event.accession_no}")
+            if parser.save_key_fields is not None:  # upserts, so always safe to rewrite
+                parser.save_key_fields(session, event.accession_no, payload)
             if moved is None:
-                if session.get(Filing, event.accession_no) is None:
-                    raise PermanentError(f"no filing row for {event.accession_no}")
                 logger.info("%s was already parsed; not announcing it again", event.accession_no)
                 return
             enqueue(

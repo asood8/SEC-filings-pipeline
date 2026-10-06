@@ -11,7 +11,7 @@ from typing import Any
 import sqlalchemy as sa
 from alembic import command
 from alembic.config import Config
-from sqlalchemy.dialects.postgresql import JSONB
+from sqlalchemy.dialects.postgresql import ARRAY, JSONB
 from sqlalchemy.orm import DeclarativeBase, Mapped, Session, mapped_column, sessionmaker
 
 # Deterministic constraint names, so migrations can refer to them.
@@ -78,6 +78,34 @@ class Filing(Base):
         server_default=FilingStatus.DISCOVERED.value,
     )
     created_at: Mapped[datetime] = mapped_column(server_default=sa.func.now())
+    updated_at: Mapped[datetime] = mapped_column(
+        server_default=sa.func.now(), onupdate=sa.func.now()
+    )
+
+
+class Form4Filing(Base):
+    """Queryable key fields of a parsed Form 4. The full parsed payload is in MongoDB.
+
+    The issuer can differ from the watchlist company the filing was found under: a company's
+    filing feed also lists Form 4s it files as an insider of *another* company.
+    """
+
+    __tablename__ = "form4_filings"
+    __table_args__ = (
+        sa.Index("ix_form4_filings_issuer_cik_period", "issuer_cik", "period_of_report"),
+    )
+
+    accession_no: Mapped[str] = mapped_column(
+        sa.ForeignKey("filings.accession_no", ondelete="CASCADE"), primary_key=True
+    )
+    period_of_report: Mapped[date]
+    # No foreign key: issuers are not always in SEC's ticker map (the companies table).
+    issuer_cik: Mapped[int] = mapped_column(sa.BigInteger)
+    issuer_name: Mapped[str]
+    issuer_ticker: Mapped[str | None]
+    reporting_owners: Mapped[list[str]] = mapped_column(ARRAY(sa.Text()))
+    transaction_codes: Mapped[list[str]] = mapped_column(ARRAY(sa.Text()))
+    is_10b5_1: Mapped[bool | None]
     updated_at: Mapped[datetime] = mapped_column(
         server_default=sa.func.now(), onupdate=sa.func.now()
     )

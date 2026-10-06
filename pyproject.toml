@@ -50,6 +50,11 @@ mypy_path = [
     "services/summarizer/src",
 ]
 
+[[tool.mypy.overrides]]
+# confluent_kafka.admin re-exports classes such as NewTopic without marking them public.
+module = "confluent_kafka.*"
+implicit_reexport = true
+
 [tool.pytest.ini_options]
 testpaths = ["libs", "services", "tests"]
 # importlib mode lets each package keep its own tests/ dir with overlapping file names.

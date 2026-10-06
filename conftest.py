@@ -19,6 +19,7 @@ TEST_REDIS_URL = os.environ.get("TEST_REDIS_URL", "redis://localhost:6379/15")
 TEST_POSTGRES_URL = os.environ.get(
     "TEST_POSTGRES_URL", "postgresql+psycopg://filings:filings-local-dev@localhost:5432/filings"
 )
+TEST_KAFKA_BOOTSTRAP = os.environ.get("TEST_KAFKA_BOOTSTRAP", "localhost:19092")
 
 
 def _unavailable(service: str, exc: Exception) -> NoReturn:
@@ -37,6 +38,18 @@ def redis_client() -> Iterator[redis.Redis]:
         _unavailable("Valkey", exc)
     yield client
     client.close()
+
+
+@pytest.fixture(scope="session")
+def kafka_bootstrap() -> str:
+    from confluent_kafka import KafkaException
+    from confluent_kafka.admin import AdminClient
+
+    try:
+        AdminClient({"bootstrap.servers": TEST_KAFKA_BOOTSTRAP}).list_topics(timeout=5)
+    except KafkaException as exc:
+        _unavailable("Redpanda", exc)
+    return TEST_KAFKA_BOOTSTRAP
 
 
 @pytest.fixture(scope="session")

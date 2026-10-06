@@ -58,6 +58,17 @@ class KafkaSettings(BaseSettings):
     model_config = _config("KAFKA_")
 
     bootstrap_servers: str = "localhost:19092"
+    # Used when the relay creates missing topics. One node in production, so one replica.
+    topic_partitions: int = Field(default=3, ge=1)
+    topic_replication_factor: int = Field(default=1, ge=1)
+
+
+class OutboxRelaySettings(BaseSettings):
+    model_config = _config("OUTBOX_RELAY_")
+
+    batch_size: int = Field(default=100, ge=1)
+    # How long to wait before polling again when the outbox is empty.
+    idle_seconds: float = Field(default=1.0, gt=0)
 
 
 class ObjectStoreSettings(BaseSettings):

@@ -372,8 +372,16 @@ dependencies = [
     { name = "filings-common" },
 ]
 
+[package.dev-dependencies]
+dev = [
+    { name = "filings-parser" },
+]
+
 [package.metadata]
 requires-dist = [{ name = "filings-common", editable = "libs/common" }]
+
+[package.metadata.requires-dev]
+dev = [{ name = "filings-parser", editable = "services/parser" }]
 
 [[package]]
 name = "h11"

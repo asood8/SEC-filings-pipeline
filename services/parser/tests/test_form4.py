@@ -7,7 +7,8 @@ from pathlib import Path
 
 import pytest
 
-from filings_parser.form4 import Form4, Form4ParseError, parse, parse_form4
+from filings_common.parsed import Form4
+from filings_parser.form4 import Form4ParseError, parse, parse_form4
 
 FIXTURES = Path(__file__).parents[3] / "tests" / "fixtures" / "form4"
 

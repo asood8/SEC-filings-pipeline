@@ -5,8 +5,16 @@ description = "Summarizes parsed filings and computes embeddings"
 requires-python = ">=3.12"
 dependencies = ["filings-common"]
 
+[project.scripts]
+filings-summarizer = "filings_summarizer.cli:main"
+
+[dependency-groups]
+# Tests turn real EDGAR fixtures into payloads with the real parser.
+dev = ["filings-parser"]
+
 [tool.uv.sources]
 filings-common = { workspace = true }
+filings-parser = { workspace = true }
 
 [build-system]
 requires = ["uv_build>=0.12.23,<0.13.0"]

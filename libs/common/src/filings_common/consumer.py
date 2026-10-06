@@ -50,13 +50,18 @@ class MessageSource(Protocol):
     def close(self) -> None: ...
 
 
-def make_consumer(bootstrap_servers: str, group_id: str) -> Consumer:
+def make_consumer(
+    bootstrap_servers: str, group_id: str, *, max_poll_interval_seconds: int = 300
+) -> Consumer:
+    """A consumer that commits manually. Handling one message, retries included, must finish
+    within `max_poll_interval_seconds`, or the broker assumes the consumer died and rebalances."""
     return Consumer(
         {
             "bootstrap.servers": bootstrap_servers,
             "group.id": group_id,
             "enable.auto.commit": False,
             "auto.offset.reset": "earliest",
+            "max.poll.interval.ms": max_poll_interval_seconds * 1000,
         }
     )
 

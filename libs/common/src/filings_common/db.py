@@ -83,6 +83,21 @@ class Filing(Base):
     )
 
 
+class FilingExhibit(Base):
+    """An exhibit downloaded with a filing (EX-99 press releases and investor materials only)."""
+
+    __tablename__ = "filing_exhibits"
+
+    accession_no: Mapped[str] = mapped_column(
+        sa.ForeignKey("filings.accession_no", ondelete="CASCADE"), primary_key=True
+    )
+    filename: Mapped[str] = mapped_column(primary_key=True)
+    exhibit_type: Mapped[str]  # e.g. "EX-99.1"
+    sequence: Mapped[int]  # position in the filing
+    description: Mapped[str | None]
+    object_key: Mapped[str]
+
+
 class Form4Filing(Base):
     """Queryable key fields of a parsed Form 4. The full parsed payload is in MongoDB.
 
@@ -109,6 +124,48 @@ class Form4Filing(Base):
     updated_at: Mapped[datetime] = mapped_column(
         server_default=sa.func.now(), onupdate=sa.func.now()
     )
+
+
+class Form8KFiling(Base):
+    """Queryable key fields of a parsed 8-K: which items it reports. Full text is in MongoDB."""
+
+    __tablename__ = "form8k_filings"
+
+    accession_no: Mapped[str] = mapped_column(
+        sa.ForeignKey("filings.accession_no", ondelete="CASCADE"), primary_key=True
+    )
+    # Item numbers in document order, e.g. {2.02, 9.01} for an earnings release.
+    items: Mapped[list[str]] = mapped_column(ARRAY(sa.Text()))
+    updated_at: Mapped[datetime] = mapped_column(
+        server_default=sa.func.now(), onupdate=sa.func.now()
+    )
+
+
+class Summary(Base):
+    """One summary of a filing. History is kept; the most recent row is the current summary.
+
+    Re-summarizing with the same provider, model, and prompt version replaces that row, so replays
+    don't pile up duplicates. A new prompt version or model adds a row.
+    """
+
+    __tablename__ = "summaries"
+    __table_args__ = (
+        sa.UniqueConstraint("accession_no", "provider", "model", "prompt_version"),
+        sa.Index("ix_summaries_accession_no_created_at", "accession_no", "created_at"),
+    )
+
+    id: Mapped[int] = mapped_column(sa.BigInteger, sa.Identity(always=True), primary_key=True)
+    accession_no: Mapped[str] = mapped_column(
+        sa.ForeignKey("filings.accession_no", ondelete="CASCADE")
+    )
+    provider: Mapped[str]  # e.g. "template", "ollama", "gemini"
+    model: Mapped[str]
+    prompt_version: Mapped[int]
+    summary: Mapped[dict[str, Any]] = mapped_column(JSONB)  # a FilingSummary
+    # Numbers in an LLM summary not found in the text the model was given (grounding check):
+    # [] = all found; NULL = not checked (template summaries compute totals by design).
+    ungrounded_numbers: Mapped[list[str] | None] = mapped_column(ARRAY(sa.Text()))
+    created_at: Mapped[datetime] = mapped_column(server_default=sa.func.now())
 
 
 class OutboxEvent(Base):

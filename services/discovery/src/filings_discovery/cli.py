@@ -22,7 +22,7 @@ from filings_discovery.companies import (
     sync_companies,
 )
 from filings_discovery.config import DiscoverySettings
-from filings_discovery.job import discover
+from filings_discovery.job import backfill_exhibits, discover
 from filings_discovery.watchlist import WatchlistError, load_watchlist
 
 logger = logging.getLogger("filings_discovery")
@@ -33,6 +33,9 @@ def main(argv: list[str] | None = None) -> int:
     commands = parser.add_subparsers(dest="command", required=True)
     commands.add_parser("load-companies", help="load SEC's ticker map and flag the watchlist")
     commands.add_parser("run", help="find, store, and announce new watchlist filings")
+    commands.add_parser(
+        "fetch-exhibits", help="download EX-99 exhibits for known filings that have none"
+    )
     args = parser.parse_args(argv)
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s %(message)s")
     logging.getLogger("httpx2").setLevel(logging.WARNING)  # one line per request is too noisy
@@ -61,9 +64,23 @@ def main(argv: list[str] | None = None) -> int:
                 logger.info("loaded %d companies, %d on the watchlist", count, len(ciks))
                 return 0
 
-            since = datetime.now(UTC).date() - timedelta(days=settings.lookback_days)
             store = object_store_from_settings(ObjectStoreSettings())
-            result = discover(sessions, edgar, store, form_types=settings.form_types, since=since)
+            if args.command == "fetch-exhibits":
+                checked, stored = backfill_exhibits(
+                    sessions, edgar, store, form_types=settings.exhibit_form_types
+                )
+                logger.info("checked %d filings, stored %d exhibits", checked, stored)
+                return 0
+
+            since = datetime.now(UTC).date() - timedelta(days=settings.lookback_days)
+            result = discover(
+                sessions,
+                edgar,
+                store,
+                form_types=settings.form_types,
+                since=since,
+                exhibit_form_types=settings.exhibit_form_types,
+            )
             logger.info(
                 "polled %d companies: %d new filings, %d failed",
                 result.companies,

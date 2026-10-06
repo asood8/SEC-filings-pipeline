@@ -1,3 +1,4 @@
+from collections.abc import Sequence
 from datetime import date
 from pathlib import Path
 from typing import Any
@@ -11,6 +12,7 @@ from filings_common.consumer import PermanentError, Received
 from filings_common.db import (
     Company,
     Filing,
+    FilingExhibit,
     FilingStatus,
     Form4Filing,
     OutboxEvent,
@@ -19,6 +21,7 @@ from filings_common.db import (
 from filings_common.events import FilingDiscovered, FilingParsed, Topic
 from filings_common.mongo import ParsedFilingStore
 from filings_common.storage import LocalObjectStore
+from filings_parser.documents import RawExhibit
 from filings_parser.forms import PARSERS as REAL_PARSERS
 from filings_parser.forms import FormParser
 from filings_parser.handler import FilingHandler
@@ -30,10 +33,10 @@ RAW_KEY = f"filings/320193/{ACCESSION}/form4.xml"
 FORM4_FIXTURE = Path(__file__).parents[3] / "tests/fixtures/form4/0001936006-26-000026.xml"
 
 
-def fake_parse(raw: bytes) -> dict[str, Any]:
+def fake_parse(raw: bytes, exhibits: Sequence[RawExhibit] = ()) -> dict[str, Any]:
     if raw == b"broken":
         raise ValueError("unexpected root element")
-    return {"bytes": len(raw)}
+    return {"bytes": len(raw), "exhibits": [e.type for e in exhibits]}
 
 
 PARSERS = {"4": FormParser(version=3, parse=fake_parse)}
@@ -54,8 +57,20 @@ def handler(clean_db: Engine, mongo_db: Database[dict[str, Any]], tmp_path: Path
                 raw_object_key=RAW_KEY,
             )
         )
+        session.flush()
+        session.add(
+            FilingExhibit(
+                accession_no=ACCESSION,
+                filename="ex991.htm",
+                exhibit_type="EX-99.1",
+                sequence=2,
+                description=None,
+                object_key=f"filings/320193/{ACCESSION}/ex991.htm",
+            )
+        )
     objects = LocalObjectStore(tmp_path)
     objects.put(RAW_KEY, b"<ownershipDocument/>")
+    objects.put(f"filings/320193/{ACCESSION}/ex991.htm", b"<p>press release</p>")
     return FilingHandler(session_factory(clean_db), objects, ParsedFilingStore(mongo_db), PARSERS)
 
 
@@ -85,7 +100,10 @@ def test_parses_stores_and_announces_once_even_if_redelivered(
 
     stored = ParsedFilingStore(mongo_db).get(ACCESSION)
     assert stored is not None
-    assert (stored["parser_version"], stored["parsed"]) == (3, {"bytes": 20})
+    assert (stored["parser_version"], stored["parsed"]) == (
+        3,
+        {"bytes": 20, "exhibits": ["EX-99.1"]},
+    )
     with session_factory(clean_db)() as session:
         assert session.get_one(Filing, ACCESSION).status is FilingStatus.PARSED
         events = session.scalars(sa.select(OutboxEvent)).all()

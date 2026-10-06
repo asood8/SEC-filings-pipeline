@@ -15,11 +15,12 @@ from pydantic import ValidationError
 from sqlalchemy.orm import Session, sessionmaker
 
 from filings_common.consumer import PermanentError, Received
-from filings_common.db import Filing, FilingStatus
+from filings_common.db import Filing, FilingExhibit, FilingStatus
 from filings_common.events import FilingDiscovered, FilingParsed, Topic
 from filings_common.mongo import ParsedFilingStore
 from filings_common.outbox import enqueue
 from filings_common.storage import ObjectNotFoundError, ObjectStore
+from filings_parser.documents import RawExhibit
 from filings_parser.forms import FormParser
 
 logger = logging.getLogger(__name__)
@@ -56,8 +57,9 @@ class FilingHandler:
             raw = self._objects.get(event.raw_object_key)
         except ObjectNotFoundError as exc:
             raise PermanentError(f"raw document missing: {event.raw_object_key}") from exc
+        exhibits = self._exhibits(event.accession_no)
         try:
-            payload = parser.parse(raw)
+            payload = parser.parse(raw, exhibits)
         except Exception as exc:
             # Parsing is deterministic: the same document fails the same way on every retry.
             raise PermanentError(f"form {event.form_type} parser failed: {exc!r}") from exc
@@ -97,3 +99,22 @@ class FilingHandler:
                 ),
             )
         logger.info("parsed %s (form %s)", event.accession_no, event.form_type)
+
+    def _exhibits(self, accession_no: str) -> list[RawExhibit]:
+        with self._sessions() as session:
+            rows = session.scalars(
+                sa.select(FilingExhibit)
+                .where(FilingExhibit.accession_no == accession_no)
+                .order_by(FilingExhibit.sequence)
+            ).all()
+        exhibits = []
+        for row in rows:
+            try:
+                content = self._objects.get(row.object_key)
+            except ObjectNotFoundError:
+                logger.warning(
+                    "exhibit %s of %s is missing; parsing without it", row.filename, accession_no
+                )
+                continue
+            exhibits.append(RawExhibit(row.exhibit_type, row.filename, row.description, content))
+        return exhibits

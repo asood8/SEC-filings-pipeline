@@ -6,8 +6,8 @@ Watches SEC EDGAR for new filings from a watchlist of public companies, parses t
 free-text filings with a small LLM, makes them searchable by keyword and by meaning, and alerts
 subscribed users. It runs on free tiers at $0/month, on a single arm64 VM.
 
-> **Status:** Phase 0 (foundations) is done. Next is Phase 1, a thin vertical slice from discovery
-> to API. See the [build plan](docs/PROJECT_BRIEF.md#8-build-plan).
+> **Status:** Phase 1 (thin vertical slice) is in progress. Discovery, the outbox relay, and
+> `GET /filings` work; the Form 4 parser is next. See the [build plan](docs/PROJECT_BRIEF.md#8-build-plan).
 
 ## Architecture
 
@@ -42,8 +42,20 @@ work inside WSL2.
 ```sh
 make setup   # install Python 3.12, all packages, dev tools, and git hooks
 make up      # start Postgres, Redpanda, Valkey, MongoDB (creates .env on first run)
-make test    # run the tests
+make test    # run the tests (integration tests need the stack from `make up`)
 make down    # stop the stack (data is kept)
+```
+
+### Running the pipeline locally
+
+```sh
+make up && make migrate                    # stack + database schema
+# In .env, set SEC_CONTACT_EMAIL: SEC requires a contact address in every request's User-Agent.
+cp config/watchlist.example.toml config/watchlist.toml   # then list the tickers to follow
+uv run filings-discovery load-companies    # SEC ticker map -> companies table, flags the watchlist
+uv run filings-discovery run               # new filings -> object store + Postgres + outbox
+uv run filings-outbox-relay                # outbox -> Redpanda topics (runs until Ctrl+C)
+make api                                   # http://127.0.0.1:8000/filings, docs at /docs
 ```
 
 ## Commands
@@ -54,6 +66,8 @@ make down    # stop the stack (data is kept)
 | `make sync` | Install all workspace packages and dev tools into `.venv` |
 | `make up` / `make down` | Start (and wait until healthy) / stop the local stack |
 | `make ps` / `make logs` | Stack status / follow logs |
+| `make migrate` | Apply database migrations (`uv run alembic revision --autogenerate -m "..."` creates one) |
+| `make api` | Run the API locally with auto-reload |
 | `make lint` | ruff (lint + format check) and mypy |
 | `make fmt` | Auto-fix lint issues and format code |
 | `make test` | Run all tests |
@@ -74,8 +88,10 @@ Details and memory budget: [ADR-0003](docs/adr/0003-local-development-stack.md).
 ## Repository layout
 
 ```
-libs/common/          shared code (filings_common): config, events, EDGAR client, storage
+libs/common/          shared code (filings_common): settings, events, EDGAR client, rate limiter,
+                      object store, database models + migrations, outbox relay
 services/             one package per pipeline stage: discovery, parser, summarizer, notifier, api
+config/               watchlist (example committed; your watchlist.toml is yours to edit)
 tests/fixtures/       saved EDGAR documents for parser tests
 docs/PROJECT_BRIEF.md spec, architecture, and build plan
 docs/adr/             architecture decision records

@@ -162,6 +162,9 @@ class Summary(Base):
     model: Mapped[str]
     prompt_version: Mapped[int]
     summary: Mapped[dict[str, Any]] = mapped_column(JSONB)  # a FilingSummary
+    # Numbers in an LLM summary not found in the text the model was given (grounding check):
+    # [] = all found; NULL = not checked (template summaries compute totals by design).
+    ungrounded_numbers: Mapped[list[str] | None] = mapped_column(ARRAY(sa.Text()))
     created_at: Mapped[datetime] = mapped_column(server_default=sa.func.now())
 
 

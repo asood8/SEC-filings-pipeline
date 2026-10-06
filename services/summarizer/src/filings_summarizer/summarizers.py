@@ -23,6 +23,7 @@ from filings_common.ratelimit import RedisTokenBucket
 from filings_common.summaries import FilingSummary
 from filings_summarizer import form4_template, form8k_prompt
 from filings_summarizer.form8k_prompt import FilingContext
+from filings_summarizer.grounding import ungrounded_numbers
 from filings_summarizer.llm import (
     FailoverChain,
     GeminiProvider,
@@ -41,6 +42,8 @@ class SummaryResult:
     provider: str
     model: str
     prompt_version: int
+    # From the grounding check (LLM summaries only); None when not checked.
+    ungrounded_numbers: list[str] | None = None
 
 
 class Summarizer(Protocol):
@@ -79,11 +82,15 @@ class Form8KLlmSummarizer:
         answer = self._chain.generate_json(
             form8k_prompt.SYSTEM, prompt, form8k_prompt.SUMMARY_SCHEMA
         )
+        summary = FilingSummary.model_validate_json(answer.text)
+        # Checked against exactly what the model saw, header and trimming included.
+        summary_text = " ".join([summary.headline, summary.summary, *summary.key_points])
         return SummaryResult(
-            summary=FilingSummary.model_validate_json(answer.text),
+            summary=summary,
             provider=answer.provider,
             model=answer.model,
             prompt_version=form8k_prompt.PROMPT_VERSION,
+            ungrounded_numbers=ungrounded_numbers(summary_text, prompt),
         )
 
 

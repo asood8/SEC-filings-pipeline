@@ -74,6 +74,12 @@ class SummaryHandler:
         )
         # No transaction is open during the (possibly slow) LLM call.
         result = summarizer.summarize(document["parsed"], context)
+        if result.ungrounded_numbers:
+            logger.warning(
+                "%s summary has numbers not found in the filing: %s",
+                event.accession_no,
+                ", ".join(result.ungrounded_numbers),
+            )
 
         with self._sessions.begin() as session:
             values = {
@@ -82,12 +88,17 @@ class SummaryHandler:
                 "model": result.model,
                 "prompt_version": result.prompt_version,
                 "summary": result.summary.model_dump(mode="json"),
+                "ungrounded_numbers": result.ungrounded_numbers,
             }
             stmt = pg_insert(Summary).values(**values)
             summary_id = session.execute(
                 stmt.on_conflict_do_update(
                     index_elements=["accession_no", "provider", "model", "prompt_version"],
-                    set_={"summary": stmt.excluded.summary, "created_at": sa.func.now()},
+                    set_={
+                        "summary": stmt.excluded.summary,
+                        "ungrounded_numbers": stmt.excluded.ungrounded_numbers,
+                        "created_at": sa.func.now(),
+                    },
                 ).returning(Summary.id)
             ).scalar_one()
             moved = session.execute(

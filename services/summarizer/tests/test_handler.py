@@ -32,8 +32,10 @@ class FixedSummarizer:
         self.prompt_version = prompt_version
 
     def summarize(self, payload: dict[str, Any], context: FilingContext) -> SummaryResult:
-        summary = FilingSummary(headline="v2", summary="Second take.")
-        return SummaryResult(summary, "template", "form4-template", self.prompt_version)
+        summary = FilingSummary(headline="v2", summary="Second take of $4.25 billion.")
+        return SummaryResult(
+            summary, "template", "form4-template", self.prompt_version, ["4.25 billion"]
+        )
 
 
 @pytest.fixture
@@ -110,6 +112,7 @@ def test_new_prompt_version_adds_a_summary_without_announcing_again(
 
     summaries, events, _ = rows(engine)
     assert [s.prompt_version for s in summaries] == [1, 2]
+    assert [s.ungrounded_numbers for s in summaries] == [None, ["4.25 billion"]]
     assert len(events) == 1
 
 

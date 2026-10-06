@@ -8,19 +8,21 @@ Forms without a parser are acknowledged and stay `discovered`, ready to be repar
 exists (`filings-replay discovered`).
 """
 
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any
 
 from sqlalchemy.orm import Session
 
 from filings_parser import form4, form8k
+from filings_parser.documents import RawExhibit
 
 
 @dataclass(frozen=True)
 class FormParser:
     version: int
-    parse: Callable[[bytes], dict[str, Any]]
+    # The primary document and the filing's collected exhibits, to a JSON-ready payload.
+    parse: Callable[[bytes, Sequence[RawExhibit]], dict[str, Any]]
     # Upserts the form's key fields into Postgres, inside the handler's transaction.
     save_key_fields: Callable[[Session, str, dict[str, Any]], None] | None = None
 

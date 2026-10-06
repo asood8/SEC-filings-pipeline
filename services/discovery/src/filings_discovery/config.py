@@ -12,3 +12,5 @@ class DiscoverySettings(BaseSettings):
     lookback_days: int = Field(default=30, ge=1)
     # EDGAR form codes to collect (env: JSON list, e.g. DISCOVERY_FORM_TYPES='["4","8-K"]').
     form_types: frozenset[str] = frozenset({"4", "8-K"})
+    # Forms whose EX-99 exhibits (press releases) are downloaded too.
+    exhibit_form_types: frozenset[str] = frozenset({"8-K"})

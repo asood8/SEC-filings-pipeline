@@ -10,12 +10,12 @@ import sqlalchemy as sa
 from sqlalchemy.engine import Engine
 
 from filings_common.config import EdgarSettings
-from filings_common.db import Filing, OutboxEvent, session_factory
+from filings_common.db import Filing, FilingExhibit, OutboxEvent, session_factory
 from filings_common.edgar import EdgarClient
 from filings_common.events import FilingDiscovered, Topic
 from filings_common.storage import LocalObjectStore
 from filings_discovery.companies import parse_company_tickers_exchange, sync_companies
-from filings_discovery.job import discover
+from filings_discovery.job import backfill_exhibits, discover
 
 # Type of the make_submissions fixture (conftest.py).
 SubmissionsFactory = Callable[..., dict[str, Any]]
@@ -66,15 +66,53 @@ def fake_sec(make_submissions: SubmissionsFactory) -> FakeSec:
             f"{ARCHIVE}/320193/000114036126000202/form4.xml": httpx2.Response(
                 200, content=b"<ownershipDocument/>", headers={"Content-Type": "text/xml"}
             ),
+            # The 8-K's document list (same layout as EDGAR's index-headers pages) and its
+            # press release. The contract (EX-10.1) must not be downloaded.
+            f"{ARCHIVE}/320193/000032019326000101/0000320193-26-000101-index-headers.html": (
+                httpx2.Response(200, text=index_headers_page())
+            ),
+            f"{ARCHIVE}/320193/000032019326000101/pressrelease.htm": httpx2.Response(
+                200, content=b"<p>Results</p>", headers={"Content-Type": "text/html"}
+            ),
         }
     )
 
 
-def run(engine: Engine, sec: FakeSec, store: LocalObjectStore) -> Any:
+def index_headers_page() -> str:
+    documents = [
+        ("8-K", 1, "aapl-20260930.htm", "8-K"),
+        ("EX-99.1", 2, "pressrelease.htm", "PRESS RELEASE"),
+        ("EX-10.1", 3, "agreement.htm", "CREDIT AGREEMENT"),
+    ]
+    blocks = "".join(
+        f"&lt;DOCUMENT&gt;\n&lt;TYPE&gt;{t}\n&lt;SEQUENCE&gt;{n}\n&lt;FILENAME&gt;{f}\n"
+        f'&lt;DESCRIPTION&gt;{d}\n&lt;TEXT&gt;\n<a href="{f}">{f}</a><br>\n&lt;/DOCUMENT&gt;\n'
+        for t, n, f, d in documents
+    )
+    return f"<HTML><BODY><!--\n<SEC-HEADER>hdr\n--><PRE>{blocks}</PRE></BODY></HTML>"
+
+
+def run(
+    engine: Engine,
+    sec: FakeSec,
+    store: LocalObjectStore,
+    exhibit_form_types: set[str] | None = None,
+) -> Any:
     with sec.client() as edgar:
         return discover(
-            session_factory(engine), edgar, store, form_types={"4", "8-K"}, since=date(2026, 9, 1)
+            session_factory(engine),
+            edgar,
+            store,
+            form_types={"4", "8-K"},
+            since=date(2026, 9, 1),
+            exhibit_form_types={"8-K"} if exhibit_form_types is None else exhibit_form_types,
         )
+
+
+def seed_companies(engine: Engine, company_tickers: dict[str, Any]) -> None:
+    with session_factory(engine).begin() as session:
+        records = parse_company_tickers_exchange(company_tickers)
+        sync_companies(session, records, {APPLE, MICROSOFT})
 
 
 def test_discovers_stores_and_announces_new_filings_exactly_once(
@@ -111,3 +149,29 @@ def test_discovers_stores_and_announces_new_filings_exactly_once(
     assert [a.accession_no for a in announced] == [f.accession_no for f in filings]
     assert announced[0].raw_object_key == form4.raw_object_key
     assert all(e.key == e.payload["accession_no"] for e in events)
+
+    with sessions() as session:
+        [exhibit] = session.scalars(sa.select(FilingExhibit)).all()
+    assert (exhibit.accession_no, exhibit.exhibit_type, exhibit.filename) == (
+        "0000320193-26-000101",
+        "EX-99.1",
+        "pressrelease.htm",
+    )
+    assert store.get(exhibit.object_key) == b"<p>Results</p>"
+    assert not any("agreement.htm" in url for url in fake_sec.hits)
+    assert not any("000114036126000202-index" in url for url in fake_sec.hits)  # Form 4: none
+
+
+def test_backfill_fetches_exhibits_for_filings_that_have_none(
+    clean_db: Engine, fake_sec: FakeSec, company_tickers: dict[str, Any], tmp_path: Path
+) -> None:
+    seed_companies(clean_db, company_tickers)
+    store = LocalObjectStore(tmp_path)
+    run(clean_db, fake_sec, store, exhibit_form_types=set())  # discovered before exhibits existed
+    sessions = session_factory(clean_db)
+
+    with fake_sec.client() as edgar:
+        assert backfill_exhibits(sessions, edgar, store, form_types={"8-K"}) == (1, 1)
+        assert backfill_exhibits(sessions, edgar, store, form_types={"8-K"}) == (0, 0)
+    with sessions() as session:
+        assert session.scalar(sa.select(sa.func.count()).select_from(FilingExhibit)) == 1

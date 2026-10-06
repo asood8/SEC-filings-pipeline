@@ -10,6 +10,7 @@ ElementTree never fetches external entities.
 """
 
 import xml.etree.ElementTree as ET
+from collections.abc import Sequence
 from datetime import date
 from typing import Any
 
@@ -26,6 +27,7 @@ from filings_common.parsed import (
     Signature,
     Transaction,
 )
+from filings_parser.documents import RawExhibit
 
 PARSER_VERSION = 1
 
@@ -188,8 +190,8 @@ def parse_form4(raw: bytes) -> Form4:
     )
 
 
-def parse(raw: bytes) -> dict[str, Any]:
-    """The JSON-ready payload stored in MongoDB."""
+def parse(raw: bytes, exhibits: Sequence[RawExhibit] = ()) -> dict[str, Any]:
+    """The JSON-ready payload stored in MongoDB. Form 4s have no exhibits worth parsing."""
     return parse_form4(raw).model_dump(mode="json")
 
 

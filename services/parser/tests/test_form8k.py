@@ -7,7 +7,14 @@ from pathlib import Path
 import pytest
 
 from filings_common.parsed import ITEM_TITLES, Form8K
-from filings_parser.form8k import Form8KParseError, html_to_lines, parse, parse_form8k
+from filings_parser.documents import RawExhibit
+from filings_parser.form8k import (
+    MAX_EXHIBIT_TEXT,
+    Form8KParseError,
+    html_to_lines,
+    parse,
+    parse_form8k,
+)
 
 FIXTURES = Path(__file__).parents[3] / "tests" / "fixtures" / "form8k"
 
@@ -19,7 +26,10 @@ SEC_ITEMS = {
     "0001018724-26-000036": ["5.02"],
     "0001104659-26-107526": ["8.01", "9.01"],
     "0001628280-26-063820": ["1.01", "1.02", "2.03", "9.01"],
+    "0001628280-26-064366": ["2.02", "9.01"],
 }
+# EX-99 exhibits of some fixtures, under form8k/exhibits/<accession number>/.
+EXHIBITS = FIXTURES / "exhibits"
 
 
 def fixture(accession_no: str) -> Form8K:
@@ -92,3 +102,22 @@ def test_html_to_lines_skips_hidden_content_and_breaks_on_blocks() -> None:
 def test_rejects_documents_without_items() -> None:
     with pytest.raises(Form8KParseError, match=r"no 'Item N\.NN' sections"):
         parse_form8k(b"<html><body><p>Nothing to see.</p></body></html>")
+
+
+def test_exhibit_text_is_added_without_sec_packaging() -> None:
+    accession_no = "0001628280-26-064366"  # Tesla Q3 production and deliveries
+    release = EXHIBITS / accession_no / "exhibit991111111.htm"
+    exhibit = RawExhibit("EX-99.1", release.name, "EX-99.1", release.read_bytes())
+    payload = parse((FIXTURES / f"{accession_no}.htm").read_bytes(), [exhibit])
+    [parsed] = payload["exhibits"]
+    assert parsed["type"] == "EX-99.1"
+    assert parsed["text"].startswith(
+        "Exhibit 99.1\nTesla Third Quarter 2026 Production, Deliveries & Deployments"
+    )
+    assert "delivered over 486,000 vehicles" in parsed["text"]
+
+
+def test_exhibit_text_is_capped() -> None:
+    huge = RawExhibit("EX-99.1", "big.txt", None, b"word " * 100_000)
+    payload = parse((FIXTURES / "0000002488-26-000182.htm").read_bytes(), [huge])
+    assert len(payload["exhibits"][0]["text"]) == MAX_EXHIBIT_TEXT

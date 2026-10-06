@@ -83,6 +83,21 @@ class Filing(Base):
     )
 
 
+class FilingExhibit(Base):
+    """An exhibit downloaded with a filing (EX-99 press releases and investor materials only)."""
+
+    __tablename__ = "filing_exhibits"
+
+    accession_no: Mapped[str] = mapped_column(
+        sa.ForeignKey("filings.accession_no", ondelete="CASCADE"), primary_key=True
+    )
+    filename: Mapped[str] = mapped_column(primary_key=True)
+    exhibit_type: Mapped[str]  # e.g. "EX-99.1"
+    sequence: Mapped[int]  # position in the filing
+    description: Mapped[str | None]
+    object_key: Mapped[str]
+
+
 class Form4Filing(Base):
     """Queryable key fields of a parsed Form 4. The full parsed payload is in MongoDB.
 

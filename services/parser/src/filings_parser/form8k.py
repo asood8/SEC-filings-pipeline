@@ -11,7 +11,7 @@ parser takes the first run that has any.
 """
 
 import re
-from collections.abc import Iterator
+from collections.abc import Iterator, Sequence
 from html.parser import HTMLParser
 from typing import Any
 
@@ -20,9 +20,13 @@ from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.orm import Session
 
 from filings_common.db import Form8KFiling
-from filings_common.parsed import ITEM_TITLES, Form8K, Item
+from filings_common.parsed import ITEM_TITLES, Exhibit, Form8K, Item
+from filings_parser.documents import RawExhibit
 
-PARSER_VERSION = 1
+# 2: adds the text of EX-99 exhibits (press releases) to the payload.
+PARSER_VERSION = 2
+# Exhibit text kept per exhibit. Summaries use far less; this bounds MongoDB storage.
+MAX_EXHIBIT_TEXT = 100_000
 
 _ITEM_HEADING = re.compile(r"^item\s*(\d{1,2})\.(\d{2})\b[\s.:\-\u2013\u2014]*(.*)$", re.IGNORECASE)
 _SIGNATURES = re.compile(r"^signatures?\b", re.IGNORECASE)
@@ -174,9 +178,30 @@ def parse_form8k(raw: bytes) -> Form8K:
     raise Form8KParseError("no 'Item N.NN' sections with text found")
 
 
-def parse(raw: bytes) -> dict[str, Any]:
-    """The JSON-ready payload stored in MongoDB."""
-    return parse_form8k(raw).model_dump(mode="json")
+def exhibit_text(exhibit: RawExhibit) -> str:
+    raw = exhibit.content.decode("utf-8", errors="replace")
+    if exhibit.filename.lower().endswith(".txt"):
+        lines = [line.strip() for line in raw.splitlines() if line.strip()]
+    else:
+        lines = html_to_lines(raw)
+    # Exhibit files often start with SEC's packaging: type, sequence number, file name.
+    packaging = {
+        exhibit.type.upper(),
+        exhibit.filename.upper(),
+        (exhibit.description or "").upper(),
+    }
+    while lines and (lines[0].upper() in packaging or lines[0].isdigit()):
+        lines.pop(0)
+    return "\n".join(lines)[:MAX_EXHIBIT_TEXT]
+
+
+def parse(raw: bytes, exhibits: Sequence[RawExhibit] = ()) -> dict[str, Any]:
+    """The JSON-ready payload stored in MongoDB: the items, plus the text of each exhibit."""
+    form = parse_form8k(raw)
+    form.exhibits = [
+        Exhibit(type=e.type, description=e.description, text=exhibit_text(e)) for e in exhibits
+    ]
+    return form.model_dump(mode="json")
 
 
 def save_key_fields(session: Session, accession_no: str, payload: dict[str, Any]) -> None:

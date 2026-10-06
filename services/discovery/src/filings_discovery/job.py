@@ -1,9 +1,9 @@
 """The discovery job: find new watchlist filings on EDGAR, store them, and announce them.
 
-For each new filing, the raw document goes to the object store first, then the filing row and its
-`filings.discovered` outbox event are written in one transaction. Re-running is safe: known
-accession numbers are skipped, and the insert ignores conflicts, so no filing or event is ever
-duplicated.
+For each new filing, the raw document (and, for 8-Ks, its EX-99 exhibits) goes to the object
+store first. Then the filing row, its exhibit rows, and its `filings.discovered` outbox event are
+written in one transaction. Re-running is safe: known accession numbers are skipped, and the insert
+ignores conflicts, so no filing or event is ever duplicated.
 """
 
 import logging
@@ -20,6 +20,12 @@ from filings_common.edgar import EdgarClient, archive_url
 from filings_common.events import FilingDiscovered, Topic
 from filings_common.outbox import enqueue
 from filings_common.storage import ObjectStore
+from filings_discovery.exhibits import (
+    DownloadedExhibit,
+    download_exhibits,
+    has_exhibit_rows,
+    record_exhibits,
+)
 from filings_discovery.submissions import FilingRef, raw_document_name, recent_filings
 
 logger = logging.getLogger(__name__)
@@ -32,8 +38,12 @@ class DiscoveryResult:
     failed_ciks: list[int] = field(default_factory=list)
 
 
+def filing_prefix(cik: int, accession_no: str) -> str:
+    return f"filings/{cik}/{accession_no}"
+
+
 def object_key(cik: int, accession_no: str, document: str) -> str:
-    return f"filings/{cik}/{accession_no}/{document}"
+    return f"{filing_prefix(cik, accession_no)}/{document}"
 
 
 def discover(
@@ -43,6 +53,7 @@ def discover(
     *,
     form_types: Collection[str],
     since: date,
+    exhibit_form_types: Collection[str] = (),
 ) -> DiscoveryResult:
     """Poll every watchlist company. One company's failure doesn't stop the others."""
     with sessions() as session:
@@ -53,7 +64,13 @@ def discover(
     for cik in ciks:
         try:
             result.new_filings += discover_company(
-                sessions, edgar, store, cik, form_types=form_types, since=since
+                sessions,
+                edgar,
+                store,
+                cik,
+                form_types=form_types,
+                since=since,
+                exhibit_form_types=exhibit_form_types,
             )
         except Exception:
             logger.exception("discovery failed for CIK %d", cik)
@@ -69,6 +86,7 @@ def discover_company(
     *,
     form_types: Collection[str],
     since: date,
+    exhibit_form_types: Collection[str] = (),
 ) -> int:
     """Store and announce one company's new filings. Returns how many were new."""
     candidates = [
@@ -89,7 +107,10 @@ def discover_company(
     new = 0
     # Oldest first, so events go out roughly in filing order.
     for ref in sorted(candidates, key=lambda r: (r.filed_at, r.accession_no)):
-        if ref.accession_no not in known and _store_and_record(sessions, edgar, store, cik, ref):
+        if ref.accession_no in known:
+            continue
+        with_exhibits = ref.form_type in exhibit_form_types
+        if _store_and_record(sessions, edgar, store, cik, ref, with_exhibits=with_exhibits):
             new += 1
     logger.info("CIK %d: %d candidate filings, %d new", cik, len(candidates), new)
     return new
@@ -101,12 +122,18 @@ def _store_and_record(
     store: ObjectStore,
     cik: int,
     ref: FilingRef,
+    *,
+    with_exhibits: bool,
 ) -> bool:
     document = raw_document_name(ref.primary_document)
     url = archive_url(cik, ref.accession_no, document)
     response = edgar.get(url)
     key = object_key(cik, ref.accession_no, document)
     store.put(key, response.content, content_type=response.headers.get("Content-Type"))
+    exhibits: list[DownloadedExhibit] = []
+    if with_exhibits:
+        prefix = filing_prefix(cik, ref.accession_no)
+        exhibits = download_exhibits(edgar, store, cik, ref.accession_no, prefix)
 
     with sessions.begin() as session:
         inserted = session.execute(
@@ -125,6 +152,7 @@ def _store_and_record(
         ).scalar_one_or_none()
         if inserted is None:  # recorded concurrently, e.g. under another watchlist company
             return False
+        record_exhibits(session, ref.accession_no, exhibits)
         enqueue(
             session,
             Topic.FILINGS_DISCOVERED,
@@ -137,3 +165,36 @@ def _store_and_record(
             ),
         )
     return True
+
+
+def backfill_exhibits(
+    sessions: sessionmaker[Session],
+    edgar: EdgarClient,
+    store: ObjectStore,
+    *,
+    form_types: Collection[str],
+) -> tuple[int, int]:
+    """Download EX-99 exhibits for known filings that have none recorded.
+
+    For filings discovered before exhibits were collected. Filings that truly have no EX-99
+    exhibits are checked again on each run (one small request each). Returns (filings checked,
+    exhibits stored). Re-announce the filings afterwards (`filings-replay discovered`) so they
+    are reparsed with their exhibits.
+    """
+    with sessions() as session:
+        filings = [
+            (f.cik, f.accession_no)
+            for f in session.scalars(
+                sa.select(Filing).where(Filing.form_type.in_(list(form_types)))
+            )
+            if not has_exhibit_rows(session, f.accession_no)
+        ]
+    stored = 0
+    for cik, accession_no in filings:
+        exhibits = download_exhibits(
+            edgar, store, cik, accession_no, filing_prefix(cik, accession_no)
+        )
+        with sessions.begin() as session:
+            record_exhibits(session, accession_no, exhibits)
+        stored += len(exhibits)
+    return len(filings), stored

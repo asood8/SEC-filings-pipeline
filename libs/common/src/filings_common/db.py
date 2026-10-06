@@ -111,6 +111,21 @@ class Form4Filing(Base):
     )
 
 
+class Form8KFiling(Base):
+    """Queryable key fields of a parsed 8-K: which items it reports. Full text is in MongoDB."""
+
+    __tablename__ = "form8k_filings"
+
+    accession_no: Mapped[str] = mapped_column(
+        sa.ForeignKey("filings.accession_no", ondelete="CASCADE"), primary_key=True
+    )
+    # Item numbers in document order, e.g. {2.02, 9.01} for an earnings release.
+    items: Mapped[list[str]] = mapped_column(ARRAY(sa.Text()))
+    updated_at: Mapped[datetime] = mapped_column(
+        server_default=sa.func.now(), onupdate=sa.func.now()
+    )
+
+
 class OutboxEvent(Base):
     """An event written in the same transaction as the change it announces (transactional outbox).
 

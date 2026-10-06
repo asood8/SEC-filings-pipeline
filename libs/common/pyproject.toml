@@ -18,6 +18,7 @@ dependencies = [
 
 [project.scripts]
 filings-outbox-relay = "filings_common.relay:main"
+filings-replay = "filings_common.replay:main"
 
 [build-system]
 requires = ["uv_build>=0.12.23,<0.13.0"]

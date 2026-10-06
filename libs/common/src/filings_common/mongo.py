@@ -46,3 +46,10 @@ class ParsedFilingStore:
             return None
         document["accession_no"] = document.pop("_id")
         return document
+
+    def parser_versions(self, accession_nos: list[str]) -> dict[str, int]:
+        """The parser version of each stored filing among `accession_nos` (missing ones omitted)."""
+        cursor = self._collection.find(
+            {"_id": {"$in": accession_nos}}, {"_id": 1, "parser_version": 1}
+        )
+        return {doc["_id"]: doc["parser_version"] for doc in cursor}

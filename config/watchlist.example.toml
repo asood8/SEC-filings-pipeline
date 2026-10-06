@@ -1,0 +1,4 @@
+# Watchlist format. Copy to config/watchlist.toml (or point DISCOVERY_WATCHLIST_PATH elsewhere)
+# and list the companies to follow. These three tickers only illustrate the format.
+# Share classes use SEC's dash form (BRK-B); BRK.B is accepted and normalized.
+tickers = ["AAPL", "MSFT", "BRK-B"]

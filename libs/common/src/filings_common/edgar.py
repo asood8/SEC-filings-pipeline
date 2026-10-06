@@ -13,14 +13,17 @@ from types import TracebackType
 from typing import Any, Self
 
 import httpx
+import redis
 
 from filings_common.config import EdgarSettings
-from filings_common.ratelimit import RateLimiter
+from filings_common.ratelimit import RateLimiter, RedisTokenBucket
 
 logger = logging.getLogger(__name__)
 
 SEC_WWW = "https://www.sec.gov"
 SEC_DATA = "https://data.sec.gov"
+# One bucket for every process that talks to SEC.
+RATE_LIMIT_KEY = "ratelimit:sec"
 
 RETRY_STATUSES = frozenset({429, 500, 502, 503, 504})
 BACKOFF_BASE_SECONDS = 1.0
@@ -52,6 +55,17 @@ class EdgarClient:
             transport=transport,
             follow_redirects=True,
         )
+
+    @classmethod
+    def from_settings(cls, settings: EdgarSettings, redis_client: redis.Redis) -> Self:
+        """The production wiring: rate-limited by the bucket shared through Redis."""
+        limiter = RedisTokenBucket(
+            redis_client,
+            RATE_LIMIT_KEY,
+            settings.rate_limit_per_second,
+            settings.rate_limit_burst,
+        )
+        return cls(settings, limiter)
 
     def __enter__(self) -> Self:
         return self

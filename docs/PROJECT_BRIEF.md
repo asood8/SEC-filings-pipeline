@@ -128,7 +128,7 @@ Pipeline: `discovery → filings.discovered → parser → filings.parsed → su
 
 Each phase ends with something runnable, tests passing, and docs updated. Check items off here as they're completed.
 
-- [ ] **Phase 0: Foundations.**
+- [x] **Phase 0: Foundations.**
   - Monorepo scaffold (§10), uv workspace
   - Docker Compose (Postgres+pgvector, Redpanda, Valkey, MongoDB), Makefile, pre-commit
   - GitHub Actions (lint, type-check, test)

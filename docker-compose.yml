@@ -1,0 +1,97 @@
+# Local development stack: `make up` / `make down`. See docs/adr/0003-local-development-stack.md.
+# Ports bind to 127.0.0.1 only. Credentials come from .env (`make up` copies .env.example).
+# Memory limits keep the stack near 3 GB so it fits in WSL on a 16 GB laptop.
+
+name: sec-filings
+
+services:
+  postgres:
+    image: pgvector/pgvector:0.8.7-pg18
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:?copy .env.example to .env}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?copy .env.example to .env}
+      POSTGRES_DB: ${POSTGRES_DB:?copy .env.example to .env}
+    ports:
+      - "127.0.0.1:5432:5432"
+    volumes:
+      # Postgres 18+ images keep data under a versioned subdirectory of /var/lib/postgresql.
+      - postgres-data:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U \"$$POSTGRES_USER\" -d \"$$POSTGRES_DB\""]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    deploy:
+      resources:
+        limits:
+          memory: 768M
+
+  redpanda:
+    image: redpandadata/redpanda:v26.2.3
+    command:
+      - redpanda
+      - start
+      - --mode=dev-container
+      - --smp=1
+      - --memory=1G
+      # Two listeners: containers reach the broker as redpanda:9092, host processes as localhost:19092.
+      - --kafka-addr=internal://0.0.0.0:9092,external://0.0.0.0:19092
+      - --advertise-kafka-addr=internal://redpanda:9092,external://localhost:19092
+    ports:
+      - "127.0.0.1:19092:19092" # Kafka API
+      - "127.0.0.1:9644:9644" # Admin API (health, metrics)
+    volumes:
+      - redpanda-data:/var/lib/redpanda/data
+    healthcheck:
+      test: ["CMD-SHELL", "rpk cluster health | grep -qE 'Healthy:.+true'"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    deploy:
+      resources:
+        limits:
+          memory: 1536M
+
+  valkey:
+    image: valkey/valkey:9.1.2-alpine
+    # No persistence: rate-limit buckets, cache, and short-lived dedupe keys are all disposable.
+    # Default noeviction policy: when full, writes fail loudly instead of silently dropping keys.
+    command: ["valkey-server", "--save", "", "--appendonly", "no", "--maxmemory", "128mb"]
+    ports:
+      - "127.0.0.1:6379:6379"
+    healthcheck:
+      test: ["CMD", "valkey-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+
+  mongodb:
+    # Stand-in for MongoDB Atlas M0, which production uses. Keep the major version aligned with Atlas.
+    image: mongo:8.0.32
+    command: ["mongod", "--wiredTigerCacheSizeGB", "0.25"]
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: ${MONGO_USER:?copy .env.example to .env}
+      MONGO_INITDB_ROOT_PASSWORD: ${MONGO_PASSWORD:?copy .env.example to .env}
+    ports:
+      - "127.0.0.1:27017:27017"
+    volumes:
+      - mongodb-data:/data/db
+    healthcheck:
+      test: ["CMD", "mongosh", "--quiet", "--eval", "db.adminCommand('ping').ok"]
+      interval: 10s
+      timeout: 10s
+      retries: 12
+      start_period: 10s
+    deploy:
+      resources:
+        limits:
+          memory: 768M
+
+volumes:
+  postgres-data:
+  redpanda-data:
+  mongodb-data:

@@ -1,0 +1,54 @@
+# Workspace root. It is "virtual": not a package itself, it only ties the members
+# together (one lockfile, one .venv) and holds shared tool configuration.
+
+[tool.uv.workspace]
+members = ["libs/*", "services/*"]
+
+[dependency-groups]
+dev = [
+    "mypy>=1.18",
+    "pre-commit>=4",
+    "pytest>=8.4",
+    "ruff>=0.14",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+src = ["libs/*/src", "services/*/src"]
+
+[tool.ruff.lint]
+select = [
+    "E", "W",  # pycodestyle
+    "F",       # pyflakes
+    "I",       # isort
+    "N",       # pep8-naming
+    "B",       # flake8-bugbear
+    "UP",      # pyupgrade
+    "SIM",     # flake8-simplify
+    "C4",      # flake8-comprehensions
+    "PT",      # flake8-pytest-style
+    "RUF",     # ruff-specific
+]
+
+[tool.mypy]
+python_version = "3.12"
+strict = true
+files = ["libs", "services"]
+# Tests dirs have no __init__.py and share file names across packages, so module
+# names are derived from paths. Each src dir is listed so package modules keep
+# their import names (e.g. filings_common) instead of path-based ones.
+explicit_package_bases = true
+mypy_path = [
+    "libs/common/src",
+    "services/api/src",
+    "services/discovery/src",
+    "services/notifier/src",
+    "services/parser/src",
+    "services/summarizer/src",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["libs", "services", "tests"]
+# importlib mode lets each package keep its own tests/ dir with overlapping file names.
+addopts = ["--import-mode=importlib", "-ra", "--strict-markers", "--strict-config"]

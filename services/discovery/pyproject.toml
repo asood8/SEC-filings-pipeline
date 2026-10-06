@@ -1,0 +1,13 @@
+[project]
+name = "filings-discovery"
+version = "0.1.0"
+description = "Polls EDGAR for new watchlist filings and stores them (CronJob)"
+requires-python = ">=3.12"
+dependencies = ["filings-common"]
+
+[tool.uv.sources]
+filings-common = { workspace = true }
+
+[build-system]
+requires = ["uv_build>=0.12.23,<0.13.0"]
+build-backend = "uv_build"

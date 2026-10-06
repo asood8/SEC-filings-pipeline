@@ -17,10 +17,12 @@ from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.orm import Session, sessionmaker
 
 from filings_common.consumer import PermanentError, Received
-from filings_common.db import Filing, FilingStatus, Summary
+from filings_common.db import Company, Filing, FilingStatus, Summary
 from filings_common.events import FilingParsed, FilingReady, Topic
 from filings_common.mongo import ParsedFilingStore
 from filings_common.outbox import enqueue
+from filings_summarizer.form4_template import company_name
+from filings_summarizer.form8k_prompt import FilingContext
 from filings_summarizer.summarizers import Summarizer
 
 logger = logging.getLogger(__name__)
@@ -54,11 +56,26 @@ class SummaryHandler:
         document = self._parsed.get(event.accession_no)
         if document is None:
             raise PermanentError(f"no parsed payload for {event.accession_no}")
-        result = summarizer.summarize(document["parsed"])
+        with self._sessions() as session:
+            row = session.execute(
+                sa.select(Filing, Company)
+                .join(Company, Company.cik == Filing.cik)
+                .where(Filing.accession_no == event.accession_no)
+            ).one_or_none()
+        if row is None:
+            raise PermanentError(f"no filing row for {event.accession_no}")
+        filing, company = row
+        context = FilingContext(
+            accession_no=filing.accession_no,
+            form_type=filing.form_type,
+            company_name=company_name(company.name),
+            ticker=company.ticker,
+            filed_at=filing.filed_at,
+        )
+        # No transaction is open during the (possibly slow) LLM call.
+        result = summarizer.summarize(document["parsed"], context)
 
         with self._sessions.begin() as session:
-            if session.get(Filing, event.accession_no) is None:
-                raise PermanentError(f"no filing row for {event.accession_no}")
             values = {
                 "accession_no": event.accession_no,
                 "provider": result.provider,

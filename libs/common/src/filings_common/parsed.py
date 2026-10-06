@@ -125,5 +125,15 @@ class Item(BaseModel):
     text: str
 
 
+class Exhibit(BaseModel):
+    """An exhibit filed with the 8-K, as text. Only EX-99 exhibits (press releases, investor
+    materials) are collected; contracts and other exhibits are not."""
+
+    type: str  # e.g. "EX-99.1"
+    description: str | None
+    text: str
+
+
 class Form8K(BaseModel):
     items: list[Item]
+    exhibits: list[Exhibit] = []

@@ -79,6 +79,36 @@ class OutboxRelaySettings(BaseSettings):
     idle_seconds: float = Field(default=1.0, gt=0)
 
 
+class LlmSettings(BaseSettings):
+    """The local, OpenAI-compatible LLM server: Ollama in development, llama.cpp in production."""
+
+    model_config = _config("LLM_")
+
+    base_url: str = "http://localhost:11434/v1"
+    # Unset means no local model: summaries come from the fallback provider only.
+    model: str | None = None
+    # Recorded with each summary as its provider.
+    provider_name: str = "ollama"
+    timeout_seconds: float = Field(default=180.0, gt=0)
+
+
+class GeminiSettings(BaseSettings):
+    """Google's Gemini API, free tier: the fallback LLM provider."""
+
+    model_config = _config("GEMINI_")
+
+    api_key: SecretStr | None = None
+    model: str = "gemini-3.5-flash-lite"
+    # Paced below the free tier's per-minute cap, shared by all summarizers through Redis.
+    requests_per_minute: float = Field(default=10.0, gt=0)
+    timeout_seconds: float = Field(default=60.0, gt=0)
+
+    @field_validator("api_key", mode="before")
+    @classmethod
+    def _blank_is_unset(cls, value: object) -> object:
+        return None if isinstance(value, str) and not value.strip() else value
+
+
 class ObjectStoreSettings(BaseSettings):
     """Where raw filings are stored: a local directory in development, R2 (S3 API) in production."""
 

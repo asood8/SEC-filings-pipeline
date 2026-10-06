@@ -13,8 +13,11 @@ from filings_common.events import FilingParsed, FilingReady, Topic
 from filings_common.mongo import ParsedFilingStore
 from filings_common.summaries import FilingSummary
 from filings_parser.form4 import parse
+from filings_summarizer.form8k_prompt import FilingContext
 from filings_summarizer.handler import SummaryHandler
-from filings_summarizer.summarizers import SUMMARIZERS, SummaryResult
+from filings_summarizer.summarizers import Form4TemplateSummarizer, SummaryResult
+
+SUMMARIZERS = {"4": Form4TemplateSummarizer()}
 
 pytestmark = pytest.mark.integration
 
@@ -28,7 +31,7 @@ class FixedSummarizer:
     def __init__(self, prompt_version: int) -> None:
         self.prompt_version = prompt_version
 
-    def summarize(self, payload: dict[str, Any]) -> SummaryResult:
+    def summarize(self, payload: dict[str, Any], context: FilingContext) -> SummaryResult:
         summary = FilingSummary(headline="v2", summary="Second take.")
         return SummaryResult(summary, "template", "form4-template", self.prompt_version)
 

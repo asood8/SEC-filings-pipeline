@@ -134,7 +134,7 @@ Each phase ends with something runnable, tests passing, and docs updated. Check 
   - GitHub Actions (lint, type-check, test)
   - ADR template + ADR-0001 (architecture overview), README skeleton
   - _Done when:_ `make up` starts the stack and CI is green.
-- [ ] **Phase 1: Thin vertical slice.**
+- [x] **Phase 1: Thin vertical slice.**
   - Ticker→CIK loader, watchlist config
   - Shared EDGAR client (User-Agent, Redis token bucket, retries), discovery job
   - ObjectStore (local + R2), Postgres schema + Alembic, outbox relay

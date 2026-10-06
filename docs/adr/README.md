@@ -14,3 +14,4 @@ row below.
 | [0003](0003-local-development-stack.md) | Local development stack | Accepted |
 | [0004](0004-service-runtime-libraries-and-patterns.md) | Service runtime libraries and patterns | Accepted |
 | [0005](0005-httpx2-instead-of-httpx.md) | Use httpx2 instead of httpx | Accepted |
+| [0006](0006-form-4-parsing-and-key-fields.md) | Form 4 parsing and key fields | Accepted |

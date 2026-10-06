@@ -126,6 +126,30 @@ class Form8KFiling(Base):
     )
 
 
+class Summary(Base):
+    """One summary of a filing. History is kept; the most recent row is the current summary.
+
+    Re-summarizing with the same provider, model, and prompt version replaces that row, so replays
+    don't pile up duplicates. A new prompt version or model adds a row.
+    """
+
+    __tablename__ = "summaries"
+    __table_args__ = (
+        sa.UniqueConstraint("accession_no", "provider", "model", "prompt_version"),
+        sa.Index("ix_summaries_accession_no_created_at", "accession_no", "created_at"),
+    )
+
+    id: Mapped[int] = mapped_column(sa.BigInteger, sa.Identity(always=True), primary_key=True)
+    accession_no: Mapped[str] = mapped_column(
+        sa.ForeignKey("filings.accession_no", ondelete="CASCADE")
+    )
+    provider: Mapped[str]  # e.g. "template", "ollama", "gemini"
+    model: Mapped[str]
+    prompt_version: Mapped[int]
+    summary: Mapped[dict[str, Any]] = mapped_column(JSONB)  # a FilingSummary
+    created_at: Mapped[datetime] = mapped_column(server_default=sa.func.now())
+
+
 class OutboxEvent(Base):
     """An event written in the same transaction as the change it announces (transactional outbox).
 

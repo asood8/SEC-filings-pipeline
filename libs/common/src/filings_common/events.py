@@ -52,3 +52,12 @@ class FilingParsed(Event):
     cik: int
     form_type: str
     parser_version: int
+
+
+class FilingReady(Event):
+    """The filing has a current summary (`summaries` row `summary_id`) and is `ready` for alerts."""
+
+    schema_version: Literal[1] = 1
+    cik: int
+    form_type: str
+    summary_id: int

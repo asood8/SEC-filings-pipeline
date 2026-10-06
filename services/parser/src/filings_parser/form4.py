@@ -11,86 +11,27 @@ ElementTree never fetches external entities.
 
 import xml.etree.ElementTree as ET
 from datetime import date
-from typing import Any, Literal
+from typing import Any
 
 import sqlalchemy as sa
-from pydantic import BaseModel
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.orm import Session
 
 from filings_common.db import Form4Filing
+from filings_common.parsed import (
+    Form4,
+    Holding,
+    Issuer,
+    ReportingOwner,
+    Signature,
+    Transaction,
+)
 
 PARSER_VERSION = 1
 
 
 class Form4ParseError(ValueError):
     pass
-
-
-class Issuer(BaseModel):
-    cik: int
-    name: str
-    trading_symbol: str | None
-
-
-class ReportingOwner(BaseModel):
-    cik: int
-    name: str
-    is_director: bool
-    is_officer: bool
-    is_ten_percent_owner: bool
-    is_other: bool
-    officer_title: str | None
-    other_text: str | None
-
-
-class _Position(BaseModel):
-    derivative: bool
-    security_title: str
-    shares_owned_after: float | None
-    direct_or_indirect: Literal["D", "I"] | None
-    nature_of_ownership: str | None
-    # Derivative securities (options, RSUs, convertibles) only.
-    exercise_price: float | None = None
-    exercise_date: date | None = None
-    expiration_date: date | None = None
-    underlying_title: str | None = None
-    underlying_shares: float | None = None
-    footnote_ids: list[str]
-
-
-class Transaction(_Position):
-    transaction_date: date | None
-    # P open-market purchase, S sale, A grant or award, M option exercise, F tax withholding,
-    # G gift, C conversion, D disposition to the issuer, J other (see footnotes), ...
-    code: str | None
-    equity_swap: bool | None
-    shares: float | None
-    price_per_share: float | None
-    acquired_disposed: Literal["A", "D"] | None
-
-
-class Holding(_Position):
-    """A position reported without a transaction (Form 4 tables' holding rows)."""
-
-
-class Signature(BaseModel):
-    name: str
-    date: date | None
-
-
-class Form4(BaseModel):
-    document_type: str
-    period_of_report: date
-    issuer: Issuer
-    reporting_owners: list[ReportingOwner]
-    # The filer's checkbox for trades made under a Rule 10b5-1 trading plan; None if not answered.
-    aff10b5_one: bool | None
-    transactions: list[Transaction]
-    holdings: list[Holding]
-    footnotes: dict[str, str]
-    remarks: str | None
-    signatures: list[Signature]
 
 
 def _text(element: ET.Element | None, path: str) -> str | None:

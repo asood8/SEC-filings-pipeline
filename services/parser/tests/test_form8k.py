@@ -6,14 +6,8 @@ from pathlib import Path
 
 import pytest
 
-from filings_parser.form8k import (
-    ITEM_TITLES,
-    Form8K,
-    Form8KParseError,
-    html_to_lines,
-    parse,
-    parse_form8k,
-)
+from filings_common.parsed import ITEM_TITLES, Form8K
+from filings_parser.form8k import Form8KParseError, html_to_lines, parse, parse_form8k
 
 FIXTURES = Path(__file__).parents[3] / "tests" / "fixtures" / "form8k"
 

@@ -16,50 +16,13 @@ from html.parser import HTMLParser
 from typing import Any
 
 import sqlalchemy as sa
-from pydantic import BaseModel
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.orm import Session
 
 from filings_common.db import Form8KFiling
+from filings_common.parsed import ITEM_TITLES, Form8K, Item
 
 PARSER_VERSION = 1
-
-# The items defined in SEC's Form 8-K instructions (asset-backed-securities items 6.xx omitted).
-ITEM_TITLES = {
-    "1.01": "Entry into a Material Definitive Agreement",
-    "1.02": "Termination of a Material Definitive Agreement",
-    "1.03": "Bankruptcy or Receivership",
-    "1.04": "Mine Safety - Reporting of Shutdowns and Patterns of Violations",
-    "1.05": "Material Cybersecurity Incidents",
-    "2.01": "Completion of Acquisition or Disposition of Assets",
-    "2.02": "Results of Operations and Financial Condition",
-    "2.03": "Creation of a Direct Financial Obligation or an Obligation under an Off-Balance "
-    "Sheet Arrangement of a Registrant",
-    "2.04": "Triggering Events That Accelerate or Increase a Direct Financial Obligation or an "
-    "Obligation under an Off-Balance Sheet Arrangement",
-    "2.05": "Costs Associated with Exit or Disposal Activities",
-    "2.06": "Material Impairments",
-    "3.01": "Notice of Delisting or Failure to Satisfy a Continued Listing Rule or Standard; "
-    "Transfer of Listing",
-    "3.02": "Unregistered Sales of Equity Securities",
-    "3.03": "Material Modification to Rights of Security Holders",
-    "4.01": "Changes in Registrant's Certifying Accountant",
-    "4.02": "Non-Reliance on Previously Issued Financial Statements or a Related Audit Report or "
-    "Completed Interim Review",
-    "5.01": "Changes in Control of Registrant",
-    "5.02": "Departure of Directors or Certain Officers; Election of Directors; Appointment of "
-    "Certain Officers; Compensatory Arrangements of Certain Officers",
-    "5.03": "Amendments to Articles of Incorporation or Bylaws; Change in Fiscal Year",
-    "5.04": "Temporary Suspension of Trading Under Registrant's Employee Benefit Plans",
-    "5.05": "Amendments to the Registrant's Code of Ethics, or Waiver of a Provision of the Code "
-    "of Ethics",
-    "5.06": "Change in Shell Company Status",
-    "5.07": "Submission of Matters to a Vote of Security Holders",
-    "5.08": "Shareholder Director Nominations",
-    "7.01": "Regulation FD Disclosure",
-    "8.01": "Other Events",
-    "9.01": "Financial Statements and Exhibits",
-}
 
 _ITEM_HEADING = re.compile(r"^item\s*(\d{1,2})\.(\d{2})\b[\s.:\-\u2013\u2014]*(.*)$", re.IGNORECASE)
 _SIGNATURES = re.compile(r"^signatures?\b", re.IGNORECASE)
@@ -123,16 +86,6 @@ _VOID_TAGS = frozenset(
 
 class Form8KParseError(ValueError):
     pass
-
-
-class Item(BaseModel):
-    number: str
-    title: str
-    text: str
-
-
-class Form8K(BaseModel):
-    items: list[Item]
 
 
 class _TextExtractor(HTMLParser):

@@ -1,0 +1,13 @@
+[project]
+name = "filings-summarizer"
+version = "0.1.0"
+description = "Summarizes parsed filings and computes embeddings"
+requires-python = ">=3.12"
+dependencies = ["filings-common"]
+
+[tool.uv.sources]
+filings-common = { workspace = true }
+
+[build-system]
+requires = ["uv_build>=0.12.23,<0.13.0"]
+build-backend = "uv_build"

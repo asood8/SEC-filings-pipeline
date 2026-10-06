@@ -12,7 +12,7 @@ from collections.abc import Callable
 from types import TracebackType
 from typing import Any, Self
 
-import httpx
+import httpx2
 import redis
 
 from filings_common.config import EdgarSettings
@@ -41,7 +41,7 @@ class EdgarClient:
         settings: EdgarSettings,
         limiter: RateLimiter,
         *,
-        transport: httpx.BaseTransport | None = None,
+        transport: httpx2.BaseTransport | None = None,
         sleep: Callable[[float], None] = time.sleep,
         rng: random.Random | None = None,
     ) -> None:
@@ -49,7 +49,7 @@ class EdgarClient:
         self._max_attempts = settings.max_attempts
         self._sleep = sleep
         self._rng = rng or random.Random()
-        self._http = httpx.Client(
+        self._http = httpx2.Client(
             headers={"User-Agent": settings.user_agent},
             timeout=settings.timeout_seconds,
             transport=transport,
@@ -81,14 +81,14 @@ class EdgarClient:
     def close(self) -> None:
         self._http.close()
 
-    def get(self, url: str) -> httpx.Response:
-        """GET a URL, retrying transient failures. Raises httpx.HTTPStatusError otherwise."""
+    def get(self, url: str) -> httpx2.Response:
+        """GET a URL, retrying transient failures. Raises httpx2.HTTPStatusError otherwise."""
         for attempt in range(1, self._max_attempts + 1):
             self._limiter.acquire()
             last_attempt = attempt == self._max_attempts
             try:
                 response = self._http.get(url)
-            except httpx.TransportError as exc:
+            except httpx2.TransportError as exc:
                 if last_attempt:
                     raise
                 delay = self._backoff(attempt, retry_after=None)

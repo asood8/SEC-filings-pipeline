@@ -4,7 +4,7 @@ from datetime import date
 from pathlib import Path
 from typing import Any
 
-import httpx
+import httpx2
 import pytest
 import sqlalchemy as sa
 from sqlalchemy.engine import Engine
@@ -34,18 +34,18 @@ class NoLimit:
 class FakeSec:
     """Serves canned EDGAR responses and counts requests per URL."""
 
-    def __init__(self, routes: dict[str, httpx.Response]) -> None:
+    def __init__(self, routes: dict[str, httpx2.Response]) -> None:
         self.routes = routes
         self.hits: Counter[str] = Counter()
 
     def client(self) -> EdgarClient:
-        def handler(request: httpx.Request) -> httpx.Response:
+        def handler(request: httpx2.Request) -> httpx2.Response:
             url = str(request.url)
             self.hits[url] += 1
-            return self.routes.get(url, httpx.Response(404))
+            return self.routes.get(url, httpx2.Response(404))
 
         settings = EdgarSettings(_env_file=None, contact_email="ops@example.com", max_attempts=1)
-        return EdgarClient(settings, NoLimit(), transport=httpx.MockTransport(handler))
+        return EdgarClient(settings, NoLimit(), transport=httpx2.MockTransport(handler))
 
 
 @pytest.fixture
@@ -58,12 +58,12 @@ def fake_sec(make_submissions: SubmissionsFactory) -> FakeSec:
     )
     return FakeSec(
         {
-            "https://data.sec.gov/submissions/CIK0000320193.json": httpx.Response(200, json=apple),
+            "https://data.sec.gov/submissions/CIK0000320193.json": httpx2.Response(200, json=apple),
             # Microsoft's submissions request fails: it must not stop Apple's discovery.
-            f"{ARCHIVE}/320193/000032019326000101/aapl-20260930.htm": httpx.Response(
+            f"{ARCHIVE}/320193/000032019326000101/aapl-20260930.htm": httpx2.Response(
                 200, content=b"<html>8-K</html>", headers={"Content-Type": "text/html"}
             ),
-            f"{ARCHIVE}/320193/000114036126000202/form4.xml": httpx.Response(
+            f"{ARCHIVE}/320193/000114036126000202/form4.xml": httpx2.Response(
                 200, content=b"<ownershipDocument/>", headers={"Content-Type": "text/xml"}
             ),
         }

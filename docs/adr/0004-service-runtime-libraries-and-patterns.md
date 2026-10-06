@@ -1,6 +1,6 @@
 # ADR-0004: Service runtime libraries and patterns
 
-- **Status:** Accepted
+- **Status:** Accepted. The HTTP client is amended by [ADR-0005](0005-httpx2-instead-of-httpx.md) (httpx → httpx2).
 - **Date:** 2026-10-05
 
 ## Context

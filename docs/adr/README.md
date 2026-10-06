@@ -13,3 +13,4 @@ row below.
 | [0002](0002-python-monorepo-and-tooling.md) | Python monorepo and tooling | Accepted |
 | [0003](0003-local-development-stack.md) | Local development stack | Accepted |
 | [0004](0004-service-runtime-libraries-and-patterns.md) | Service runtime libraries and patterns | Accepted |
+| [0005](0005-httpx2-instead-of-httpx.md) | Use httpx2 instead of httpx | Accepted |

@@ -24,6 +24,13 @@ jobs:
         with:
           enable-cache: true
 
+      # Started early so the images pull while the other steps run; tests wait for health.
+      - name: Start backing services
+        run: |
+          cp .env.example .env
+          docker compose config --quiet
+          docker compose up -d postgres valkey redpanda mongodb
+
       - name: Install dependencies
         run: uv sync --locked
 
@@ -38,7 +45,8 @@ jobs:
         run: uv run pre-commit run --all-files --show-diff-on-failure
 
       - name: Tests
-        run: make test
-
-      - name: Validate Compose file
-        run: cp .env.example .env && docker compose config --quiet
+        env:
+          REQUIRE_SERVICES: "1"  # integration tests fail instead of skipping
+        run: |
+          docker compose up -d --wait postgres valkey redpanda mongodb
+          make test

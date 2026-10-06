@@ -6,6 +6,7 @@ members = ["libs/*", "services/*"]
 
 [dependency-groups]
 dev = [
+    "boto3-stubs[s3]>=1.43.108",
     "mypy>=1.18",
     "pre-commit>=4",
     "pytest>=8.4",
@@ -34,7 +35,8 @@ select = [
 [tool.mypy]
 python_version = "3.12"
 strict = true
-files = ["libs", "services"]
+plugins = ["pydantic.mypy"]
+files = ["libs", "services", "conftest.py"]
 # Tests dirs have no __init__.py and share file names across packages, so module
 # names are derived from paths. Each src dir is listed so package modules keep
 # their import names (e.g. filings_common) instead of path-based ones.
@@ -48,7 +50,15 @@ mypy_path = [
     "services/summarizer/src",
 ]
 
+[[tool.mypy.overrides]]
+# confluent_kafka.admin re-exports classes such as NewTopic without marking them public.
+module = "confluent_kafka.*"
+implicit_reexport = true
+
 [tool.pytest.ini_options]
 testpaths = ["libs", "services", "tests"]
 # importlib mode lets each package keep its own tests/ dir with overlapping file names.
 addopts = ["--import-mode=importlib", "-ra", "--strict-markers", "--strict-config"]
+markers = [
+    "integration: needs the local stack (`make up`); skipped if unavailable unless REQUIRE_SERVICES=1",
+]

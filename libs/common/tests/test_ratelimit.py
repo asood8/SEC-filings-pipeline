@@ -1,0 +1,53 @@
+import time
+import uuid
+from concurrent.futures import ThreadPoolExecutor
+
+import pytest
+import redis
+
+from filings_common.ratelimit import RedisTokenBucket
+
+pytestmark = pytest.mark.integration
+
+
+def new_key() -> str:
+    return f"test:ratelimit:{uuid.uuid4().hex}"
+
+
+def test_burst_is_free_then_requests_are_spaced_by_the_rate(redis_client: redis.Redis) -> None:
+    bucket = RedisTokenBucket(redis_client, new_key(), rate_per_second=10, burst=3)
+    waits = [bucket.reserve() for _ in range(6)]
+    assert waits[:3] == [0, 0, 0]
+    for n, wait in enumerate(waits[3:], start=1):
+        assert wait == pytest.approx(n * 0.1, abs=0.03)
+
+
+def test_workers_with_separate_limiters_share_one_bucket(redis_client: redis.Redis) -> None:
+    key = new_key()
+    workers = [RedisTokenBucket(redis_client, key, rate_per_second=20) for _ in range(4)]
+
+    def make_three_requests(limiter: RedisTokenBucket) -> None:
+        for _ in range(3):
+            limiter.acquire()
+
+    start = time.monotonic()
+    with ThreadPoolExecutor(max_workers=4) as pool:
+        list(pool.map(make_three_requests, workers))
+    elapsed = time.monotonic() - start
+    # 12 requests at 20/s with no burst: the first is free, the rest are 50 ms apart.
+    assert 0.5 <= elapsed < 1.5
+
+
+def test_bucket_refills_while_idle_and_then_expires(redis_client: redis.Redis) -> None:
+    key = new_key()
+    bucket = RedisTokenBucket(redis_client, key, rate_per_second=20, burst=2)
+    assert [bucket.reserve(), bucket.reserve()] == [0, 0]
+    assert bucket.reserve() > 0
+    time.sleep(0.2)
+    assert bucket.reserve() == 0
+    assert 0 < redis_client.pttl(key) <= 2000
+
+
+def test_rejects_nonsense_configuration(redis_client: redis.Redis) -> None:
+    with pytest.raises(ValueError, match="rate_per_second"):
+        RedisTokenBucket(redis_client, new_key(), rate_per_second=0)

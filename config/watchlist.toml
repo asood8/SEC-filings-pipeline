@@ -1,0 +1,16 @@
+# Companies discovery polls on EDGAR. Large, well-known US companies across sectors: they file
+# Form 4s (insider trades) and 8-Ks (major events) often, so the pipeline always has activity.
+# After editing, run `uv run filings-discovery load-companies`; it reports any unknown ticker.
+tickers = [
+    # Technology and communication
+    "AAPL", "MSFT", "NVDA", "GOOGL", "AMZN", "META", "TSLA", "AVGO", "ORCL", "CRM",
+    "AMD", "ADBE", "INTC", "NFLX",
+    # Financials
+    "JPM", "BAC", "GS", "V", "MA", "BRK-B",
+    # Health care
+    "UNH", "JNJ", "LLY", "PFE",
+    # Consumer
+    "WMT", "COST", "KO", "PEP", "MCD", "NKE", "DIS",
+    # Energy and industrials
+    "XOM", "CVX", "BA", "CAT",
+]

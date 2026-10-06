@@ -3,7 +3,21 @@ name = "filings-common"
 version = "0.1.0"
 description = "Shared code: config, logging, event models, EDGAR client, ObjectStore, Kafka helpers"
 requires-python = ">=3.12"
-dependencies = []
+dependencies = [
+    "alembic>=1.16",
+    "boto3>=1.40",
+    "confluent-kafka>=2.11",
+    "httpx2>=2.13",
+    "psycopg[binary]>=3.2",
+    "pydantic>=2.11",
+    "pydantic-settings>=2.10",
+    "pymongo>=4.15",
+    "redis>=6",
+    "sqlalchemy>=2.0.40",
+]
+
+[project.scripts]
+filings-outbox-relay = "filings_common.relay:main"
 
 [build-system]
 requires = ["uv_build>=0.12.23,<0.13.0"]

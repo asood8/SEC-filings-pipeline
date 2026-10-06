@@ -5,6 +5,9 @@ description = "Polls EDGAR for new watchlist filings and stores them (CronJob)"
 requires-python = ">=3.12"
 dependencies = ["filings-common"]
 
+[project.scripts]
+filings-discovery = "filings_discovery.cli:main"
+
 [tool.uv.sources]
 filings-common = { workspace = true }
 

@@ -1,5 +1,5 @@
 .DEFAULT_GOAL := help
-.PHONY: help setup sync up down ps logs migrate api lint fmt test
+.PHONY: help setup sync up down ps logs llm-up llm-down migrate api lint fmt test
 
 help: ## List targets
 	@grep -E '^[a-z-]+:.*## ' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*## "} {printf "  %-7s %s\n", $$1, $$2}'
@@ -16,14 +16,23 @@ sync: ## Install all workspace packages and dev tools into .venv
 up: .env ## Start the local stack and wait until every service is healthy
 	docker compose up -d --wait --wait-timeout 180
 
-down: ## Stop the local stack (data volumes are kept)
-	docker compose down
+down: ## Stop the local stack, including the optional LLM (data volumes are kept)
+	docker compose --profile llm down
 
 ps: ## Show local stack status
-	docker compose ps
+	docker compose --profile llm ps
 
 logs: ## Follow local stack logs
 	docker compose logs -f
+
+LLM_MODEL ?= llama3.2:3b
+
+llm-up: ## Start the optional local LLM (Ollama) and pull the default model
+	docker compose --profile llm up -d --wait ollama
+	docker compose exec ollama ollama pull $(LLM_MODEL)
+
+llm-down: ## Stop the local LLM (downloaded models are kept)
+	docker compose --profile llm stop ollama
 
 migrate: ## Apply database migrations to DATABASE_URL
 	uv run alembic upgrade head

@@ -22,8 +22,10 @@ On a live run against EDGAR, for a watchlist of 35 large US companies:
 - **Parsing** turned every Form 4 into structured transactions and split every 8-K into its
   numbered items, plus the text of its EX-99 press releases.
 - **Summarization** wrote every summary: Form 4s with a deterministic template, 8-Ks with an LLM
-  behind a failover chain (a local model, then Gemini's free tier). A grounding check flags any
-  number in an LLM summary that doesn't appear in the filing.
+  behind a failover chain (a local model, then Gemini's free tier). Stopping the local model
+  mid-run moved the remaining work to Gemini automatically, and the local model took over again
+  once it was back. A grounding check flags any number in an LLM summary that doesn't appear in
+  the filing.
 
 Example headlines from that run (public filings):
 
@@ -43,8 +45,8 @@ Example headlines from that run (public filings):
 |---|---|---|
 | 0. Foundations | Monorepo, local stack, CI, ADRs | Done |
 | 1. Thin vertical slice | EDGAR client, discovery, outbox relay, Form 4 parser, `GET /filings` | Done |
-| 2. Summarization | 8-K items and exhibits, Form 4 template, LLM failover, replay | In progress: local-model path still to verify |
-| 3. Search and API | Full-text and semantic search (pgvector), caching, rate limiting | Planned |
+| 2. Summarization | 8-K items and exhibits, Form 4 template, LLM failover, replay | Done |
+| 3. Search and API | Full-text and semantic search (pgvector), caching, rate limiting | Next |
 | 4. Users and alerts | Google sign-in, subscriptions, Discord/Slack/email alerts | Planned |
 | 5. Frontend | Next.js site on Cloudflare Pages | Planned |
 | 6. Observability | OpenTelemetry traces, metrics, Grafana dashboards and alerts | Planned |
@@ -121,7 +123,8 @@ make api                                   # http://127.0.0.1:8000/filings, docs
 ```
 
 8-K summaries need an LLM: set `GEMINI_API_KEY` (free from Google AI Studio, no billing needed)
-and/or `LLM_MODEL` (a local Ollama model). Form 4 summaries need neither. Other tools:
+and/or a local model. `make llm-up` runs Ollama in Docker and pulls `llama3.2:3b`; then set
+`LLM_MODEL=llama3.2:3b`. Form 4 summaries need neither. Other tools:
 
 ```sh
 uv run filings-discovery fetch-exhibits    # download EX-99 exhibits for 8-Ks found before exhibits
@@ -136,6 +139,7 @@ uv run filings-replay parsed --form-type 4 # re-summarize history (also: discove
 | `make sync` | Install all workspace packages and dev tools into `.venv` |
 | `make up` / `make down` | Start (and wait until healthy) / stop the local stack |
 | `make ps` / `make logs` | Stack status / follow logs |
+| `make llm-up` / `make llm-down` | Start (and pull the default model) / stop the optional local LLM |
 | `make migrate` | Apply database migrations (`uv run alembic revision --autogenerate -m "..."` creates one) |
 | `make api` | Run the API locally with auto-reload |
 | `make lint` | ruff (lint + format check) and mypy |
@@ -152,6 +156,7 @@ All bound to `127.0.0.1`. Credentials are throwaway local values in `.env`.
 | Redpanda (Kafka API) | `localhost:19092` | same image on k3s |
 | Valkey | `localhost:6379` | same image on k3s |
 | MongoDB 8.0 | `localhost:27017` | MongoDB Atlas M0 |
+| Ollama (optional, `make llm-up`) | `localhost:11434` | llama.cpp server on k3s |
 
 Details and memory budget: [ADR-0003](docs/adr/0003-local-development-stack.md).
 

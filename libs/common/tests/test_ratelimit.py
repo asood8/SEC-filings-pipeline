@@ -1,3 +1,4 @@
+import itertools
 import time
 import uuid
 from concurrent.futures import ThreadPoolExecutor
@@ -16,10 +17,16 @@ def new_key() -> str:
 
 def test_burst_is_free_then_requests_are_spaced_by_the_rate(redis_client: redis.Redis) -> None:
     bucket = RedisTokenBucket(redis_client, new_key(), rate_per_second=10, burst=3)
-    waits = [bucket.reserve() for _ in range(6)]
-    assert waits[:3] == [0, 0, 0]
-    for n, wait in enumerate(waits[3:], start=1):
-        assert wait == pytest.approx(n * 0.1, abs=0.03)
+    calls = []
+    for _ in range(6):
+        called_at = time.monotonic()
+        calls.append((called_at, bucket.reserve()))
+    assert [wait for _, wait in calls[:3]] == [0, 0, 0]
+    # Each reservation's slot (call time + wait) is 1/rate after the previous one, however long
+    # the calls themselves take, so this holds on a busy machine too.
+    slots = [called_at + wait for called_at, wait in calls[2:]]
+    for earlier, later in itertools.pairwise(slots):
+        assert later - earlier == pytest.approx(0.1, abs=0.02)
 
 
 def test_workers_with_separate_limiters_share_one_bucket(redis_client: redis.Redis) -> None:

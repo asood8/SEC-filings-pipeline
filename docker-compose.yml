@@ -91,7 +91,32 @@ services:
         limits:
           memory: 768M
 
+  # Optional local LLM for 8-K summaries: `make llm-up`. Not started by `make up`.
+  ollama:
+    image: ollama/ollama:0.40.0
+    profiles: ["llm"]
+    environment:
+      # Prompts are up to ~6k tokens; Ollama's default context would silently cut them.
+      OLLAMA_CONTEXT_LENGTH: "8192"
+      OLLAMA_MAX_LOADED_MODELS: "1"
+      OLLAMA_NUM_PARALLEL: "1"
+      OLLAMA_KEEP_ALIVE: "30m"
+    ports:
+      - "127.0.0.1:11434:11434"
+    volumes:
+      - ollama-models:/root/.ollama
+    healthcheck:
+      test: ["CMD", "ollama", "list"]
+      interval: 10s
+      timeout: 10s
+      retries: 12
+    deploy:
+      resources:
+        limits:
+          memory: 5G
+
 volumes:
   postgres-data:
   redpanda-data:
   mongodb-data:
+  ollama-models:

@@ -18,3 +18,4 @@ row below.
 | [0007](0007-8k-items-summaries-and-replay.md) | 8-K item extraction, summary storage, and replay | Accepted |
 | [0008](0008-llm-providers-failover-and-exhibits.md) | LLM providers, failover, and 8-K exhibits | Accepted |
 | [0009](0009-grounding-check-for-llm-summaries.md) | Grounding check for LLM summaries | Accepted |
+| [0010](0010-local-llm-in-compose-and-default-model.md) | Local LLM in a Compose profile, and the default model | Accepted |

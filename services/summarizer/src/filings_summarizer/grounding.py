@@ -7,7 +7,8 @@ not spellings, so these all count as found:
 - "5.2%" against "5.200%";
 - "$1.3 billion" against "$1,324 million": a summary number may round from its stated precision;
 - "$6.0 billion" against a table entry "6,000" when the source says "in millions";
-- "3 directors" against "three directors".
+- "3 directors" against "three directors";
+- "$6.80 to $6.85 billion" against "$6.80 billion to $6.85 billion" (a range's unit covers both).
 
 Numbers glued to letters ("Q3", "FY27") are ignored. A flagged number is not necessarily wrong;
 it is one a reader should verify.
@@ -33,6 +34,11 @@ _NUMBER = re.compile(
     r"(?:\s?(thousand|million|billion|trillion|bn|mn|[kmb])\b)?(?![A-Za-z0-9])",
     re.IGNORECASE,
 )
+# Between the two ends of a range: "$6.80 to $6.85 billion", "$1.93-1.95 billion". "And" only
+# makes a range after "between" ("between 5 and 10 million"), not in "2029 and £1.0 billion".
+_RANGE_JOINER = re.compile(r"^\s*(?:to|through|-|\u2013|\u2014)\s*[$£€]?\s*$", re.IGNORECASE)
+_AND_JOINER = re.compile(r"^\s*and\s*[$£€]?\s*$", re.IGNORECASE)
+_BETWEEN = re.compile(r"\bbetween\s*[$£€]?\s*$", re.IGNORECASE)
 # "(in millions)", "in thousands, except per share data" ...
 _TABLE_UNITS = re.compile(r"\bin (thousands|millions|billions)\b", re.IGNORECASE)
 _WORDS = [
@@ -74,9 +80,18 @@ class _Number:
 
 
 def _numbers(text: str) -> list[_Number]:
+    matches = list(_NUMBER.finditer(text))
     found = []
-    for match in _NUMBER.finditer(text):
+    for i, match in enumerate(matches):
         whole, fraction, unit = match.group(1), match.group(2) or "", match.group(3)
+        if not unit and i + 1 < len(matches):
+            following = matches[i + 1]
+            between = text[match.end() : following.start()]
+            is_range = _RANGE_JOINER.match(between) or (
+                _AND_JOINER.match(between) and _BETWEEN.search(text[: match.start()])
+            )
+            if following.group(3) and is_range:
+                unit = following.group(3)  # the unit after a range covers both ends
         scale = _SCALES[unit.lower()] if unit else 1.0
         decimals = len(fraction) - 1 if fraction else 0
         value = float(whole.replace(",", "") + fraction) * scale

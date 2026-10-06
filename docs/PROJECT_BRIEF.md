@@ -140,7 +140,7 @@ Each phase ends with something runnable, tests passing, and docs updated. Check 
   - ObjectStore (local + R2), Postgres schema + Alembic, outbox relay
   - Form 4 parser → Mongo + Postgres, `GET /filings`
   - _Done when:_ real Form 4s for the watchlist appear through the API, and re-running discovery creates no duplicates.
-- [ ] **Phase 2: Summarization.**
+- [x] **Phase 2: Summarization.**
   - 8-K item extraction, `Summarizer` interface, local + Gemini providers
   - Failover/circuit breaker, prompt versioning, replay job
   - _Done when:_ 8-Ks get validated structured summaries, stopping the local model fails over to Gemini automatically, and replay re-summarizes history.

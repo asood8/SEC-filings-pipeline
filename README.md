@@ -52,7 +52,7 @@ make down    # stop the stack (data is kept)
 ```sh
 make up && make migrate                    # stack + database schema
 # In .env, set SEC_CONTACT_EMAIL: SEC requires a contact address in every request's User-Agent.
-cp config/watchlist.example.toml config/watchlist.toml   # then list the tickers to follow
+# config/watchlist.toml lists the companies to follow (35 large-caps to start).
 uv run filings-discovery load-companies    # SEC ticker map -> companies table, flags the watchlist
 uv run filings-discovery run               # new filings -> object store + Postgres + outbox
 uv run filings-outbox-relay                # outbox -> Redpanda topics (runs until Ctrl+C)
@@ -93,7 +93,7 @@ Details and memory budget: [ADR-0003](docs/adr/0003-local-development-stack.md).
 libs/common/          shared code (filings_common): settings, events, EDGAR client, rate limiter,
                       object store, database models + migrations, outbox relay
 services/             one package per pipeline stage: discovery, parser, summarizer, notifier, api
-config/               watchlist (example committed; your watchlist.toml is yours to edit)
+config/               watchlist.toml: the companies discovery follows
 tests/fixtures/       saved EDGAR documents for parser tests
 docs/PROJECT_BRIEF.md spec, architecture, and build plan
 docs/adr/             architecture decision records

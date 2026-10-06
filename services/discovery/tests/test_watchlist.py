@@ -1,3 +1,4 @@
+import tomllib
 from pathlib import Path
 
 import pytest
@@ -31,6 +32,8 @@ def test_missing_file_points_at_the_example(tmp_path: Path) -> None:
         load_watchlist(tmp_path / "watchlist.toml")
 
 
-def test_example_watchlist_is_valid() -> None:
-    example = Path(__file__).parents[3] / "config" / "watchlist.example.toml"
-    assert load_watchlist(example)
+@pytest.mark.parametrize("name", ["watchlist.toml", "watchlist.example.toml"])
+def test_committed_watchlists_are_valid_without_duplicates(name: str) -> None:
+    path = Path(__file__).parents[3] / "config" / name
+    listed = tomllib.loads(path.read_text())["tickers"]
+    assert len(load_watchlist(path)) == len(listed)

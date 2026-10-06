@@ -218,7 +218,7 @@ CLAUDE.md
 
 ## 12. Open decisions (ask before choosing)
 
-- Watchlist: which companies and how many to start with
+- ~~Watchlist: which companies and how many to start with~~ Decided 2026-10-05: 35 large, well-known US companies across sectors (`config/watchlist.toml`)
 - Kustomize vs Helm; Sealed Secrets vs SOPS for production secrets
 - Which local LLM and embedding model (pick a reasonable default in Phase 2; decide properly with the Phase 8 benchmark)
 - Next.js vs a lighter frontend

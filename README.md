@@ -6,9 +6,10 @@ Watches SEC EDGAR for new filings from a watchlist of public companies, parses t
 free-text filings with a small LLM, makes them searchable by keyword and by meaning, and alerts
 subscribed users. It runs on free tiers at $0/month, on a single arm64 VM.
 
-> **Status:** Phase 1 is done. Phase 2 (summarization) is in progress: 8-Ks are split into their
-> items, Form 4s get deterministic summaries, and history can be replayed; LLM summaries of 8-Ks
-> come next. See the [build plan](docs/PROJECT_BRIEF.md#8-build-plan).
+> **Status:** Phase 2 (summarization) is nearly done. Form 4s get deterministic summaries, and 8-Ks
+> (with their EX-99 press releases) get LLM summaries through a failover chain (local model, then
+> Gemini's free tier). What's left is verifying the local model path live. See the
+> [build plan](docs/PROJECT_BRIEF.md#8-build-plan).
 
 ## Architecture
 
@@ -58,6 +59,9 @@ uv run filings-discovery run               # new filings -> object store + Postg
 uv run filings-outbox-relay                # outbox -> Redpanda topics (runs until Ctrl+C)
 uv run filings-parser                      # filings.discovered -> MongoDB + filings.parsed
 uv run filings-summarizer                  # filings.parsed -> summaries + filings.ready
+#   8-K summaries need an LLM: set GEMINI_API_KEY (free, from Google AI Studio) and/or LLM_MODEL
+#   (a local Ollama model). Form 4 summaries need neither.
+uv run filings-discovery fetch-exhibits    # download EX-99 exhibits for 8-Ks found before exhibits
 uv run filings-replay parsed --form-type 4 # re-summarize history (also: discovered, to reparse)
 make api                                   # http://127.0.0.1:8000/filings, docs at /docs
 ```

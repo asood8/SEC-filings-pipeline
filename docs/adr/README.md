@@ -16,3 +16,4 @@ row below.
 | [0005](0005-httpx2-instead-of-httpx.md) | Use httpx2 instead of httpx | Accepted |
 | [0006](0006-form-4-parsing-and-key-fields.md) | Form 4 parsing and key fields | Accepted |
 | [0007](0007-8k-items-summaries-and-replay.md) | 8-K item extraction, summary storage, and replay | Accepted |
+| [0008](0008-llm-providers-failover-and-exhibits.md) | LLM providers, failover, and 8-K exhibits | Accepted |

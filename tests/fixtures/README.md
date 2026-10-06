@@ -12,3 +12,6 @@ byte-exact (see `.gitattributes`) and named by accession number. Each came from
   2.03), officer changes and shareholder votes (5.02, 5.07), restructuring (2.05), unregistered
   sales (3.02), and two filing-agent layouts with a table of contents.
   `services/parser/tests/test_form8k.py` lists SEC's item numbers for each.
+- `form8k/exhibits/<accession>/`: EX-99 exhibits (press releases) of some `form8k/` filings.
+- `index_headers/`: an EDGAR `-index-headers.html` page, which lists each document of a filing
+  (type, file name, description); discovery uses it to find EX-99 exhibits.

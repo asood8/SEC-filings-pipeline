@@ -1,5 +1,5 @@
 .DEFAULT_GOAL := help
-.PHONY: help setup sync up down ps logs migrate lint fmt test
+.PHONY: help setup sync up down ps logs migrate api lint fmt test
 
 help: ## List targets
 	@grep -E '^[a-z-]+:.*## ' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*## "} {printf "  %-7s %s\n", $$1, $$2}'
@@ -27,6 +27,9 @@ logs: ## Follow local stack logs
 
 migrate: ## Apply database migrations to DATABASE_URL
 	uv run alembic upgrade head
+
+api: ## Run the API locally with auto-reload on http://127.0.0.1:8000 (docs at /docs)
+	uv run uvicorn --factory filings_api.app:create_app --reload
 
 lint: ## ruff (lint + format check) and mypy
 	uv run ruff check .

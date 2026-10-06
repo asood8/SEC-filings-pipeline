@@ -3,7 +3,11 @@ name = "filings-api"
 version = "0.1.0"
 description = "Public read API, auth, and subscriptions (FastAPI)"
 requires-python = ">=3.12"
-dependencies = ["filings-common"]
+dependencies = [
+    "fastapi>=0.120",
+    "filings-common",
+    "uvicorn[standard]>=0.38",
+]
 
 [tool.uv.sources]
 filings-common = { workspace = true }

@@ -1,7 +1,29 @@
-.PHONY: sync lint fmt test
+.DEFAULT_GOAL := help
+.PHONY: help setup sync up down ps logs lint fmt test
+
+help: ## List targets
+	@grep -E '^[a-z-]+:.*## ' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*## "} {printf "  %-7s %s\n", $$1, $$2}'
+
+setup: sync ## First-time setup: install dependencies and git hooks
+	uv run pre-commit install
 
 sync: ## Install all workspace packages and dev tools into .venv
 	uv sync
+
+.env:
+	cp .env.example .env
+
+up: .env ## Start the local stack and wait until every service is healthy
+	docker compose up -d --wait --wait-timeout 180
+
+down: ## Stop the local stack (data volumes are kept)
+	docker compose down
+
+ps: ## Show local stack status
+	docker compose ps
+
+logs: ## Follow local stack logs
+	docker compose logs -f
 
 lint: ## ruff (lint + format check) and mypy
 	uv run ruff check .

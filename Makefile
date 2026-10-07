@@ -1,5 +1,5 @@
 .DEFAULT_GOAL := help
-.PHONY: help setup sync up down ps logs llm-up llm-down migrate api pipeline images lint fmt test web-install web web-types web-check loadtest api-loadtest
+.PHONY: help setup sync up down ps logs llm-up llm-down obs-up obs-down migrate api pipeline images lint fmt test web-install web web-types web-check loadtest api-loadtest
 
 help: ## List targets
 	@grep -E '^[a-z-]+:.*## ' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*## "} {printf "  %-12s %s\n", $$1, $$2}'
@@ -16,11 +16,11 @@ sync: ## Install all workspace packages and dev tools into .venv
 up: .env ## Start the local stack and wait until every service is healthy
 	docker compose up -d --wait --wait-timeout 180
 
-down: ## Stop the local stack, including the optional LLM (data volumes are kept)
-	docker compose --profile llm down
+down: ## Stop the local stack, including the optional LLM and viewer (data volumes are kept)
+	docker compose --profile llm --profile observability down
 
 ps: ## Show local stack status
-	docker compose --profile llm ps
+	docker compose --profile llm --profile observability ps
 
 logs: ## Follow local stack logs
 	docker compose logs -f
@@ -35,6 +35,12 @@ llm-up: ## Start the optional local LLM (Ollama) and pull the default LLM and em
 
 llm-down: ## Stop the local LLM (downloaded models are kept)
 	docker compose --profile llm stop ollama
+
+obs-up: ## Start the optional local viewer for traces and metrics: Grafana on http://localhost:3001
+	docker compose --profile observability up -d --wait --wait-timeout 180 otel-lgtm
+
+obs-down: ## Stop the local viewer (its data is kept)
+	docker compose --profile observability stop otel-lgtm
 
 migrate: ## Apply database migrations to DATABASE_URL
 	uv run alembic upgrade head

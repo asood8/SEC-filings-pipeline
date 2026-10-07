@@ -10,12 +10,14 @@ that two relays never publish the same row concurrently.
 
 Each row also stores the trace context of the transaction that wrote it. The relay publishes the
 row under a short span that continues that trace, and sends the span's context in the message
-headers, so a filing's trace carries on through Kafka to the next stage (see `telemetry`).
+headers, so a filing's trace carries on through Kafka to the next stage (see `telemetry`). The
+`filings.outbox.published` metric counts relayed rows by topic.
 """
 
 import json
 import logging
 import threading
+from collections import Counter
 from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import Any, Protocol
@@ -25,9 +27,9 @@ from opentelemetry import trace
 from opentelemetry.trace import Span, SpanKind
 from sqlalchemy.orm import Session, sessionmaker
 
-from filings_common import telemetry
+from filings_common import metrics, telemetry
 from filings_common.db import OutboxEvent
-from filings_common.events import Event
+from filings_common.events import Event, Topic
 
 logger = logging.getLogger(__name__)
 tracer = trace.get_tracer(__name__)
@@ -99,6 +101,9 @@ def relay_batch(
             .where(OutboxEvent.id.in_([r.id for r in rows]))
             .values(published_at=sa.func.now())
         )
+        by_topic = Counter(r.topic for r in rows)
+    for topic, count in by_topic.items():  # counted once marked published (committed)
+        metrics.OUTBOX_PUBLISHED.add(count, metrics.topic(topic))
     return len(rows)
 
 
@@ -133,6 +138,7 @@ def run_relay(
     idle_seconds: float = 1.0,
 ) -> None:
     """Relay until `stop` is set. Failed batches stay unpublished and are retried after a pause."""
+    metrics.start_at_zero(metrics.OUTBOX_PUBLISHED, (metrics.topic(t.value) for t in Topic))
     while not stop.is_set():
         try:
             published = relay_batch(sessions, publisher, batch_size)

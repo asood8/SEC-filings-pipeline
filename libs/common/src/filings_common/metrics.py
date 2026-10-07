@@ -91,6 +91,17 @@ FILINGS_READY = meter.create_counter(
     description="Filings summarized and announced for the first time (status parsed -> ready).",
 )
 
+# --- Outbox relay ---------------------------------------------------------------------------------
+
+OUTBOX_PUBLISHED = meter.create_counter(
+    "filings.outbox.published",
+    unit="{message}",
+    description=(
+        "Outbox events the relay published and marked published, by topic "
+        "(messaging.destination.name)."
+    ),
+)
+
 # --- Alerts ---------------------------------------------------------------------------------------
 
 NOTIFICATIONS = meter.create_counter(

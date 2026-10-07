@@ -2,6 +2,7 @@ import json
 import threading
 from collections.abc import Sequence
 from datetime import date
+from typing import Any
 
 import pytest
 import sqlalchemy as sa
@@ -11,8 +12,9 @@ from opentelemetry.trace import SpanKind, StatusCode
 from sqlalchemy.engine import Engine
 
 from filings_common.db import OutboxEvent, session_factory
-from filings_common.events import FilingDiscovered, Topic
+from filings_common.events import FilingDiscovered, FilingReady, Topic
 from filings_common.outbox import OutboundMessage, enqueue, relay_batch, run_relay
+from filings_common.telemetry import MESSAGING_DESTINATION as DESTINATION
 from filings_common.telemetry import context_from_headers
 
 pytestmark = pytest.mark.integration
@@ -68,11 +70,30 @@ def test_publishes_in_order_then_marks_published(clean_db: Engine) -> None:
     assert unpublished(clean_db) == 0
 
 
-def test_failed_publish_leaves_rows_for_retry(clean_db: Engine) -> None:
+def test_published_rows_are_counted_by_topic(clean_db: Engine, measured: Any) -> None:
+    add_events(clean_db, 3)
+    with session_factory(clean_db).begin() as session:
+        ready = FilingReady(
+            accession_no="0000320193-26-000009", cik=320193, form_type="8-K", summary_id=1
+        )
+        enqueue(session, Topic.FILINGS_READY, ready)
+    relay_batch(session_factory(clean_db), RecordingPublisher())
+
+    assert measured.total("filings.outbox.published", {DESTINATION: "filings.discovered"}) == 3
+    assert measured.total("filings.outbox.published", {DESTINATION: "filings.ready"}) == 1
+    # By topic only: never by accession number.
+    assert measured.attribute_sets("filings.outbox.published") == [
+        {DESTINATION: "filings.discovered"},
+        {DESTINATION: "filings.ready"},
+    ]
+
+
+def test_failed_publish_leaves_rows_for_retry(clean_db: Engine, measured: Any) -> None:
     add_events(clean_db, 2)
     with pytest.raises(RuntimeError, match="broker unavailable"):
         relay_batch(session_factory(clean_db), RecordingPublisher(fail=True))
     assert unpublished(clean_db) == 2
+    assert measured.total("filings.outbox.published") == 0
 
 
 def test_rows_locked_by_another_relay_are_skipped(clean_db: Engine) -> None:
@@ -86,7 +107,7 @@ def test_rows_locked_by_another_relay_are_skipped(clean_db: Engine) -> None:
     assert [m.key for m in publisher.batches[0]] == accessions[1:]
 
 
-def test_run_relay_drains_the_outbox_until_stopped(clean_db: Engine) -> None:
+def test_run_relay_drains_the_outbox_until_stopped(clean_db: Engine, measured: Any) -> None:
     add_events(clean_db, 5)
     publisher = RecordingPublisher()
     stop = threading.Event()
@@ -106,6 +127,12 @@ def test_run_relay_drains_the_outbox_until_stopped(clean_db: Engine) -> None:
         worker.join(timeout=5)
     assert not worker.is_alive()
     assert [len(b) for b in publisher.batches] == [2, 2, 1]
+    # Every topic's series exists from the start, at zero until something is published to it.
+    assert measured.attribute_sets("filings.outbox.published") == [
+        {DESTINATION: topic.value} for topic in sorted(Topic)
+    ]
+    assert measured.total("filings.outbox.published", {DESTINATION: "filings.discovered"}) == 5
+    assert measured.total("filings.outbox.published", {DESTINATION: "filings.ready"}) == 0
 
 
 def stored_trace_contexts(engine: Engine) -> list[dict[str, str] | None]:

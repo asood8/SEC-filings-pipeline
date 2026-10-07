@@ -50,7 +50,7 @@ Example headlines from that run (public filings):
 | 1. Thin vertical slice | EDGAR client, discovery, outbox relay, Form 4 parser, `GET /filings` | Done |
 | 2. Summarization | 8-K items and exhibits, Form 4 template, LLM failover, replay | Done |
 | 3. Search and API | Full-text and semantic search (pgvector), caching, rate limiting | Done |
-| 4. Users and alerts | Google sign-in, subscriptions, Discord/Slack/email alerts | Next |
+| 4. Users and alerts | Google sign-in, subscriptions, Discord/Slack/email alerts | In progress: notifier done; sign-in and subscriptions next |
 | 5. Frontend | Next.js site on Cloudflare Pages | Planned |
 | 6. Observability | OpenTelemetry traces, metrics, Grafana dashboards and alerts | Planned |
 | 7. Production | Terraform, k3s on Oracle Cloud's free tier, Argo CD, multi-arch images | Planned |
@@ -79,7 +79,8 @@ flowchart LR
   API --> PG
 ```
 
-This is the target design. The notifier and the web frontend are not built yet.
+This is the target design. The web frontend and the cloud deployment are not built yet, and
+sign-in and the subscription API are next.
 
 Each stage is a separate service connected by Redpanda (Kafka API) topics. Some design choices
 worth a look:
@@ -94,6 +95,9 @@ worth a look:
 - **LLM failover with circuit breakers**, plus a deterministic grounding check on every LLM
   summary. ([ADR-0008](docs/adr/0008-llm-providers-failover-and-exhibits.md),
   [ADR-0009](docs/adr/0009-grounding-check-for-llm-summaries.md))
+- **Exactly-once alerts**: one notification row per (subscription, filing), delivered under a
+  row lock, so redeliveries and full replays never alert twice; webhook targets are restricted
+  to official Discord and Slack URLs. ([ADR-0012](docs/adr/0012-notifier-and-exactly-once-alerts.md))
 - **Hybrid search in Postgres**: full-text and vector results merged with reciprocal rank
   fusion, degrading to keywords when the embedding model is down.
   ([ADR-0011](docs/adr/0011-search-and-public-api.md))
@@ -125,6 +129,7 @@ uv run filings-discovery run               # new filings -> object store + Postg
 uv run filings-outbox-relay                # outbox -> Redpanda topics (runs until Ctrl+C)
 uv run filings-parser                      # filings.discovered -> MongoDB + filings.parsed
 uv run filings-summarizer                  # filings.parsed -> summaries + filings.ready
+uv run filings-notifier                    # filings.ready -> Discord / Slack / email alerts
 uv run filings-index                       # build the search index (embeddings need EMBEDDING_MODEL)
 make api                                   # http://127.0.0.1:8000, interactive docs at /docs
 ```

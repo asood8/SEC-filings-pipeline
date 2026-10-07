@@ -228,6 +228,87 @@ class FilingEmbedding(Base):
     )
 
 
+class Channel(StrEnum):
+    DISCORD = "discord"
+    SLACK = "slack"
+    EMAIL = "email"
+
+
+class NotificationStatus(StrEnum):
+    PENDING = "pending"  # not delivered yet (new, or a transient failure that will be retried)
+    SENT = "sent"
+    FAILED = "failed"  # permanently: the target rejected it (e.g. a deleted webhook)
+
+
+def _text_enum(enum: type[StrEnum], name: str) -> sa.Enum:
+    return sa.Enum(
+        enum,
+        name=name,
+        native_enum=False,
+        create_constraint=True,
+        length=16,
+        values_callable=lambda members: [m.value for m in members],
+    )
+
+
+class User(Base):
+    __tablename__ = "users"
+
+    id: Mapped[int] = mapped_column(sa.BigInteger, sa.Identity(always=True), primary_key=True)
+    email: Mapped[str]
+    # Google's stable account ID (the ID token's `sub`); emails can change.
+    google_sub: Mapped[str] = mapped_column(unique=True)
+    created_at: Mapped[datetime] = mapped_column(server_default=sa.func.now())
+
+
+class Subscription(Base):
+    """Alert `target` (a webhook URL or an email address) about a company's new filings."""
+
+    __tablename__ = "subscriptions"
+    __table_args__ = (sa.Index("ix_subscriptions_cik", "cik"),)
+
+    id: Mapped[int] = mapped_column(sa.BigInteger, sa.Identity(always=True), primary_key=True)
+    user_id: Mapped[int] = mapped_column(
+        sa.BigInteger, sa.ForeignKey("users.id", ondelete="CASCADE")
+    )
+    cik: Mapped[int] = mapped_column(sa.BigInteger, sa.ForeignKey("companies.cik"))
+    # Empty means every form type.
+    form_types: Mapped[list[str]] = mapped_column(
+        ARRAY(sa.Text()), server_default=sa.text("'{}'::text[]")
+    )
+    channel: Mapped[Channel] = mapped_column(_text_enum(Channel, "channel"))
+    target: Mapped[str]
+    created_at: Mapped[datetime] = mapped_column(server_default=sa.func.now())
+
+
+class Notification(Base):
+    """One alert per (subscription, filing), enforced by the unique constraint: replays and
+    redeliveries can never alert the same subscription about the same filing twice."""
+
+    __tablename__ = "notifications"
+    __table_args__ = (sa.UniqueConstraint("subscription_id", "accession_no"),)
+
+    id: Mapped[int] = mapped_column(sa.BigInteger, sa.Identity(always=True), primary_key=True)
+    subscription_id: Mapped[int] = mapped_column(
+        sa.BigInteger, sa.ForeignKey("subscriptions.id", ondelete="CASCADE")
+    )
+    accession_no: Mapped[str] = mapped_column(
+        sa.ForeignKey("filings.accession_no", ondelete="CASCADE")
+    )
+    status: Mapped[NotificationStatus] = mapped_column(
+        _text_enum(NotificationStatus, "status"),
+        default=NotificationStatus.PENDING,
+        server_default=NotificationStatus.PENDING.value,
+    )
+    attempts: Mapped[int] = mapped_column(default=0, server_default=sa.text("0"))
+    last_error: Mapped[str | None]
+    sent_at: Mapped[datetime | None]
+    created_at: Mapped[datetime] = mapped_column(server_default=sa.func.now())
+    updated_at: Mapped[datetime] = mapped_column(
+        server_default=sa.func.now(), onupdate=sa.func.now()
+    )
+
+
 class OutboxEvent(Base):
     """An event written in the same transaction as the change it announces (transactional outbox).
 

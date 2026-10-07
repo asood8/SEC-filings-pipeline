@@ -56,6 +56,12 @@ def test_replay_discovered_filters_by_form_and_status(seeded: Engine) -> None:
     assert event.raw_object_key == "filings/320193/0000320193-26-000001/doc"
 
 
+def test_replay_one_filing_by_accession_number(seeded: Engine) -> None:
+    sessions = session_factory(seeded)
+    assert replay_discovered(sessions, accession_nos=["0000320193-26-000001", "missing"]) == 1
+    assert [r.key for r in outbox(seeded)] == ["0000320193-26-000001"]
+
+
 def test_replay_discovered_everything_in_filing_order(seeded: Engine) -> None:
     assert replay_discovered(session_factory(seeded)) == 4
     assert [r.key for r in outbox(seeded)] == [f[0] for f in FILINGS]

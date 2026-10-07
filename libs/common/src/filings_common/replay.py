@@ -42,9 +42,15 @@ PARSED_OR_LATER = (FilingStatus.PARSED, FilingStatus.READY, FilingStatus.NOTIFIE
 
 
 def _filings(
-    session: Session, *, form_type: str | None, statuses: Sequence[FilingStatus] | None
+    session: Session,
+    *,
+    form_type: str | None,
+    statuses: Sequence[FilingStatus] | None,
+    accession_nos: Sequence[str] | None = None,
 ) -> list[Filing]:
     query = sa.select(Filing).order_by(Filing.filed_at, Filing.accession_no)
+    if accession_nos is not None:
+        query = query.where(Filing.accession_no.in_(accession_nos))
     if form_type is not None:
         query = query.where(Filing.form_type == form_type)
     if statuses is not None:
@@ -63,10 +69,13 @@ def replay_discovered(
     *,
     form_type: str | None = None,
     statuses: Sequence[FilingStatus] | None = None,
+    accession_nos: Sequence[str] | None = None,
 ) -> int:
     """Enqueue `filings.discovered` for matching filings. Returns how many."""
     with sessions() as session:
-        filings = _filings(session, form_type=form_type, statuses=statuses)
+        filings = _filings(
+            session, form_type=form_type, statuses=statuses, accession_nos=accession_nos
+        )
     for batch in batched(filings, BATCH_SIZE):
         with sessions.begin() as session:
             for filing in batch:
@@ -87,13 +96,16 @@ def replay_parsed(
     parsed: ParsedFilingStore,
     *,
     form_type: str | None = None,
+    accession_nos: Sequence[str] | None = None,
 ) -> int:
     """Enqueue `filings.parsed` for parsed filings. Returns how many.
 
     The parser version comes from the stored payload; filings with no payload are skipped.
     """
     with sessions() as session:
-        filings = _filings(session, form_type=form_type, statuses=PARSED_OR_LATER)
+        filings = _filings(
+            session, form_type=form_type, statuses=PARSED_OR_LATER, accession_nos=accession_nos
+        )
     count = 0
     for batch in batched(filings, BATCH_SIZE):
         versions = parsed.parser_versions([f.accession_no for f in batch])
@@ -125,6 +137,11 @@ def main(argv: list[str] | None = None) -> int:
         action="append",
         help="only filings in this status (repeatable; discovered replays only)",
     )
+    parser.add_argument(
+        "--accession",
+        action="append",
+        help="only this filing, by accession number (repeatable): e.g. to reprocess one filing",
+    )
     args = parser.parse_args(argv)
     if args.status and args.event != "discovered":
         parser.error("--status applies to discovered replays only")
@@ -136,9 +153,16 @@ def main(argv: list[str] | None = None) -> int:
         with tracer.start_as_current_span(f"replay {args.event}"):
             if args.event == "discovered":
                 statuses = [FilingStatus(s) for s in args.status] if args.status else None
-                count = replay_discovered(sessions, form_type=args.form_type, statuses=statuses)
+                count = replay_discovered(
+                    sessions,
+                    form_type=args.form_type,
+                    statuses=statuses,
+                    accession_nos=args.accession,
+                )
             else:
-                count = _replay_parsed(sessions, form_type=args.form_type)
+                count = _replay_parsed(
+                    sessions, form_type=args.form_type, accession_nos=args.accession
+                )
     finally:
         engine.dispose()
         telemetry.shutdown()
@@ -146,12 +170,17 @@ def main(argv: list[str] | None = None) -> int:
     return 0
 
 
-def _replay_parsed(sessions: sessionmaker[Session], *, form_type: str | None) -> int:
+def _replay_parsed(
+    sessions: sessionmaker[Session], *, form_type: str | None, accession_nos: list[str] | None
+) -> int:
     mongo = MongoSettings()
     client: MongoClient[dict[str, Any]] = MongoClient(mongo.mongodb_url.get_secret_value())
     try:
         return replay_parsed(
-            sessions, ParsedFilingStore(client[mongo.mongodb_database]), form_type=form_type
+            sessions,
+            ParsedFilingStore(client[mongo.mongodb_database]),
+            form_type=form_type,
+            accession_nos=accession_nos,
         )
     finally:
         client.close()

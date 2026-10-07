@@ -21,3 +21,4 @@ row below.
 | [0010](0010-local-llm-in-compose-and-default-model.md) | Local LLM in a Compose profile, and the default model | Accepted |
 | [0011](0011-search-and-public-api.md) | Search and the public API | Accepted |
 | [0012](0012-notifier-and-exactly-once-alerts.md) | Notifier and exactly-once alerts | Accepted |
+| [0013](0013-sign-in-and-sessions.md) | Sign-in with Google and sessions | Accepted |

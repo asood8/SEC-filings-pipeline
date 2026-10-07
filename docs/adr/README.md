@@ -24,3 +24,4 @@ row below.
 | [0013](0013-sign-in-and-sessions.md) | Sign-in with Google and sessions | Accepted |
 | [0014](0014-container-images.md) | Container images for the services | Accepted |
 | [0015](0015-frontend-stack.md) | Frontend stack: Vite, React, and TypeScript | Accepted |
+| [0018](0018-terraform.md) | Infrastructure as code with Terraform | Proposed |

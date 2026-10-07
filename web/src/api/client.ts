@@ -9,6 +9,9 @@ export type Company = Schemas['CompanyOut']
 export type User = Schemas['UserOut']
 export type Subscription = Schemas['SubscriptionOut']
 export type NewSubscription = Schemas['SubscriptionCreate']
+export type SubscriptionBatch = Schemas['SubscriptionBatch']
+export type Destination = Schemas['Destination']
+export type SubscriptionUpdate = Schemas['SubscriptionUpdate']
 export type Channel = Schemas['Channel']
 
 export const API_BASE_URL: string =

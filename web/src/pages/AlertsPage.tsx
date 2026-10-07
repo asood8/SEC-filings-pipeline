@@ -84,12 +84,15 @@ function SignedIn({ user }: { user: User }) {
       ) : subscriptions.isError ? (
         <ErrorMessage error={subscriptions.error} />
       ) : (
-        <SubscriptionList subscriptions={subscriptions.data} />
+        <>
+          <SubscriptionList subscriptions={subscriptions.data} />
+          <SubscriptionForm
+            user={user}
+            subscriptions={subscriptions.data}
+            initialTicker={params.get('ticker') ?? undefined}
+          />
+        </>
       )}
-      <SubscriptionForm
-        user={user}
-        initialTicker={params.get('ticker') ?? ''}
-      />
 
       <details>
         <summary>Delete your account</summary>

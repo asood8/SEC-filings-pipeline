@@ -7,6 +7,7 @@ dependencies = ["filings-common"]
 
 [project.scripts]
 filings-summarizer = "filings_summarizer.cli:main"
+filings-benchmark = "filings_summarizer.benchmark:main"
 
 [dependency-groups]
 # Tests turn real EDGAR fixtures into payloads with the real parser.

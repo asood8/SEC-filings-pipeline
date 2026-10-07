@@ -1,6 +1,7 @@
 import type { RouteObject } from 'react-router'
 import { Layout } from './components/Layout'
 import { AlertsPage } from './pages/AlertsPage'
+import { ErrorPage } from './pages/ErrorPage'
 import { CompaniesPage } from './pages/CompaniesPage'
 import { CompanyPage } from './pages/CompanyPage'
 import { FeedPage } from './pages/FeedPage'
@@ -11,6 +12,7 @@ import { SearchPage } from './pages/SearchPage'
 export const routes: RouteObject[] = [
   {
     element: <Layout />,
+    errorElement: <ErrorPage />,
     children: [
       { index: true, element: <FeedPage /> },
       { path: 'search', element: <SearchPage /> },

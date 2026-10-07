@@ -184,6 +184,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/subscriptions/batch": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Subscribe to several companies and destinations at once
+         * @description Creates every combination of `tickers` and `destinations`, all or nothing. Combinations you already have are left unchanged and listed in `existing`. A webhook can be reused from an existing subscription with `target_from`. The 25-subscription limit applies to the total.
+         */
+        post: operations["create_subscriptions_subscriptions_batch_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/subscriptions/{subscription_id}": {
         parameters: {
             query?: never;
@@ -253,6 +273,49 @@ export interface components {
             ticker: string;
             /** Name */
             name: string;
+        };
+        /** DeliveryOut */
+        DeliveryOut: {
+            /**
+             * Status
+             * @description pending: not delivered yet and will be retried; failed: rejected for good.
+             * @enum {string}
+             */
+            status: "pending" | "sent" | "failed";
+            /**
+             * Accession No
+             * @description The filing the alert was about.
+             */
+            accession_no: string;
+            /**
+             * At
+             * Format: date-time
+             * @description When it was sent, or last attempted.
+             */
+            at: string;
+            /**
+             * Error
+             * @description Why the last attempt failed, e.g. a deleted webhook. Null once sent.
+             */
+            error: string | null;
+        };
+        /**
+         * Destination
+         * @description Where alerts go. For a webhook, give its URL as `target`, or `target_from` to reuse the
+         *     webhook of one of your existing subscriptions without pasting it again.
+         */
+        Destination: {
+            channel: components["schemas"]["Channel"];
+            /**
+             * Target
+             * @description A Discord or Slack webhook URL. For email, your account's address: the default, and the only one allowed.
+             */
+            target?: string | null;
+            /**
+             * Target From
+             * @description The id of one of your subscriptions on the same channel, to copy its target.
+             */
+            target_from?: number | null;
         };
         /** ExhibitOut */
         ExhibitOut: {
@@ -449,6 +512,37 @@ export interface components {
              */
             score: number;
         };
+        /**
+         * SubscriptionBatch
+         * @description Every combination of `tickers` and `destinations`, with the same form types.
+         */
+        SubscriptionBatch: {
+            /**
+             * Tickers
+             * @example [
+             *       "AAPL",
+             *       "MSFT"
+             *     ]
+             */
+            tickers: string[];
+            /**
+             * Form Types
+             * @description Alert only about these forms; empty means every form.
+             */
+            form_types?: ("4" | "8-K")[];
+            /** Destinations */
+            destinations: components["schemas"]["Destination"][];
+        };
+        /** SubscriptionBatchOut */
+        SubscriptionBatchOut: {
+            /** Created */
+            created: components["schemas"]["SubscriptionOut"][];
+            /**
+             * Existing
+             * @description Combinations you were already subscribed to, left unchanged.
+             */
+            existing: components["schemas"]["SubscriptionOut"][];
+        };
         /** SubscriptionCreate */
         SubscriptionCreate: {
             /**
@@ -489,6 +583,8 @@ export interface components {
              * Format: date-time
              */
             created_at: string;
+            /** @description The most recent alert for this subscription, if any. */
+            last_delivery?: components["schemas"]["DeliveryOut"] | null;
         };
         /**
          * SubscriptionUpdate
@@ -864,6 +960,39 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["SubscriptionOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_subscriptions_subscriptions_batch_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SubscriptionBatch"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SubscriptionBatchOut"];
                 };
             };
             /** @description Validation Error */

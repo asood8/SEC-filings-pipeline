@@ -15,12 +15,29 @@ from typing import Annotated
 
 import sqlalchemy as sa
 from fastapi import APIRouter, Depends, HTTPException, Path, Response
+from sqlalchemy.dialects.postgresql import distinct_on
 from sqlalchemy.orm import Session
 
 from filings_api.auth import CurrentUser
 from filings_api.queries import SessionDep, company_by_ticker
-from filings_api.schemas import CompanyRef, SubscriptionCreate, SubscriptionOut, SubscriptionUpdate
-from filings_common.db import Channel, Company, Subscription, User
+from filings_api.schemas import (
+    CompanyRef,
+    DeliveryOut,
+    Destination,
+    SubscriptionBatch,
+    SubscriptionBatchOut,
+    SubscriptionCreate,
+    SubscriptionOut,
+    SubscriptionUpdate,
+)
+from filings_common.db import (
+    Channel,
+    Company,
+    Notification,
+    NotificationStatus,
+    Subscription,
+    User,
+)
 from filings_common.targets import masked_target, target_is_valid
 
 # Per user. Keeps the list short enough to need no pages, and bounds one account's alert fan-out.
@@ -54,7 +71,9 @@ def _duplicate(ticker: str) -> HTTPException:
     return _error(409, f"you already have a subscription to {ticker} with this channel and target")
 
 
-def _subscription_out(subscription: Subscription, company: Company) -> SubscriptionOut:
+def _subscription_out(
+    subscription: Subscription, company: Company, last: Notification | None = None
+) -> SubscriptionOut:
     return SubscriptionOut(
         id=subscription.id,
         company=CompanyRef(cik=company.cik, ticker=company.ticker, name=company.name),
@@ -62,7 +81,28 @@ def _subscription_out(subscription: Subscription, company: Company) -> Subscript
         channel=subscription.channel,
         target=masked_target(subscription.channel, subscription.target),
         created_at=subscription.created_at,
+        last_delivery=None
+        if last is None
+        else DeliveryOut(
+            status=last.status.value,
+            accession_no=last.accession_no,
+            at=last.sent_at or last.updated_at,
+            error=last.last_error if last.status is not NotificationStatus.SENT else None,
+        ),
     )
+
+
+def _last_deliveries(session: Session, subscription_ids: list[int]) -> dict[int, Notification]:
+    """Each subscription's most recent notification, in one query."""
+    if not subscription_ids:
+        return {}
+    latest = session.scalars(
+        sa.select(Notification)
+        .where(Notification.subscription_id.in_(subscription_ids))
+        .order_by(Notification.subscription_id, Notification.id.desc())
+        .ext(distinct_on(Notification.subscription_id))
+    )
+    return {notification.subscription_id: notification for notification in latest}
 
 
 def _own_subscription(
@@ -131,7 +171,7 @@ def _check_not_duplicate(
         raise _duplicate(company.ticker)
 
 
-def _commit(session: Session, company: Company) -> None:
+def _commit(session: Session, company: Company | None) -> None:
     """Commit. The unique constraint on (user_id, cik, channel, target) backs up the duplicate
     check, e.g. against rows written outside the API: a violation is a 409 too."""
     try:
@@ -139,8 +179,16 @@ def _commit(session: Session, company: Company) -> None:
     except sa.exc.IntegrityError as exc:
         session.rollback()
         if getattr(exc.orig, "sqlstate", None) == UNIQUE_VIOLATION:
+            if company is None:
+                raise _error(409, "a subscription was added at the same time; try again") from None
             raise _duplicate(company.ticker) from None
         raise
+
+
+def _count(session: Session, user: User) -> int:
+    return session.execute(
+        sa.select(sa.func.count()).select_from(Subscription).where(Subscription.user_id == user.id)
+    ).scalar_one()
 
 
 @router.get(
@@ -155,7 +203,8 @@ def list_subscriptions(session: SessionDep, user: CurrentUser) -> list[Subscript
         .where(Subscription.user_id == user.id)
         .order_by(Subscription.id)
     ).all()
-    return [_subscription_out(subscription, company) for subscription, company in rows]
+    last = _last_deliveries(session, [subscription.id for subscription, _ in rows])
+    return [_subscription_out(s, company, last.get(s.id)) for s, company in rows]
 
 
 @router.post(
@@ -181,10 +230,7 @@ def create_subscription(
         )
     user = _lock_user(session, user)
     target = _checked_target(user, body.channel, body.target)
-    count = session.execute(
-        sa.select(sa.func.count()).select_from(Subscription).where(Subscription.user_id == user.id)
-    ).scalar_one()
-    if count >= MAX_SUBSCRIPTIONS:
+    if _count(session, user) >= MAX_SUBSCRIPTIONS:
         raise _error(
             409, f"you have the maximum of {MAX_SUBSCRIPTIONS} subscriptions; delete one first"
         )
@@ -199,6 +245,100 @@ def create_subscription(
     session.add(subscription)
     _commit(session, company)
     return _subscription_out(subscription, company)
+
+
+def _batch_target(session: Session, user: User, destination: Destination) -> str:
+    """The target to store for one destination of a batch, or 422."""
+    if destination.target_from is None or destination.channel is Channel.EMAIL:
+        return _checked_target(user, destination.channel, destination.target)
+    if destination.target is not None:
+        raise _error(422, "give either target or target_from, not both")
+    source = session.scalars(
+        sa.select(Subscription).where(
+            Subscription.id == destination.target_from, Subscription.user_id == user.id
+        )
+    ).one_or_none()
+    if source is None or source.channel is not destination.channel:
+        raise _error(
+            422, f"target_from must be one of your {destination.channel.value} subscriptions"
+        )
+    return source.target
+
+
+@router.post(
+    "/subscriptions/batch",
+    status_code=201,
+    summary="Subscribe to several companies and destinations at once",
+    description=(
+        "Creates every combination of `tickers` and `destinations`, all or nothing. Combinations "
+        "you already have are left unchanged and listed in `existing`. A webhook can be reused "
+        "from an existing subscription with `target_from`. The "
+        f"{MAX_SUBSCRIPTIONS}-subscription limit applies to the total."
+    ),
+)
+def create_subscriptions(
+    session: SessionDep, user: CurrentUser, body: SubscriptionBatch
+) -> SubscriptionBatchOut:
+    companies: dict[int, Company] = {}
+    unknown, unwatched = [], []
+    for ticker in body.tickers:
+        company = company_by_ticker(session, ticker)
+        if company is None:
+            unknown.append(ticker.strip())
+        elif not company.on_watchlist:
+            unwatched.append(company.ticker)
+        else:
+            companies.setdefault(company.cik, company)
+    if unknown:
+        raise _error(422, f"unknown ticker(s): {', '.join(unknown)}")
+    if unwatched:
+        raise _error(
+            422,
+            f"not on the watchlist (filings, and so alerts, are only collected for watchlist "
+            f"companies): {', '.join(unwatched)}",
+        )
+
+    user = _lock_user(session, user)
+    targets = list(
+        dict.fromkeys((d.channel, _batch_target(session, user, d)) for d in body.destinations)
+    )
+    existing = {
+        (subscription.cik, subscription.channel, subscription.target): subscription
+        for subscription in session.scalars(
+            sa.select(Subscription).where(
+                Subscription.user_id == user.id, Subscription.cik.in_(companies)
+            )
+        )
+    }
+    created: list[Subscription] = []
+    already: list[Subscription] = []
+    for company in companies.values():
+        for channel, target in targets:
+            if match := existing.get((company.cik, channel, target)):
+                already.append(match)
+            else:
+                created.append(
+                    Subscription(
+                        user_id=user.id,
+                        cik=company.cik,
+                        form_types=list(body.form_types),
+                        channel=channel,
+                        target=target,
+                    )
+                )
+    total = _count(session, user) + len(created)
+    if total > MAX_SUBSCRIPTIONS:
+        raise _error(
+            409,
+            f"that would make {total} subscriptions, over the maximum of {MAX_SUBSCRIPTIONS}; "
+            "choose fewer or delete some first",
+        )
+    session.add_all(created)
+    _commit(session, None)
+    return SubscriptionBatchOut(
+        created=[_subscription_out(s, companies[s.cik]) for s in created],
+        existing=[_subscription_out(s, companies[s.cik]) for s in already],
+    )
 
 
 @router.patch(
@@ -229,7 +369,8 @@ def update_subscription(
         subscription.form_types = list(body.form_types)
     subscription.channel, subscription.target = channel, target
     _commit(session, company)
-    return _subscription_out(subscription, company)
+    last = _last_deliveries(session, [subscription.id])
+    return _subscription_out(subscription, company, last.get(subscription.id))
 
 
 @router.delete(

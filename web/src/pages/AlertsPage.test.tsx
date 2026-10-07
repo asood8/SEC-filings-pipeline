@@ -94,70 +94,148 @@ describe('AlertsPage', () => {
     expect(screen.getByText(/…abcd/)).toBeInTheDocument()
   })
 
-  it('adds an alert and shows API errors', async () => {
-    let created: unknown
+  it('adds several companies and destinations at once, reusing a saved webhook', async () => {
+    let sent: unknown
     mockApi({
       '/me': () => USER,
       'GET /subscriptions': () => subscriptions,
-      'POST /subscriptions': async (_url, request) => {
-        created = await request.json()
-        if (subscriptions.length > 1) {
-          return Response.json(
-            {
-              detail:
-                'you already have a subscription to MSFT with this channel and target',
-            },
-            { status: 409 },
-          )
-        }
-        subscriptions = [...subscriptions, { ...APPLE_ALERT, id: 8 }]
-        return Response.json(subscriptions[1], { status: 201 })
+      'POST /subscriptions/batch': async (_url, request) => {
+        sent = await request.json()
+        const created = [8, 9, 10, 11].map((id) => ({ ...APPLE_ALERT, id }))
+        subscriptions = [...subscriptions, ...created]
+        return Response.json(
+          { created, existing: [APPLE_ALERT] },
+          { status: 201 },
+        )
       },
       '/companies': () => WATCHLIST,
     })
     renderRoute('/alerts?ticker=msft')
 
     const form = (
-      await screen.findByRole('heading', { name: 'Add an alert' })
+      await screen.findByRole('heading', { name: 'Add alerts' })
     ).closest('form')!
-    await screen.findByRole('option', { name: /MICROSOFT/ })
-    expect(within(form).getByLabelText('Company')).toHaveValue('MSFT') // from the company page
+    const msft = await within(form).findByRole('checkbox', { name: /MSFT/ })
+    expect(msft).toBeChecked() // preselected from the company page
+    await userEvent.click(within(form).getByRole('checkbox', { name: /AAPL/ }))
     await userEvent.click(within(form).getByLabelText('Current reports (8-K)'))
+    await userEvent.click(
+      within(form).getByRole('checkbox', { name: 'Discord' }),
+    )
+    // The webhook already in use is offered instead of pasting it again.
+    expect(within(form).getByLabelText('Discord webhook')).toHaveDisplayValue(
+      'Same webhook as before (…abcd)',
+    )
+    expect(
+      within(form).queryByLabelText('Discord webhook URL'),
+    ).not.toBeInTheDocument()
+    await userEvent.click(within(form).getByRole('checkbox', { name: 'Slack' }))
     await userEvent.type(
-      within(form).getByLabelText(/Webhook URL/),
-      'https://discord.com/api/webhooks/1/token',
+      within(form).getByLabelText('Slack webhook URL'),
+      'https://hooks.slack.com/services/T1/B1/token',
     )
     await userEvent.click(
-      within(form).getByRole('button', { name: 'Add alert' }),
+      within(form).getByRole('button', { name: 'Add 4 alerts' }),
     )
-    expect(
-      await screen.findAllByRole('button', { name: /Remove the AAPL alert/ }),
-    ).toHaveLength(2)
-    expect(created).toEqual({
-      ticker: 'MSFT',
-      channel: 'discord',
-      form_types: ['8-K'],
-      target: 'https://discord.com/api/webhooks/1/token',
-    })
 
-    await userEvent.selectOptions(
-      within(form).getByLabelText('Company'),
-      'MSFT',
+    expect(await within(form).findByRole('status')).toHaveTextContent(
+      'Added 4 alerts. 1 already existed.',
     )
-    await userEvent.selectOptions(
-      within(form).getByLabelText('Send to'),
-      'email',
-    )
+    expect(sent).toEqual({
+      tickers: ['MSFT', 'AAPL'],
+      form_types: ['8-K'],
+      destinations: [
+        { channel: 'discord', target_from: 7 },
+        {
+          channel: 'slack',
+          target: 'https://hooks.slack.com/services/T1/B1/token',
+        },
+      ],
+    })
     expect(
-      within(form).getByText(/go to your account's address, ada@example.com/),
-    ).toBeInTheDocument()
+      within(form).getByRole('checkbox', { name: /MSFT/ }),
+    ).not.toBeChecked() // reset
+  })
+
+  it('shows API errors', async () => {
+    mockApi({
+      '/me': () => USER,
+      'GET /subscriptions': () => [],
+      'POST /subscriptions/batch': () =>
+        Response.json(
+          {
+            detail: 'that would make 26 subscriptions, over the maximum of 25',
+          },
+          { status: 409 },
+        ),
+      '/companies': () => WATCHLIST,
+    })
+    renderRoute('/alerts')
+
+    const form = (
+      await screen.findByRole('heading', { name: 'Add alerts' })
+    ).closest('form')!
+    const submit = within(form).getByRole('button', {
+      name: /Choose companies/,
+    })
+    expect(submit).toBeDisabled()
     await userEvent.click(
-      within(form).getByRole('button', { name: 'Add alert' }),
+      await within(form).findByRole('checkbox', { name: /AAPL/ }),
+    )
+    await userEvent.click(
+      within(form).getByRole('checkbox', { name: /Email to ada@example.com/ }),
+    )
+    await userEvent.click(
+      within(form).getByRole('button', { name: 'Add 1 alert' }),
     )
     expect(await within(form).findByRole('alert')).toHaveTextContent(
-      'You already have a subscription to MSFT',
+      'over the maximum of 25',
     )
-    expect(created).toMatchObject({ channel: 'email', target: null })
+  })
+
+  it("shows failed deliveries and edits an alert's forms", async () => {
+    let patched: unknown
+    subscriptions = [
+      {
+        ...APPLE_ALERT,
+        last_delivery: {
+          status: 'failed',
+          accession_no: '0000320193-26-000001',
+          at: '2026-10-07T14:00:00Z',
+          error: 'Discord rejected the alert: 404',
+        },
+      },
+    ]
+    mockApi({
+      '/me': () => USER,
+      'GET /subscriptions': () => subscriptions,
+      'PATCH /subscriptions/7': async (_url, request) => {
+        patched = await request.json()
+        subscriptions = [{ ...subscriptions[0], form_types: ['4'] }]
+        return subscriptions[0]
+      },
+      '/companies': () => WATCHLIST,
+    })
+    renderRoute('/alerts')
+
+    expect(await screen.findByText(/Last alert failed/)).toHaveTextContent(
+      'Discord rejected the alert: 404',
+    )
+    await userEvent.click(
+      screen.getByRole('button', {
+        name: 'Edit the forms for the AAPL Discord alert',
+      }),
+    )
+    const form = screen.getByRole('form', {
+      name: 'Forms for the AAPL Discord alert',
+    })
+    await userEvent.click(within(form).getByLabelText('Form 4'))
+    await userEvent.click(within(form).getByRole('button', { name: 'Save' }))
+    expect(await screen.findByText('(Form 4)')).toBeInTheDocument()
+    expect(patched).toEqual({ form_types: ['4'] })
+    expect(
+      screen.queryByRole('form', { name: 'Forms for the AAPL Discord alert' }),
+    ).not.toBeInTheDocument()
   })
 
   it('removes an alert and signs out', async () => {
@@ -181,10 +259,12 @@ describe('AlertsPage', () => {
     renderRoute('/alerts')
 
     await userEvent.click(
-      await screen.findByRole('button', { name: 'Remove the AAPL alert' }),
+      await screen.findByRole('button', {
+        name: 'Remove the AAPL Discord alert',
+      }),
     )
     expect(
-      await screen.findByText('No alerts yet. Add one below.'),
+      await screen.findByText('No alerts yet. Add some below.'),
     ).toBeInTheDocument()
     await userEvent.click(screen.getByRole('button', { name: 'Sign out' }))
     expect(

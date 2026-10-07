@@ -79,3 +79,58 @@ jobs:
 
       - name: Lint, type-check, test, build
         run: make web-check
+
+  terraform:
+    name: Terraform
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+
+      # The same Terraform release as development (ADR-0018). No credentials and no accounts:
+      # the tests run against mock providers, and nothing is planned against a real one.
+      - uses: hashicorp/setup-terraform@v4
+        with:
+          terraform_version: 1.16.5
+          terraform_wrapper: false
+
+      # The providers the lock file names (make tf-check keeps them in this directory).
+      - name: Cache Terraform providers
+        uses: actions/cache@v6
+        with:
+          path: ~/.terraform.d/plugin-cache
+          key: terraform-providers-${{ hashFiles('infra/terraform/envs/production/.terraform.lock.hcl') }}
+
+      # Format check, `init -backend=false` with the committed lock file, validate, the tests,
+      # and the free-tier resource allowlist.
+      - name: Format, validate, test, free-tier allowlist
+        run: make tf-check
+
+  k8s:
+    name: Kubernetes manifests
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+
+      # The manifest rules are pytest tests (tests/test_k8s_manifests.py).
+      - uses: astral-sh/setup-uv@v10
+        with:
+          enable-cache: true
+
+      - name: Install dependencies
+        run: uv sync --locked
+
+      # Pinned versions, checked against SHA-256 sums in the script.
+      - name: Install kubectl, kubeconform, and kubeseal
+        run: make k8s-tools
+
+      - name: Cache Kubernetes JSON schemas
+        uses: actions/cache@v6
+        with:
+          path: ~/.cache/kubeconform
+          key: kubeconform-${{ hashFiles('scripts/check-k8s.sh') }}
+
+      # Renders every Kustomize directory and validates it; no cluster involved.
+      - name: Render and validate
+        run: make k8s-check

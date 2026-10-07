@@ -1,0 +1,47 @@
+# OpenTelemetry Collector configuration: receive OTLP over HTTP from the services
+# (OTEL_EXPORTER_OTLP_ENDPOINT), batch it, and forward it to Grafana Cloud's OTLP gateway.
+# The endpoint and credentials come from the grafana-cloud Secret, as environment variables.
+extensions:
+  health_check:
+    endpoint: 0.0.0.0:13133
+  basicauth/grafana_cloud:
+    client_auth:
+      username: ${env:GRAFANA_CLOUD_INSTANCE_ID}
+      password: ${env:GRAFANA_CLOUD_API_TOKEN}
+
+receivers:
+  otlp:
+    protocols:
+      http:
+        endpoint: 0.0.0.0:4318
+
+processors:
+  # Refuse data rather than run out of memory (the container's limit is 256 MiB, part of which
+  # holds the binary's own pages).
+  memory_limiter:
+    check_interval: 1s
+    limit_mib: 120
+    spike_limit_mib: 30
+  batch: {}
+
+exporters:
+  otlphttp/grafana_cloud:
+    endpoint: ${env:GRAFANA_CLOUD_OTLP_ENDPOINT}
+    auth:
+      authenticator: basicauth/grafana_cloud
+
+service:
+  extensions: [health_check, basicauth/grafana_cloud]
+  pipelines:
+    traces:
+      receivers: [otlp]
+      processors: [memory_limiter, batch]
+      exporters: [otlphttp/grafana_cloud]
+    metrics:
+      receivers: [otlp]
+      processors: [memory_limiter, batch]
+      exporters: [otlphttp/grafana_cloud]
+    logs:
+      receivers: [otlp]
+      processors: [memory_limiter, batch]
+      exporters: [otlphttp/grafana_cloud]

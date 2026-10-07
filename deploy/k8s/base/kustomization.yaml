@@ -1,0 +1,51 @@
+# Everything the application runs on the cluster, environment-neutral. Deploy an overlay
+# (overlays/production), never this directly: the overlay supplies image registries and tags,
+# replica counts, environment settings, and the SealedSecrets. See docs/adr/0017.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: filings
+
+labels:
+  - pairs:
+      app.kubernetes.io/part-of: filings
+    includeTemplates: true
+
+resources:
+  - namespace.yaml
+  - network-policies.yaml
+  # Data and models
+  - postgres.yaml
+  - redpanda.yaml
+  - valkey.yaml
+  - llm.yaml
+  - embeddings.yaml
+  # The pipeline and the API
+  - migrate.yaml
+  - discovery.yaml
+  - outbox-relay.yaml
+  - parser.yaml
+  - summarizer.yaml
+  - notifier.yaml
+  - api.yaml
+  # Operations
+  - postgres-backup.yaml
+  - cloudflared.yaml
+  - otel-collector.yaml
+
+# Generated ConfigMaps get a hash of their content in their name, and Kustomize rewrites every
+# reference to match, so changing a setting rolls out the pods that use it.
+configMapGenerator:
+  - name: filings-config
+    envs:
+      - config.env
+    options:
+      annotations:
+        # Before Postgres (wave -2) and the migrations (wave -1), which read it.
+        argocd.argoproj.io/sync-wave: "-3"
+  - name: model-fetch
+    files:
+      - fetch-model.sh
+  - name: otel-collector-config
+    files:
+      - config.yaml=otel-collector-config.yaml

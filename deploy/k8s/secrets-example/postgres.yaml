@@ -1,0 +1,16 @@
+# EXAMPLE ONLY: placeholder values. Never commit a filled-in copy; seal it instead
+# (deploy/k8s/README.md, "Secrets").
+#
+# Postgres credentials. The postgres StatefulSet creates the user on first start; every other
+# workload builds DATABASE_URL from these two values, so the password goes into a URL: make it
+# URL-safe, e.g. `openssl rand -hex 32`. Used by: postgres, migrate, api, outbox-relay, parser,
+# summarizer, notifier, discovery, load-companies, postgres-backup.
+apiVersion: v1
+kind: Secret
+metadata:
+  name: postgres
+  namespace: filings
+type: Opaque
+stringData:
+  POSTGRES_USER: filings
+  POSTGRES_PASSWORD: replace-with-openssl-rand-hex-32

@@ -1,0 +1,13 @@
+# EXAMPLE ONLY: placeholder values. Never commit a filled-in copy; seal it instead
+# (deploy/k8s/README.md, "Secrets").
+#
+# MongoDB Atlas (M0): the connection string of a database user limited to the filings database.
+# Used by: parser, summarizer.
+apiVersion: v1
+kind: Secret
+metadata:
+  name: mongodb
+  namespace: filings
+type: Opaque
+stringData:
+  MONGODB_URL: mongodb+srv://filings:replace-me@cluster0.example.mongodb.net/?retryWrites=true&w=majority

@@ -1,0 +1,145 @@
+# Nightly backup (brief §7): pg_dump into a scratch volume, then upload to the R2 backups bucket.
+# The dump uses Postgres's custom format (compressed; restore with pg_restore). How long backups
+# are kept is a lifecycle rule on the bucket (Terraform, Phase 7), so this job never deletes.
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: postgres-backup
+spec:
+  schedule: "30 3 * * *"
+  timeZone: Etc/UTC
+  concurrencyPolicy: Forbid
+  startingDeadlineSeconds: 3600
+  successfulJobsHistoryLimit: 1
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      backoffLimit: 2
+      activeDeadlineSeconds: 1800
+      template:
+        metadata:
+          labels:
+            app.kubernetes.io/name: postgres-backup
+            app.kubernetes.io/component: backup
+        spec:
+          restartPolicy: Never
+          automountServiceAccountToken: false
+          enableServiceLinks: false
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 999
+            runAsGroup: 999
+            seccompProfile:
+              type: RuntimeDefault
+          initContainers:
+            # The Postgres image itself, so pg_dump always matches the server's major version.
+            - name: dump
+              image: pgvector/pgvector:0.8.7-pg18
+              command:
+                - pg_dump
+                - --host=postgres
+                - --format=custom
+                - --file=/backup/filings.dump
+              env:
+                - name: PGDATABASE
+                  valueFrom:
+                    configMapKeyRef:
+                      name: filings-config
+                      key: POSTGRES_DB
+                - name: PGUSER
+                  valueFrom:
+                    secretKeyRef:
+                      name: postgres
+                      key: POSTGRES_USER
+                - name: PGPASSWORD
+                  valueFrom:
+                    secretKeyRef:
+                      name: postgres
+                      key: POSTGRES_PASSWORD
+              resources:
+                requests:
+                  cpu: 50m
+                  memory: 64Mi
+                limits:
+                  cpu: 500m
+                  memory: 160Mi
+              securityContext:
+                allowPrivilegeEscalation: false
+                readOnlyRootFilesystem: true
+                capabilities:
+                  drop: ["ALL"]
+              volumeMounts:
+                - name: backup
+                  mountPath: /backup
+                - name: tmp
+                  mountPath: /tmp
+          containers:
+            # rclone, configured entirely from environment variables (no config file): a remote
+            # named "r2" of type s3. The R2 token is scoped to the backups bucket, so rclone must
+            # not try to create or list buckets.
+            - name: upload
+              image: rclone/rclone:1.75.1
+              command:
+                - /bin/sh
+                - -c
+                - |
+                  set -eu
+                  object="postgres/filings-$(date -u +%Y%m%dT%H%M%SZ).dump"
+                  rclone copyto /backup/filings.dump "r2:$BACKUP_S3_BUCKET/$object"
+                  echo "uploaded $object"
+              env:
+                - name: BACKUP_S3_BUCKET
+                  valueFrom:
+                    configMapKeyRef:
+                      name: filings-config
+                      key: BACKUP_S3_BUCKET
+                - name: RCLONE_CONFIG_R2_TYPE
+                  value: s3
+                - name: RCLONE_CONFIG_R2_PROVIDER
+                  value: Cloudflare
+                - name: RCLONE_CONFIG_R2_NO_CHECK_BUCKET
+                  value: "true"
+                - name: RCLONE_CONFIG_R2_ENDPOINT
+                  valueFrom:
+                    secretKeyRef:
+                      name: r2-backups
+                      key: R2_ENDPOINT_URL
+                - name: RCLONE_CONFIG_R2_ACCESS_KEY_ID
+                  valueFrom:
+                    secretKeyRef:
+                      name: r2-backups
+                      key: R2_ACCESS_KEY_ID
+                - name: RCLONE_CONFIG_R2_SECRET_ACCESS_KEY
+                  valueFrom:
+                    secretKeyRef:
+                      name: r2-backups
+                      key: R2_SECRET_ACCESS_KEY
+                # Nothing to read or write on the read-only root filesystem.
+                - name: RCLONE_CONFIG
+                  value: /tmp/rclone.conf
+                - name: RCLONE_CACHE_DIR
+                  value: /tmp/rclone-cache
+              resources:
+                requests:
+                  cpu: 20m
+                  memory: 32Mi
+                limits:
+                  cpu: 250m
+                  memory: 128Mi
+              securityContext:
+                allowPrivilegeEscalation: false
+                readOnlyRootFilesystem: true
+                capabilities:
+                  drop: ["ALL"]
+              volumeMounts:
+                - name: backup
+                  mountPath: /backup
+                  readOnly: true
+                - name: tmp
+                  mountPath: /tmp
+          volumes:
+            - name: backup
+              emptyDir:
+                sizeLimit: 2Gi
+            - name: tmp
+              emptyDir: {}

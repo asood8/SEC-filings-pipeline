@@ -1,0 +1,62 @@
+#cloud-config
+# Rendered by Terraform (modules/oci/main.tf) into the VM's user data, and run once, on the first
+# boot. Output: /var/log/cloud-init-output.log.
+#
+# Never put a secret here: anything running on the VM, pods included, can read user data from the
+# instance metadata service. Secrets reach the cluster as SealedSecrets from git instead.
+
+package_update: true
+packages:
+  - git
+
+write_files:
+  # Read by the bootstrap script below. Every value is validated by the Terraform variables, so
+  # none contains a quote or a space.
+  - path: /etc/filings-bootstrap.env
+    permissions: "0644"
+    content: |
+      DATA_MOUNT='${data_mount}'
+      K3S_VERSION='${k3s_version}'
+      GIT_REPO_URL='${git_repo_url}'
+      GIT_REVISION='${git_revision}'
+      ARGOCD_INSTALL_PATH='${argocd_install_path}'
+      ARGOCD_APPS_PATH='${argocd_apps_path}'
+
+  # k3s server settings (https://docs.k3s.io/installation/configuration), read at every start.
+  - path: /etc/rancher/k3s/config.yaml
+    permissions: "0600"
+    content: |
+      write-kubeconfig-mode: "0600"
+      disable:
+        # No ingress controller: cloudflared reaches the api Service directly.
+        - traefik
+        # No LoadBalancer Services, so no ports opened on the VM.
+        - servicelb
+      # Persistent volumes (Postgres, Redpanda, models) live on the block volume.
+      default-local-storage-path: ${data_mount}/local-path
+      # Encrypt Secrets in k3s's datastore on disk.
+      secrets-encryption: true
+
+  # k3s refuses to start without the block volume mounted, so volumes never land on the boot disk.
+  - path: /etc/systemd/system/k3s.service.d/10-data-volume.conf
+    permissions: "0644"
+    content: |
+      [Unit]
+      RequiresMountsFor=${data_mount}
+
+  # Kernel settings for the workloads: Redpanda's recommended async I/O limit, and more inotify
+  # instances than Ubuntu's default 128, which many pods on one node exhaust.
+  - path: /etc/sysctl.d/90-k3s-node.conf
+    permissions: "0644"
+    content: |
+      fs.aio-max-nr = 1048576
+      fs.inotify.max_user_instances = 1024
+
+  - path: /usr/local/sbin/filings-bootstrap
+    permissions: "0755"
+    content: |
+      ${indent(6, bootstrap_script)}
+
+runcmd:
+  - [sysctl, --system]
+  - [/usr/local/sbin/filings-bootstrap]

@@ -1,0 +1,41 @@
+# The application: Argo CD keeps the cluster matching deploy/k8s/overlays/production on main.
+# A push to main is deployed within Argo CD's polling interval (3 minutes by default).
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: filings
+  namespace: argocd
+  # No resources finalizer on purpose: deleting this Application leaves the running system (and
+  # its data) in place instead of deleting everything it manages.
+spec:
+  project: filings
+  source:
+    repoURL: https://github.com/asood8/SEC-filings-pipeline.git
+    targetRevision: main
+    path: deploy/k8s/overlays/production
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: filings
+  syncPolicy:
+    automated:
+      # Delete what was removed from git, and undo changes made to the cluster by hand.
+      prune: true
+      selfHeal: true
+    syncOptions:
+      # Prune only after every wave has synced and is healthy (old hashed ConfigMaps, removed
+      # workloads), so nothing still in use disappears mid-rollout.
+      - PruneLast=true
+    # A failed sync is retried with backoff, from the latest commit (refresh), and a sync still
+    # waiting after 30 minutes fails (the timeout is set in deploy/argocd/install). Together they
+    # get a new cluster going without help. Its first syncs may fail because the Sealed Secrets
+    # controller (sealed-secrets.yaml) hasn't installed the SealedSecret kind yet, or wait on a
+    # Postgres whose Secret hasn't been sealed and committed yet. Once the SealedSecrets are
+    # pushed, a retry or the next automated sync applies them.
+    retry:
+      limit: 10
+      refresh: true
+      backoff:
+        duration: 30s
+        factor: 2
+        maxDuration: 10m
+  revisionHistoryLimit: 5

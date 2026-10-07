@@ -1,0 +1,137 @@
+# Argo CD itself: the upstream non-HA install, pinned to a release, trimmed for a 12 GB node.
+# The VM's first-boot bootstrap (infra/terraform/modules/oci/bootstrap.sh) applies it once,
+# before ../ (server-side, because Argo CD's CRDs are too large for client-side apply's
+# annotation):
+#   kubectl apply --server-side --force-conflicts -k deploy/argocd/install
+# Upgrade by changing the version in the URL and applying again.
+#
+# Trimmed: Dex (single sign-on), the notifications controller, and the ApplicationSet controller
+# are scaled to zero; this cluster needs none of them. What remains (application controller,
+# repo server, API server and web UI, Redis cache) gets requests and limits. The UI is not
+# exposed: reach it with `kubectl -n argocd port-forward svc/argocd-server 8080:443`.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: argocd
+
+resources:
+  - namespace.yaml
+  - https://raw.githubusercontent.com/argoproj/argo-cd/v3.5.4/manifests/install.yaml
+
+patches:
+  - target:
+      kind: Deployment
+      name: argocd-(dex-server|notifications-controller|applicationset-controller)
+    patch: |-
+      - op: replace
+        path: /spec/replicas
+        value: 0
+  # A sync still waiting for its resources to become healthy after 30 minutes fails, and its
+  # retry starts from the latest commit (deploy/argocd/filings.yaml). Without a timeout (the
+  # default) such a sync waits forever and blocks every later commit. 30 minutes covers the
+  # slowest legitimate sync: the migrations (at most 10) and a first model download.
+  - patch: |-
+      apiVersion: v1
+      kind: ConfigMap
+      metadata:
+        name: argocd-cmd-params-cm
+      data:
+        controller.sync.timeout.seconds: "1800"
+  - patch: |-
+      apiVersion: apps/v1
+      kind: StatefulSet
+      metadata:
+        name: argocd-application-controller
+      spec:
+        template:
+          spec:
+            containers:
+              - name: argocd-application-controller
+                resources:
+                  requests:
+                    cpu: 100m
+                    memory: 160Mi
+                  limits:
+                    cpu: "1"
+                    memory: 320Mi
+  - patch: |-
+      apiVersion: apps/v1
+      kind: Deployment
+      metadata:
+        name: argocd-repo-server
+      spec:
+        template:
+          spec:
+            initContainers:
+              - name: copyutil
+                resources:
+                  requests:
+                    cpu: 10m
+                    memory: 16Mi
+                  limits:
+                    cpu: 100m
+                    memory: 64Mi
+            containers:
+              - name: argocd-repo-server
+                resources:
+                  requests:
+                    cpu: 50m
+                    memory: 96Mi
+                  limits:
+                    cpu: "1"
+                    memory: 256Mi
+  - patch: |-
+      apiVersion: apps/v1
+      kind: Deployment
+      metadata:
+        name: argocd-server
+      spec:
+        template:
+          spec:
+            containers:
+              - name: argocd-server
+                resources:
+                  requests:
+                    cpu: 20m
+                    memory: 64Mi
+                  limits:
+                    cpu: 500m
+                    memory: 128Mi
+  # Redis is only a cache here: cap it below its container limit and evict least-recently-used
+  # keys when full.
+  - patch: |-
+      apiVersion: apps/v1
+      kind: Deployment
+      metadata:
+        name: argocd-redis
+      spec:
+        template:
+          spec:
+            initContainers:
+              - name: secret-init
+                resources:
+                  requests:
+                    cpu: 10m
+                    memory: 16Mi
+                  limits:
+                    cpu: 100m
+                    memory: 64Mi
+            containers:
+              - name: redis
+                args:
+                  - --save
+                  - ""
+                  - --appendonly
+                  - "no"
+                  - --requirepass $(REDIS_PASSWORD)
+                  - --maxmemory
+                  - 48mb
+                  - --maxmemory-policy
+                  - allkeys-lru
+                resources:
+                  requests:
+                    cpu: 10m
+                    memory: 16Mi
+                  limits:
+                    cpu: 200m
+                    memory: 64Mi

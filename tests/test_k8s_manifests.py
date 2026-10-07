@@ -1,0 +1,331 @@
+"""Project rules for the Kubernetes manifests, checked on the rendered output.
+
+kubeconform (`make k8s-check`) checks that every object is valid Kubernetes. These tests check
+what the project requires on top of that (docs/adr/0017-kubernetes-manifests.md):
+- every container, init containers included, has CPU and memory requests and limits, and their
+  total fits the VM's budget;
+- every pod meets the "restricted" Pod Security Standard that the namespace enforces;
+- every image is pinned to a version;
+- the config uses real setting names, and every Secret a workload reads has an example;
+- no plain Secret is ever deployed from git.
+
+They render with `kubectl kustomize`, so they are skipped when kubectl is missing (install it
+with `make k8s-tools`), unless REQUIRE_K8S_TOOLS=1 (set by `make k8s-check`), which makes them
+fail instead.
+"""
+
+import os
+import re
+import shutil
+import subprocess
+from collections.abc import Iterator
+from dataclasses import dataclass
+from pathlib import Path
+from typing import Any
+
+import pytest
+import yaml
+from pydantic_settings import BaseSettings
+
+ROOT = Path(__file__).parents[1]
+PRODUCTION = ROOT / "deploy" / "k8s" / "overlays" / "production"
+SEALED_SECRETS = ROOT / "deploy" / "k8s" / "platform" / "sealed-secrets"
+SECRET_EXAMPLES = ROOT / "deploy" / "k8s" / "secrets-example"
+NAMESPACE = "filings"
+
+# The VM budget (brief §7): at most 9 GiB of the 12 GiB node, of which k3s takes about 0.6 GiB
+# and Argo CD's limits 0.75 GiB (deploy/argocd/install). The rest is for everything rendered
+# here: all long-running pods at their limits, plus the two largest jobs (jobs are short, but
+# discovery runs every ten minutes and can overlap a daily one). CPU requests share the node's
+# 2 cores with k3s's add-ons (0.2) and Argo CD (0.18).
+MEMORY_BUDGET_MIB = (9 * 1024) - 614 - 768
+CPU_REQUEST_BUDGET_MILLICORES = 2000 - 200 - 180
+
+# Volume types the restricted Pod Security Standard allows.
+ALLOWED_VOLUME_TYPES = {
+    "configMap",
+    "csi",
+    "downwardAPI",
+    "emptyDir",
+    "ephemeral",
+    "persistentVolumeClaim",
+    "projected",
+    "secret",
+}
+# Config keys that are not settings fields: read by the manifests themselves (DATABASE_URL is
+# assembled from POSTGRES_DB; the backup job uploads to BACKUP_S3_BUCKET) or by the
+# OpenTelemetry SDK (OTEL_*).
+NON_SETTINGS_CONFIG = re.compile(r"POSTGRES_DB|BACKUP_S3_BUCKET|OTEL_[A-Z_]+")
+
+
+def _kubectl() -> str:
+    found = shutil.which("kubectl") or shutil.which("kubectl", path=Path.home() / ".local/bin")
+    if found is None:
+        message = "kubectl is not installed; run `make k8s-tools`"
+        if os.environ.get("REQUIRE_K8S_TOOLS") == "1":
+            pytest.fail(message)
+        pytest.skip(message)
+    return found
+
+
+def _render(directory: Path) -> list[dict[str, Any]]:
+    output = subprocess.run(
+        [_kubectl(), "kustomize", str(directory)], check=True, capture_output=True, text=True
+    ).stdout
+    return [doc for doc in yaml.safe_load_all(output) if doc]
+
+
+@pytest.fixture(scope="module")
+def production() -> list[dict[str, Any]]:
+    return _render(PRODUCTION)
+
+
+@pytest.fixture(scope="module")
+def platform() -> list[dict[str, Any]]:
+    return _render(SEALED_SECRETS)
+
+
+@dataclass(frozen=True)
+class Pod:
+    """A pod template of a workload, and how many copies of it run at once."""
+
+    workload: str  # e.g. "Deployment/api"
+    namespace: str
+    spec: dict[str, Any]
+    replicas: int
+    long_running: bool
+
+    def containers(self) -> Iterator[dict[str, Any]]:
+        yield from self.spec.get("initContainers", [])
+        yield from self.spec["containers"]
+
+
+def pods(objects: list[dict[str, Any]]) -> list[Pod]:
+    found = []
+    for obj in objects:
+        kind, spec = obj["kind"], obj.get("spec", {})
+        name = f"{kind}/{obj['metadata']['name']}"
+        namespace = obj["metadata"].get("namespace", "")
+        if kind in ("Deployment", "StatefulSet"):
+            template, replicas, long_running = spec["template"], spec.get("replicas", 1), True
+        elif kind == "Job":
+            template, replicas, long_running = spec["template"], 1, False
+        elif kind == "CronJob":
+            template, replicas, long_running = spec["jobTemplate"]["spec"]["template"], 1, False
+        else:
+            continue
+        found.append(Pod(name, namespace, template["spec"], replicas, long_running))
+    return found
+
+
+def cpu_millicores(quantity: str) -> int:
+    return int(quantity[:-1]) if quantity.endswith("m") else int(float(quantity) * 1000)
+
+
+def memory_mib(quantity: str) -> float:
+    units = {"Ki": 1 / 1024, "Mi": 1, "Gi": 1024}
+    match = re.fullmatch(r"(\d+(?:\.\d+)?)(Ki|Mi|Gi)", quantity)
+    assert match, f"unexpected memory quantity {quantity!r}"
+    return float(match[1]) * units[match[2]]
+
+
+def pod_total(pod: Pod, kind: str, resource: str) -> float:
+    """What the scheduler counts for one pod: init containers run one at a time, before the
+    containers, so the pod needs the larger of the biggest init container and the containers'
+    sum."""
+    to_number = cpu_millicores if resource == "cpu" else memory_mib
+
+    def amount(container: dict[str, Any]) -> float:
+        return to_number(container["resources"][kind][resource])
+
+    init = max((amount(c) for c in pod.spec.get("initContainers", [])), default=0)
+    return max(init, sum(amount(c) for c in pod.spec["containers"]))
+
+
+def test_production_renders_one_namespace_with_default_deny(
+    production: list[dict[str, Any]],
+) -> None:
+    namespaced = [o for o in production if o["kind"] != "Namespace"]
+    assert {o["metadata"].get("namespace") for o in namespaced} == {NAMESPACE}
+    policy = next(o for o in production if o["metadata"]["name"] == "default-deny-ingress")
+    assert policy["spec"] == {"podSelector": {}, "policyTypes": ["Ingress"]}
+
+
+def test_production_contains_no_plain_secrets(production: list[dict[str, Any]]) -> None:
+    # The repository is public: Secrets reach the cluster only as SealedSecrets.
+    assert [o["metadata"]["name"] for o in production if o["kind"] == "Secret"] == []
+
+
+def test_every_container_has_cpu_and_memory_requests_and_limits(
+    production: list[dict[str, Any]], platform: list[dict[str, Any]]
+) -> None:
+    missing = [
+        f"{pod.workload}: {container['name']} {kind}.{resource}"
+        for pod in pods(production + platform)
+        for container in pod.containers()
+        for kind in ("requests", "limits")
+        for resource in ("cpu", "memory")
+        if resource not in container.get("resources", {}).get(kind, {})
+    ]
+    assert missing == []
+
+
+def test_requests_never_exceed_limits(
+    production: list[dict[str, Any]], platform: list[dict[str, Any]]
+) -> None:
+    for pod in pods(production + platform):
+        for container in pod.containers():
+            resources = container["resources"]
+            assert cpu_millicores(resources["requests"]["cpu"]) <= cpu_millicores(
+                resources["limits"]["cpu"]
+            ), pod.workload
+            assert memory_mib(resources["requests"]["memory"]) <= memory_mib(
+                resources["limits"]["memory"]
+            ), pod.workload
+
+
+def test_memory_limits_and_cpu_requests_fit_the_vm_budget(
+    production: list[dict[str, Any]], platform: list[dict[str, Any]]
+) -> None:
+    all_pods = pods(production + platform)
+    always = [p for p in all_pods if p.long_running]
+    jobs = [p for p in all_pods if not p.long_running]
+
+    def two_largest(kind: str, resource: str) -> float:
+        return sum(sorted(pod_total(p, kind, resource) for p in jobs)[-2:])
+
+    memory = sum(pod_total(p, "limits", "memory") * p.replicas for p in always)
+    memory += two_largest("limits", "memory")
+    assert memory <= MEMORY_BUDGET_MIB
+
+    cpu = sum(pod_total(p, "requests", "cpu") * p.replicas for p in always)
+    cpu += two_largest("requests", "cpu")
+    assert cpu <= CPU_REQUEST_BUDGET_MILLICORES
+
+
+def test_pods_meet_the_restricted_pod_security_standard(
+    production: list[dict[str, Any]], platform: list[dict[str, Any]]
+) -> None:
+    for pod in pods(production + platform):
+        security = pod.spec.get("securityContext", {})
+        # An explicit numeric UID: runAsNonRoot alone fails for images whose user is a name.
+        assert security.get("runAsNonRoot") is True, pod.workload
+        assert security.get("runAsUser", 0) > 0, pod.workload
+        assert security.get("seccompProfile") == {"type": "RuntimeDefault"}, pod.workload
+        for flag in ("hostNetwork", "hostPID", "hostIPC"):
+            assert not pod.spec.get(flag), pod.workload
+        for volume in pod.spec.get("volumes", []):
+            assert set(volume) - {"name"} <= ALLOWED_VOLUME_TYPES, (pod.workload, volume)
+        for container in pod.containers():
+            where = f"{pod.workload}: {container['name']}"
+            context = container.get("securityContext", {})
+            assert context.get("allowPrivilegeEscalation") is False, where
+            assert context.get("readOnlyRootFilesystem") is True, where
+            assert context.get("capabilities") == {"drop": ["ALL"]}, where
+            assert not context.get("privileged"), where
+
+
+def test_application_pods_get_no_api_token_or_service_variables(
+    production: list[dict[str, Any]],
+) -> None:
+    for pod in pods(production):
+        # None of them talks to the Kubernetes API, and Service variables (POSTGRES_PORT=...,
+        # LLM_PORT=...) could collide with the settings' environment variables.
+        assert pod.spec.get("automountServiceAccountToken") is False, pod.workload
+        assert pod.spec.get("enableServiceLinks") is False, pod.workload
+
+
+def test_serving_containers_have_probes(production: list[dict[str, Any]]) -> None:
+    for pod in pods(production):
+        if not pod.long_running:
+            continue
+        for container in pod.spec["containers"]:
+            if container.get("ports"):
+                assert "readinessProbe" in container, pod.workload
+                assert "livenessProbe" in container, pod.workload
+
+
+def test_images_are_pinned(
+    production: list[dict[str, Any]], platform: list[dict[str, Any]]
+) -> None:
+    for pod in pods(production + platform):
+        for container in pod.containers():
+            image = container["image"]
+            name, _, tag = image.rpartition(":")
+            assert name, image
+            assert "/" not in tag, image
+            assert tag not in ("", "latest"), image
+    ours = {
+        c["image"].rpartition(":")[0]
+        for pod in pods(production)
+        for c in pod.containers()
+        if "filings-" in c["image"]
+    }
+    assert ours == {
+        f"ghcr.io/asood8/filings-{service}"
+        for service in ("api", "discovery", "parser", "summarizer", "notifier")
+    }
+
+
+def _settings_env_names() -> set[str]:
+    from filings_common import config
+    from filings_discovery.config import DiscoverySettings
+    from filings_notifier.cli import EmailSettings
+
+    classes: list[type[BaseSettings]] = [DiscoverySettings, EmailSettings]
+    classes += [
+        value
+        for value in vars(config).values()
+        if isinstance(value, type) and issubclass(value, BaseSettings) and value is not BaseSettings
+    ]
+    return {
+        f"{cls.model_config.get('env_prefix', '')}{field}".upper()
+        for cls in classes
+        for field in cls.model_fields
+    }
+
+
+def test_config_keys_are_real_setting_names(production: list[dict[str, Any]]) -> None:
+    config = next(
+        o
+        for o in production
+        if o["kind"] == "ConfigMap" and o["metadata"]["name"].startswith("filings-config-")
+    )
+    known = _settings_env_names()
+    unknown = [
+        key for key in config["data"] if key not in known and not NON_SETTINGS_CONFIG.fullmatch(key)
+    ]
+    assert unknown == []
+
+
+def _secret_references(pod: Pod) -> Iterator[tuple[str, str | None]]:
+    """(secret name, key) for each Secret the pod reads; key None means all of it."""
+    for container in pod.containers():
+        for source in container.get("envFrom", []):
+            if "secretRef" in source:
+                yield source["secretRef"]["name"], None
+        for variable in container.get("env", []):
+            ref = variable.get("valueFrom", {}).get("secretKeyRef")
+            if ref:
+                yield ref["name"], ref["key"]
+
+
+def test_every_secret_read_has_an_example_with_its_keys(production: list[dict[str, Any]]) -> None:
+    examples = {}
+    for path in SECRET_EXAMPLES.glob("*.yaml"):
+        secret = yaml.safe_load(path.read_text())
+        assert secret["kind"] == "Secret"
+        assert secret["metadata"]["namespace"] == NAMESPACE
+        assert path.stem == secret["metadata"]["name"]
+        examples[secret["metadata"]["name"]] = set(secret["stringData"])
+
+    referenced: dict[str, set[str]] = {}
+    for pod in pods(production):
+        for name, key in _secret_references(pod):
+            referenced.setdefault(name, set())
+            if key is not None:
+                referenced[name].add(key)
+
+    assert set(referenced) == set(examples)
+    for name, keys in referenced.items():
+        assert keys <= examples[name], name

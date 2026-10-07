@@ -1,0 +1,27 @@
+# An Argo CD project fencing in what the applications below may deploy: only from this
+# repository, only into the filings and kube-system namespaces, and only the few cluster-wide
+# kinds the manifests contain.
+apiVersion: argoproj.io/v1alpha1
+kind: AppProject
+metadata:
+  name: filings
+  namespace: argocd
+spec:
+  description: SEC filings pipeline and the cluster add-ons it needs
+  sourceRepos:
+    - https://github.com/asood8/SEC-filings-pipeline.git
+  destinations:
+    - server: https://kubernetes.default.svc
+      namespace: filings
+    - server: https://kubernetes.default.svc
+      namespace: kube-system
+  clusterResourceWhitelist:
+    - group: ""
+      kind: Namespace
+    # The Sealed Secrets controller's SealedSecret CRD and its cluster-wide permissions.
+    - group: apiextensions.k8s.io
+      kind: CustomResourceDefinition
+    - group: rbac.authorization.k8s.io
+      kind: ClusterRole
+    - group: rbac.authorization.k8s.io
+      kind: ClusterRoleBinding

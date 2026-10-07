@@ -1,0 +1,67 @@
+# A small alert rule file in Grafana's provisioning format, shaped like deploy/grafana/alerting.
+apiVersion: 1
+
+groups:
+  - orgId: 1
+    name: pipeline
+    folder: SEC Filings
+    interval: 1m
+    rules:
+      - uid: sample-dlq-not-empty
+        title: Dead-letter topic not empty
+        condition: C
+        data:
+          - refId: A
+            relativeTimeRange: { from: 600, to: 0 }
+            datasourceUid: prometheus
+            model:
+              refId: A
+              instant: true
+              expr: max by (messaging_destination_name) (filings_dlq_depth)
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              refId: C
+              type: threshold
+              expression: A
+              conditions:
+                - evaluator: { type: gt, params: [0] }
+        noDataState: OK
+        execErrState: Error
+        for: 0s
+        dashboardUid: sample-dashboard
+        panelId: 2
+        labels:
+          severity: warning
+        annotations:
+          summary: "{{ .Labels.messaging_destination_name }} holds dead letters"
+
+  - orgId: 1
+    name: slow-checks
+    folder: Operations
+    interval: 5m
+    rules:
+      - uid: sample-not-reporting
+        title: Service not reporting
+        condition: C
+        data:
+          - refId: A
+            relativeTimeRange: { from: 600, to: 0 }
+            datasourceUid: prometheus
+            model:
+              refId: A
+              expr: count by (job) (last_over_time(target_info[1d])) unless count by (job) (last_over_time(target_info[10m]))
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              refId: C
+              type: threshold
+              expression: A
+              conditions:
+                - evaluator: { type: gt, params: [0] }
+        for: 10m
+        # A dashboard without a panel: Grafana's API refuses one link annotation without the other.
+        dashboardUid: sample-dashboard
+        notification_settings:
+          receiver: discord
+          group_by: [alertname, job]

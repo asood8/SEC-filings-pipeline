@@ -1,0 +1,62 @@
+# The notifier: consumes filings.ready and sends Discord, Slack, and email alerts, exactly once
+# per subscription and filing (ADR-0012).
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: notifier
+spec:
+  # One is plenty; more would be safe (the one-alert guarantee is a database row, not the
+  # consumer), and the production overlay sets the count.
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: notifier
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: notifier
+        app.kubernetes.io/component: pipeline
+    spec:
+      automountServiceAccountToken: false
+      enableServiceLinks: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: notifier
+          image: filings-notifier
+          envFrom:
+            - configMapRef:
+                name: filings-config
+            - secretRef:
+                name: postgres
+            # Needed once EMAIL_BACKEND=smtp; with the default "log" backend it can be absent.
+            - secretRef:
+                name: smtp
+                optional: true
+          env:
+            - name: DATABASE_URL
+              value: postgresql+psycopg://$(POSTGRES_USER):$(POSTGRES_PASSWORD)@postgres:5432/$(POSTGRES_DB)
+          resources:
+            requests:
+              cpu: 20m
+              memory: 96Mi
+            limits:
+              cpu: 250m
+              memory: 144Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: tmp
+          emptyDir: {}

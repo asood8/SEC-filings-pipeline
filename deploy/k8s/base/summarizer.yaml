@@ -1,0 +1,64 @@
+# The summarizer: consumes filings.parsed; Form 4s get a template, 8-Ks the LLM (llama.cpp first,
+# then Gemini), and every summary an embedding.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: summarizer
+spec:
+  # Exactly one: the local LLM serves one request at a time, so a second summarizer would only
+  # queue behind the first (and double the Gemini fallback's request rate during an outage).
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: summarizer
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: summarizer
+        app.kubernetes.io/component: pipeline
+    spec:
+      automountServiceAccountToken: false
+      enableServiceLinks: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: summarizer
+          image: filings-summarizer
+          envFrom:
+            - configMapRef:
+                name: filings-config
+            - secretRef:
+                name: postgres
+            - secretRef:
+                name: mongodb
+            # Optional: without a Gemini key, 8-Ks are summarized by the local model only.
+            - secretRef:
+                name: gemini
+                optional: true
+          env:
+            - name: DATABASE_URL
+              value: postgresql+psycopg://$(POSTGRES_USER):$(POSTGRES_PASSWORD)@postgres:5432/$(POSTGRES_DB)
+          resources:
+            requests:
+              cpu: 20m
+              memory: 128Mi
+            limits:
+              cpu: 500m
+              memory: 256Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: tmp
+          emptyDir: {}

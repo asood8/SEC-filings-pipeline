@@ -1,0 +1,178 @@
+# The local LLM for 8-K summaries: llama.cpp's server with Llama 3.2 3B Instruct (Q4_K_M), serving
+# the OpenAI-compatible API the summarizer calls (LLM_BASE_URL). An init container downloads the
+# model into the volume once; later starts only re-check its SHA-256.
+#
+# Measured on the dev laptop, capped at 2 CPUs (docs/adr/0017-kubernetes-manifests.md): 2.53 GiB
+# peak while summarizing an 8-K with a long press release (3.8k-token prompt, about 5 minutes).
+# The KV cache is allocated for the whole context up front, so a longer prompt takes longer but
+# needs little more memory.
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: llm-models
+spec:
+  accessModes: ["ReadWriteOnce"]
+  storageClassName: local-path
+  volumeMode: Filesystem
+  resources:
+    requests:
+      storage: 8Gi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: llm
+spec:
+  selector:
+    app.kubernetes.io/name: llm
+  ports:
+    - name: http
+      port: 8080
+      targetPort: http
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: llm
+spec:
+  # One replica, replaced rather than rolled: two copies would need twice the memory.
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: llm
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: llm
+        app.kubernetes.io/component: llm
+    spec:
+      automountServiceAccountToken: false
+      enableServiceLinks: false
+      securityContext:
+        # The image runs as root by default; nothing in it needs to.
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        fsGroup: 10001
+        seccompProfile:
+          type: RuntimeDefault
+      initContainers:
+        - name: fetch-model
+          image: ghcr.io/ggml-org/llama.cpp:server-b11434
+          command: ["sh", "/scripts/fetch-model.sh"]
+          # bartowski's quantization (made with an importance matrix): the same model and
+          # quantization type as Ollama's llama3.2:3b in development, though not the same file.
+          env:
+            - name: MODEL_FILE
+              value: Llama-3.2-3B-Instruct-Q4_K_M.gguf
+            - name: MODEL_URL
+              value: https://huggingface.co/bartowski/Llama-3.2-3B-Instruct-GGUF/resolve/5ab33fa94d1d04e903623ae72c95d1696f09f9e8/Llama-3.2-3B-Instruct-Q4_K_M.gguf
+            - name: MODEL_SHA256
+              value: 6c1a2b41161032677be168d354123594c0e6e67d2b9227c84f296ad037c728ff
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              cpu: 500m
+              memory: 256Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          volumeMounts:
+            - name: models
+              mountPath: /models
+            - name: scripts
+              mountPath: /scripts
+            - name: tmp
+              mountPath: /tmp
+      containers:
+        - name: llama-server
+          image: ghcr.io/ggml-org/llama.cpp:server-b11434
+          # llama-server takes "--flag value", not "--flag=value".
+          args:
+            - --model
+            - /models/Llama-3.2-3B-Instruct-Q4_K_M.gguf
+            # The model name the API reports; matches LLM_MODEL, which is stored with summaries.
+            - --alias
+            - llama-3.2-3b-instruct-q4_k_m
+            - --host
+            - 0.0.0.0
+            - --port
+            - "8080"
+            # Prompts reach about 6k tokens; one request at a time.
+            - --ctx-size
+            - "8192"
+            - --parallel
+            - "1"
+            - --threads
+            - "2"
+            # An 8-bit KV cache needs 0.4 GiB less than the default 16-bit one at about the same
+            # speed (measured: prompts 7% slower, generation 7% faster), and the quantized V cache
+            # requires flash attention.
+            - --cache-type-k
+            - q8_0
+            - --cache-type-v
+            - q8_0
+            - --flash-attn
+            - "on"
+            # Direct I/O: the weights live in the process's own memory, not in page cache that
+            # counts against the limit unpredictably.
+            - --load-mode
+            - dio
+            - --no-ui
+            - --metrics
+          ports:
+            - name: http
+              containerPort: 8080
+          # /health answers 503 while the model loads, then 200.
+          startupProbe:
+            httpGet:
+              path: /health
+              port: http
+            periodSeconds: 10
+            failureThreshold: 30
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: http
+            periodSeconds: 10
+          # Generous: inference keeps both cores busy, which can slow the HTTP thread down.
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: http
+            periodSeconds: 30
+            timeoutSeconds: 10
+            failureThreshold: 6
+          resources:
+            requests:
+              cpu: 500m
+              memory: 2560Mi
+            limits:
+              cpu: "2"
+              memory: 3Gi
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          volumeMounts:
+            - name: models
+              mountPath: /models
+              readOnly: true
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: models
+          persistentVolumeClaim:
+            claimName: llm-models
+        - name: scripts
+          configMap:
+            name: model-fetch
+        - name: tmp
+          emptyDir: {}

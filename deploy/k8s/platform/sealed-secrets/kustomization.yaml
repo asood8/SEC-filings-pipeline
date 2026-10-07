@@ -1,0 +1,39 @@
+# The Sealed Secrets controller, in kube-system: it decrypts SealedSecrets into ordinary Secrets
+# with a private key that never leaves the cluster. Argo CD keeps it installed
+# (deploy/argocd/sealed-secrets.yaml).
+#
+# controller.yaml is the upstream release manifest, vendored byte-for-byte so it is reviewed in
+# git and renders without a network fetch: bitnami/sealed-secrets v0.40.0, release asset
+# controller.yaml, SHA-256 ac8aabccdd9110430d117501705818115b2ab0993700a9c118d4d42cf4015a17
+# (`make k8s-check` verifies it). To upgrade, replace the file with a newer release's, update
+# the checksum in scripts/check-k8s.sh, and bump KUBESEAL_VERSION in
+# scripts/install-k8s-tools.sh to match.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+resources:
+  - controller.yaml
+
+patches:
+  # Upstream sets no resource requests or limits; every workload here has them.
+  - target:
+      kind: Deployment
+      name: sealed-secrets-controller
+    patch: |-
+      apiVersion: apps/v1
+      kind: Deployment
+      metadata:
+        name: sealed-secrets-controller
+      spec:
+        revisionHistoryLimit: 3
+        template:
+          spec:
+            containers:
+              - name: sealed-secrets-controller
+                resources:
+                  requests:
+                    cpu: 20m
+                    memory: 32Mi
+                  limits:
+                    cpu: 200m
+                    memory: 128Mi

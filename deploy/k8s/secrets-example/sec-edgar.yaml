@@ -1,0 +1,13 @@
+# EXAMPLE ONLY: placeholder values. Never commit a filled-in copy; seal it instead
+# (deploy/k8s/README.md, "Secrets").
+#
+# The contact email SEC requires in every request's User-Agent. Not a credential, but personal,
+# so it stays out of the public repository. Used by: discovery, load-companies.
+apiVersion: v1
+kind: Secret
+metadata:
+  name: sec-edgar
+  namespace: filings
+type: Opaque
+stringData:
+  SEC_CONTACT_EMAIL: you@example.com

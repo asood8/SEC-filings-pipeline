@@ -1,0 +1,67 @@
+# Database migrations (Alembic, to head), from the discovery image (ADR-0014). An Argo CD hook:
+# Argo CD runs it on every sync, after Postgres (sync wave -2) is healthy and before the services
+# (wave 0) roll out, so new code never meets an old schema. An up-to-date database makes it a
+# no-op.
+#
+# It is a Sync hook in wave -1 rather than a PreSync hook: PreSync runs before anything else in
+# the sync, Postgres included, so on an empty cluster the first sync could never succeed.
+# BeforeHookCreation keeps the last run (and its logs) until the next sync replaces it.
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: migrate
+  annotations:
+    argocd.argoproj.io/hook: Sync
+    argocd.argoproj.io/hook-delete-policy: BeforeHookCreation
+    argocd.argoproj.io/sync-wave: "-1"
+spec:
+  backoffLimit: 3
+  activeDeadlineSeconds: 600
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: migrate
+        app.kubernetes.io/component: pipeline
+    spec:
+      restartPolicy: Never
+      automountServiceAccountToken: false
+      enableServiceLinks: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: migrate
+          image: filings-discovery
+          command:
+            - python
+            - -c
+            - from filings_common.db import run_migrations; run_migrations()
+          envFrom:
+            - configMapRef:
+                name: filings-config
+            - secretRef:
+                name: postgres
+          env:
+            - name: DATABASE_URL
+              value: postgresql+psycopg://$(POSTGRES_USER):$(POSTGRES_PASSWORD)@postgres:5432/$(POSTGRES_DB)
+          resources:
+            requests:
+              cpu: 50m
+              memory: 96Mi
+            limits:
+              cpu: 500m
+              memory: 160Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: tmp
+          emptyDir: {}

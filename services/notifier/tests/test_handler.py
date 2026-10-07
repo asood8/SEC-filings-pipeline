@@ -78,10 +78,12 @@ def world(clean_db: Engine) -> dict[str, int]:
             },
         )
         user = User(email="ops@example.com", google_sub="google-123")
+        other = User(email="analyst@example.com", google_sub="google-456")
         session.add_all(
             [
                 summary,
                 user,
+                other,
                 Form4Filing(
                     accession_no=FORM4,
                     period_of_report=date(2026, 9, 17),
@@ -110,11 +112,11 @@ def world(clean_db: Engine) -> dict[str, int]:
                 target="ops@example.com",
             ),
             "berkshire_8k_only": Subscription(
-                user_id=user.id,
+                user_id=other.id,
                 cik=1067983,
                 form_types=["8-K"],
                 channel=Channel.EMAIL,
-                target="ops@example.com",
+                target="analyst@example.com",
             ),
             "apple": Subscription(
                 user_id=user.id,

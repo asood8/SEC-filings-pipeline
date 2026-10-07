@@ -1,28 +1,32 @@
-"""Per-client rate limiting and response caching, both shared through Redis.
+"""Per-client rate limiting and response caching, both shared through Redis, and a CSRF check.
 
-Both fail open: if Redis is unreachable, requests are served uncached and unlimited rather than
-failing. After an error, Redis is skipped for a few seconds, so an outage costs one timeout rather
-than one per request.
+Rate limiting and caching fail open: if Redis is unreachable, requests are served uncached and
+unlimited rather than failing. After an error, Redis is skipped for a few seconds, so an outage
+costs one timeout rather than one per request.
 """
 
 import logging
 import math
 import time
 from collections.abc import Callable
-from urllib.parse import urlencode
+from urllib.parse import urlencode, urlsplit
 
 import redis
 from fastapi import Request, Response
 from fastapi.responses import JSONResponse
 from starlette.middleware.base import BaseHTTPMiddleware, RequestResponseEndpoint
 
+from filings_api.auth import SESSION_COOKIE
 from filings_common.ratelimit import RedisRateLimit
 
 logger = logging.getLogger(__name__)
 
 UNLIMITED_PATHS = frozenset({"/healthz"})
 UNCACHED_PATHS = frozenset({"/healthz", "/openapi.json", "/docs", "/redoc"})
+# Per-user responses: never cached here, and marked no-store so browsers and proxies don't either.
+PRIVATE_PATH_PREFIXES = ("/auth", "/me", "/subscriptions")
 CACHE_PREFIX = "api-cache:v1"
+STATE_CHANGING_METHODS = frozenset({"POST", "PUT", "PATCH", "DELETE"})
 
 
 class RedisBackoff:
@@ -75,11 +79,33 @@ def cache_key(request: Request) -> str:
     return f"{CACHE_PREFIX}:{request.url.path}?{query}"
 
 
+def is_private_path(path: str) -> bool:
+    return any(path == prefix or path.startswith(f"{prefix}/") for prefix in PRIVATE_PATH_PREFIXES)
+
+
+def _is_per_user(request: Request) -> bool:
+    return SESSION_COOKIE in request.cookies or "authorization" in request.headers
+
+
+def _forbids_storing(response: Response) -> bool:
+    directives = response.headers.get("cache-control", "").lower().split(",")
+    return any(d.split("=", 1)[0].strip() in {"private", "no-store"} for d in directives)
+
+
 class CacheMiddleware(BaseHTTPMiddleware):
     """Caches successful JSON GET responses for a short time. Data changes slowly (new filings
-    arrive minutes apart), so a short TTL needs no invalidation."""
+    arrive minutes apart), so a short TTL needs no invalidation.
+
+    The cache key is only the URL, so anything that could differ between users stays out of the
+    cache: private paths, requests with a session cookie or an Authorization header, and
+    responses that set a cookie or say Cache-Control private or no-store.
+    """
 
     async def dispatch(self, request: Request, call_next: RequestResponseEndpoint) -> Response:
+        if is_private_path(request.url.path):
+            response = await call_next(request)
+            response.headers["Cache-Control"] = "no-store"
+            return response
         cache: redis.Redis | None = request.app.state.cache
         ttl: int = request.app.state.cache_ttl_seconds
         backoff: RedisBackoff = request.app.state.redis_backoff
@@ -88,6 +114,7 @@ class CacheMiddleware(BaseHTTPMiddleware):
             or ttl <= 0
             or request.method != "GET"
             or request.url.path in UNCACHED_PATHS
+            or _is_per_user(request)
             or not backoff.available()
         ):
             return await call_next(request)
@@ -106,6 +133,8 @@ class CacheMiddleware(BaseHTTPMiddleware):
         if (
             response.status_code != 200
             or response.headers.get("content-type") != "application/json"
+            or "set-cookie" in response.headers
+            or _forbids_storing(response)
         ):
             return response
         body = b"".join([chunk async for chunk in response.body_iterator])  # type: ignore[attr-defined]
@@ -118,3 +147,41 @@ class CacheMiddleware(BaseHTTPMiddleware):
         return Response(
             content=body, status_code=200, headers=headers, media_type="application/json"
         )
+
+
+def origin_allowed(request: Request, origin: str) -> bool:
+    """The website's origins, and the API's own (for its /docs page)."""
+    allowed: frozenset[str] = request.app.state.allowed_origins
+    host = request.headers.get("host", "").lower()
+    return origin in allowed or (bool(host) and urlsplit(origin).netloc.lower() == host)
+
+
+def _has_body(request: Request) -> bool:
+    length = request.headers.get("content-length", "").strip()
+    return "transfer-encoding" in request.headers or length not in {"", "0"}
+
+
+def _is_json(content_type: str | None) -> bool:
+    media_type = (content_type or "").split(";", 1)[0].strip().lower()
+    return media_type == "application/json" or media_type.endswith("+json")
+
+
+class CsrfMiddleware(BaseHTTPMiddleware):
+    """Defense in depth against cross-site request forgery, on top of the SameSite=Lax cookie.
+
+    - A state-changing request whose Origin header names another site is refused (403). Browsers
+      send Origin with every cross-origin POST, PUT, PATCH, and DELETE; other clients (curl,
+      scripts) usually send none, and aren't affected.
+    - Request bodies must be JSON (415 otherwise). A page on another site can send form or plain
+      text bodies without asking, but cross-origin JSON needs a CORS preflight first, which only
+      the configured origins pass.
+    """
+
+    async def dispatch(self, request: Request, call_next: RequestResponseEndpoint) -> Response:
+        if request.method in STATE_CHANGING_METHODS:
+            origin = request.headers.get("origin")
+            if origin is not None and not origin_allowed(request, origin):
+                return JSONResponse({"detail": "origin not allowed"}, status_code=403)
+            if _has_body(request) and not _is_json(request.headers.get("content-type")):
+                return JSONResponse({"detail": "request body must be JSON"}, status_code=415)
+        return await call_next(request)

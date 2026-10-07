@@ -261,11 +261,31 @@ class User(Base):
     created_at: Mapped[datetime] = mapped_column(server_default=sa.func.now())
 
 
+class UserSession(Base):
+    """A signed-in browser. The raw session token exists only in the user's cookie; this stores
+    its SHA-256 hash, so reading the table doesn't hand out working sessions."""
+
+    __tablename__ = "sessions"
+    __table_args__ = (sa.Index("ix_sessions_user_id", "user_id"),)
+
+    id: Mapped[int] = mapped_column(sa.BigInteger, sa.Identity(always=True), primary_key=True)
+    user_id: Mapped[int] = mapped_column(
+        sa.BigInteger, sa.ForeignKey("users.id", ondelete="CASCADE")
+    )
+    token_hash: Mapped[str] = mapped_column(unique=True)  # hex SHA-256 of the cookie's token
+    created_at: Mapped[datetime] = mapped_column(server_default=sa.func.now())
+    expires_at: Mapped[datetime]
+
+
 class Subscription(Base):
     """Alert `target` (a webhook URL or an email address) about a company's new filings."""
 
     __tablename__ = "subscriptions"
-    __table_args__ = (sa.Index("ix_subscriptions_cik", "cik"),)
+    __table_args__ = (
+        # Subscribing twice to the same thing would send every alert twice.
+        sa.UniqueConstraint("user_id", "cik", "channel", "target"),
+        sa.Index("ix_subscriptions_cik", "cik"),
+    )
 
     id: Mapped[int] = mapped_column(sa.BigInteger, sa.Identity(always=True), primary_key=True)
     user_id: Mapped[int] = mapped_column(

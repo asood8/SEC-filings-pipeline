@@ -1,4 +1,4 @@
-"""Response models. They define the public API contract and its OpenAPI documentation."""
+"""Request and response models. They define the API contract and its OpenAPI documentation."""
 
 from datetime import date, datetime
 from typing import Literal
@@ -90,3 +90,17 @@ class SearchResponse(BaseModel):
         description="True when semantic or hybrid search was requested but fell back to keywords."
     )
     items: list[SearchResultOut]
+
+
+class GoogleSignIn(BaseModel):
+    credential: str = Field(
+        min_length=1,
+        max_length=8192,
+        description="The ID token (a JWT) that Google's Sign in with Google button returns.",
+    )
+
+
+class UserOut(BaseModel):
+    id: int
+    email: str
+    created_at: datetime

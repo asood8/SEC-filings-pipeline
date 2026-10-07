@@ -1,0 +1,29 @@
+# Build context for docker/service.Dockerfile (see docs/adr/0014-container-images.md).
+# Deny by default: only the files an image needs are sent to the Docker daemon, so a new local file
+# (a secret, a data dump, a scratch script) can't end up in an image by accident.
+*
+
+# What the build uses: the workspace manifests and lockfile, each package's source, and the
+# discovery watchlist (public configuration baked into that image).
+!pyproject.toml
+!uv.lock
+!libs/*/pyproject.toml
+!libs/*/src
+!services/*/pyproject.toml
+!services/*/src
+!config/watchlist.toml
+
+# Never sent, even from inside the paths allowed above. Most are already excluded by `*`; they are
+# listed so they stay excluded if the allowlist above ever widens.
+**/.env
+**/.env.*
+.git
+**/.venv
+data
+**/tests
+**/__pycache__
+**/*.py[cod]
+**/.mypy_cache
+**/.ruff_cache
+**/.pytest_cache
+**/node_modules

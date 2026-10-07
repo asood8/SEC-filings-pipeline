@@ -15,17 +15,24 @@
 
 A crash between a successful send and the commit can resend that one alert; webhooks offer no
 idempotency keys, so that tiny window can't be closed.
+
+Each delivery is a span with only the channel and the outcome: never the target (a secret webhook
+URL or a personal email address), and errors by type only, since their messages can quote it.
 """
 
 import logging
 from collections.abc import Mapping
 from datetime import datetime
+from typing import Literal
 
 import sqlalchemy as sa
+from opentelemetry import trace
+from opentelemetry.trace import Span
 from pydantic import ValidationError
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.orm import Session, sessionmaker
 
+from filings_common import telemetry
 from filings_common.consumer import PermanentError, Received
 from filings_common.db import (
     Channel,
@@ -44,6 +51,9 @@ from filings_common.targets import target_is_valid
 from filings_notifier.channels import Alert, DeliveryError, PermanentDeliveryError, Sender
 
 logger = logging.getLogger(__name__)
+tracer = trace.get_tracer(__name__)
+
+DeliveryOutcome = Literal["sent", "failed", "retry", "already_settled"]
 
 
 class PendingAlertsError(Exception):
@@ -60,6 +70,7 @@ class NotificationHandler:
             event = FilingReady.model_validate_json(received.value)
         except ValidationError as exc:
             raise PermanentError(f"invalid {Topic.FILINGS_READY} event: {exc}") from exc
+        telemetry.tag_filing(event.accession_no, form_type=event.form_type, cik=event.cik)
 
         with self._sessions() as session:
             alert, discovered_at = self._alert(session, event)
@@ -129,6 +140,14 @@ class NotificationHandler:
 
     def _deliver(self, subscription_id: int, alert: Alert) -> bool:
         """Deliver one alert. True when settled (sent, or failed for good); False to retry."""
+        with telemetry.redacted_span(tracer, "deliver alert") as span:
+            outcome = self._deliver_once(subscription_id, alert, span)
+            span.set_attribute(telemetry.OUTCOME, outcome)
+            return outcome != "retry"
+
+    def _deliver_once(self, subscription_id: int, alert: Alert, span: Span) -> DeliveryOutcome:
+        """Deliver the alert unless it is already settled. Returns the outcome: sent, failed (for
+        good), retry (a transient failure), or already_settled."""
         with self._sessions.begin() as session:
             session.execute(
                 pg_insert(Notification)
@@ -144,8 +163,9 @@ class NotificationHandler:
                 .with_for_update()
             ).scalar_one()
             if notification.status is not NotificationStatus.PENDING:
-                return True  # already sent, or failed for good: never alert twice
+                return "already_settled"  # sent, or failed for good: never alert twice
             subscription = session.get_one(Subscription, subscription_id)
+            span.set_attribute("filings.alert.channel", subscription.channel.value)
             notification.attempts += 1
             try:
                 if not target_is_valid(subscription.channel, subscription.target):
@@ -155,12 +175,14 @@ class NotificationHandler:
                 notification.status = NotificationStatus.FAILED
                 notification.last_error = str(exc)[:500]
                 logger.warning("alert %d failed permanently: %s", notification.id, exc)
-                return True
+                telemetry.record_error(span, exc, redact=True)
+                return "failed"
             except DeliveryError as exc:
                 notification.last_error = str(exc)[:500]
                 logger.warning("alert %d not delivered yet: %s", notification.id, exc)
-                return False
+                telemetry.record_error(span, exc, redact=True)
+                return "retry"
             notification.status = NotificationStatus.SENT
             notification.sent_at = sa.func.now()
             notification.last_error = None
-            return True
+            return "sent"

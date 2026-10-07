@@ -2,6 +2,8 @@
 
 Integration tests (marked `integration`) use the local Compose stack from `make up`. When a service
 is unreachable they are skipped, unless REQUIRE_SERVICES=1 (set in CI), which makes them fail.
+
+Tests never export telemetry. Those that check spans record them in memory (the `spans` fixture).
 """
 
 import os
@@ -15,7 +17,12 @@ import sqlalchemy as sa
 from sqlalchemy.engine import Engine, make_url
 
 if TYPE_CHECKING:
+    from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter
     from pymongo.database import Database
+
+# Tracing stays off in any process a test starts, whatever a developer's .env says: environment
+# variables take precedence over .env, and a blank endpoint means "unset".
+os.environ["OTEL_EXPORTER_OTLP_ENDPOINT"] = ""
 
 # Defaults match .env.example. Tests use their own Redis DB and a throwaway Postgres database.
 TEST_REDIS_URL = os.environ.get("TEST_REDIS_URL", "redis://localhost:6379/15")
@@ -33,6 +40,31 @@ def _unavailable(service: str, exc: Exception) -> NoReturn:
     if os.environ.get("REQUIRE_SERVICES") == "1":
         pytest.fail(message)
     pytest.skip(message)
+
+
+@pytest.fixture(scope="session")
+def _span_exporter() -> "InMemorySpanExporter":
+    """Installs a tracer provider that keeps finished spans in memory, once per test run: a
+    process's global tracer provider can only be set once."""
+    from opentelemetry import trace
+    from opentelemetry.sdk.trace import TracerProvider
+    from opentelemetry.sdk.trace.export import SimpleSpanProcessor
+    from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter
+
+    exporter = InMemorySpanExporter()
+    provider = TracerProvider()
+    provider.add_span_processor(SimpleSpanProcessor(exporter))
+    trace.set_tracer_provider(provider)
+    return exporter
+
+
+@pytest.fixture
+def spans(_span_exporter: "InMemorySpanExporter") -> Iterator["InMemorySpanExporter"]:
+    """The spans the test finishes (`spans.get_finished_spans()`). Spans finished earlier, by
+    other tests, are dropped first."""
+    _span_exporter.clear()
+    yield _span_exporter
+    _span_exporter.clear()
 
 
 @pytest.fixture(scope="session")

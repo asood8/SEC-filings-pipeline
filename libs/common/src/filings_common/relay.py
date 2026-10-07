@@ -1,6 +1,5 @@
 """The outbox relay process (`filings-outbox-relay`): create missing topics, then relay."""
 
-import logging
 import signal
 import threading
 
@@ -8,10 +7,11 @@ from filings_common.config import DatabaseSettings, KafkaSettings, OutboxRelaySe
 from filings_common.db import create_engine, session_factory
 from filings_common.kafka import PIPELINE_TOPICS, KafkaPublisher, ensure_topics
 from filings_common.outbox import run_relay
+from filings_common.telemetry import setup_telemetry
 
 
 def main() -> int:
-    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s %(message)s")
+    telemetry = setup_telemetry("filings-outbox-relay", distribution="filings-common")
     kafka = KafkaSettings()
     settings = OutboxRelaySettings()
     ensure_topics(
@@ -38,6 +38,7 @@ def main() -> int:
     finally:
         publisher.close()
         engine.dispose()
+        telemetry.shutdown()
     return 0
 
 

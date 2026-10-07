@@ -4,6 +4,8 @@ from typing import Any
 
 import httpx2
 import pytest
+from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter
+from opentelemetry.trace import SpanKind, StatusCode
 
 from filings_summarizer.llm import (
     CircuitBreaker,
@@ -222,3 +224,72 @@ def test_all_providers_failing_is_a_transient_error() -> None:
     )
     with pytest.raises(LlmUnavailableError, match=r"ollama.*gemini"):
         failover.generate_json("s", "p", SCHEMA)
+
+
+# --- Tracing -------------------------------------------------------------------------------------
+
+
+def test_each_provider_call_is_a_span_with_provider_model_and_outcome_but_no_text(
+    spans: InMemorySpanExporter,
+) -> None:
+    prompt, answer = "Summarize: Acme's CFO resigned.", '{"headline": "Acme CFO quits"}'
+    failover = chain(
+        FakeProvider("ollama", "not json"),  # answers, but invalid
+        FakeProvider("gemini", LlmError(f"gemini returned 500: {prompt}")),
+        FakeProvider("backup", answer),
+        validate=json.loads,
+    )
+    assert failover.generate_json("be brief", prompt, SCHEMA).text == answer
+
+    calls = spans.get_finished_spans()
+    assert [(s.name, s.kind) for s in calls] == [
+        ("chat ollama-model", SpanKind.CLIENT),
+        ("chat gemini-model", SpanKind.CLIENT),
+        ("chat backup-model", SpanKind.CLIENT),
+    ]
+    assert [(s.attributes or {})["filings.outcome"] for s in calls] == ["invalid", "error", "ok"]
+    assert dict(calls[2].attributes or {}) == {
+        "gen_ai.operation.name": "chat",
+        "gen_ai.provider.name": "backup",
+        "gen_ai.request.model": "backup-model",
+        "filings.outcome": "ok",
+    }
+    assert calls[1].status.status_code is StatusCode.ERROR
+    assert calls[1].status.description == "filings_summarizer.llm.LlmError"
+    for span in calls:  # neither the prompt nor any answer, even inside an error
+        assert "Acme" not in span.to_json()
+        assert "not json" not in span.to_json()
+
+
+def test_provider_spans_carry_token_counts_and_rate_limit_wait(
+    spans: InMemorySpanExporter,
+) -> None:
+    reply = {
+        "choices": [{"message": {"content": ANSWER}}],
+        "usage": {"prompt_tokens": 812, "completion_tokens": 64},
+    }
+    local_mock, _ = transport(httpx2.Response(200, json=reply))
+    local = OpenAICompatibleProvider(
+        name="ollama", base_url="http://llm/v1", model="small", timeout=5, transport=local_mock
+    )
+    gemini_reply = gemini_ok().json() | {
+        "usageMetadata": {"promptTokenCount": 900, "candidatesTokenCount": 70}
+    }
+    gemini_mock, _ = transport(httpx2.Response(200, json=gemini_reply))
+    limiter = CountingLimiter()
+    gemini = GeminiProvider(
+        api_key="k", model="g", timeout=5, limiter=limiter, transport=gemini_mock
+    )
+    for provider in (local, gemini):
+        failover = FailoverChain(
+            [provider], breaker_factory=lambda: CircuitBreaker(threshold=2, cooldown=60)
+        )
+        failover.generate_json("s", "p", SCHEMA)
+
+    local_span, gemini_span = (s.attributes or {} for s in spans.get_finished_spans())
+    assert (local_span["gen_ai.usage.input_tokens"], local_span["gen_ai.usage.output_tokens"]) == (
+        812,
+        64,
+    )
+    assert gemini_span["gen_ai.usage.input_tokens"] == 900
+    assert gemini_span["filings.rate_limit.wait_seconds"] == 0.0

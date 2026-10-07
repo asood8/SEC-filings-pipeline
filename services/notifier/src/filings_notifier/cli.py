@@ -13,6 +13,7 @@ from filings_common.consumer import make_consumer, run_consumer
 from filings_common.db import Channel, create_engine, session_factory
 from filings_common.events import Topic
 from filings_common.kafka import KafkaPublisher
+from filings_common.telemetry import setup_telemetry
 from filings_notifier.channels import (
     DiscordSender,
     LogEmailSender,
@@ -57,7 +58,7 @@ def email_sender(settings: EmailSettings) -> Sender:
 
 
 def main() -> int:
-    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s %(message)s")
+    telemetry = setup_telemetry("filings-notifier")
     logging.getLogger("httpx2").setLevel(logging.WARNING)
     kafka = KafkaSettings()
     senders: dict[Channel, Sender] = {
@@ -79,10 +80,12 @@ def main() -> int:
             NotificationHandler(session_factory(engine), senders),
             dead_letters,
             stop,
+            consumer_group=CONSUMER_GROUP,
         )
     finally:
         dead_letters.close()
         engine.dispose()
+        telemetry.shutdown()
     return 0
 
 

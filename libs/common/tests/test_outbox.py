@@ -5,13 +5,19 @@ from datetime import date
 
 import pytest
 import sqlalchemy as sa
+from opentelemetry import trace
+from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter
+from opentelemetry.trace import SpanKind, StatusCode
 from sqlalchemy.engine import Engine
 
 from filings_common.db import OutboxEvent, session_factory
 from filings_common.events import FilingDiscovered, Topic
 from filings_common.outbox import OutboundMessage, enqueue, relay_batch, run_relay
+from filings_common.telemetry import context_from_headers
 
 pytestmark = pytest.mark.integration
+
+tracer = trace.get_tracer(__name__)
 
 
 class RecordingPublisher:
@@ -100,3 +106,61 @@ def test_run_relay_drains_the_outbox_until_stopped(clean_db: Engine) -> None:
         worker.join(timeout=5)
     assert not worker.is_alive()
     assert [len(b) for b in publisher.batches] == [2, 2, 1]
+
+
+def stored_trace_contexts(engine: Engine) -> list[dict[str, str] | None]:
+    with engine.connect() as conn:
+        query = sa.select(OutboxEvent.trace_context).order_by(OutboxEvent.id)
+        return list(conn.execute(query).scalars())
+
+
+def test_relay_continues_the_trace_that_wrote_each_event(
+    clean_db: Engine, spans: InMemorySpanExporter
+) -> None:
+    with tracer.start_as_current_span("record filing") as record:
+        [accession_no] = add_events(clean_db, 1)
+    writer = record.get_span_context()
+    [stored] = stored_trace_contexts(clean_db)
+    assert stored is not None
+    assert stored["traceparent"].split("-")[1:3] == [
+        trace.format_trace_id(writer.trace_id),
+        trace.format_span_id(writer.span_id),
+    ]
+
+    publisher = RecordingPublisher()
+    relay_batch(session_factory(clean_db), publisher)
+    [send] = [s for s in spans.get_finished_spans() if s.name == "send filings.discovered"]
+    assert send.kind is SpanKind.PRODUCER
+    assert send.parent is not None
+    assert send.parent.span_id == writer.span_id
+    assert send.context.trace_id == writer.trace_id
+    attributes = send.attributes or {}
+    assert attributes["messaging.destination.name"] == "filings.discovered"
+    assert attributes["messaging.kafka.message.key"] == accession_no
+
+    # The message carries the publish span's context: consumers continue from it.
+    [[message]] = publisher.batches
+    received = trace.get_current_span(context_from_headers(message.headers)).get_span_context()
+    assert (received.trace_id, received.span_id) == (writer.trace_id, send.context.span_id)
+
+
+def test_events_written_outside_a_trace_start_one_at_the_relay(
+    clean_db: Engine, spans: InMemorySpanExporter
+) -> None:
+    add_events(clean_db, 2)  # e.g. by a script with tracing off
+    assert stored_trace_contexts(clean_db) == [None, None]
+    relay_batch(session_factory(clean_db), RecordingPublisher())
+    sends = spans.get_finished_spans()
+    assert [s.parent for s in sends] == [None, None]
+    assert len({s.context.trace_id for s in sends}) == 2  # one trace per filing, not per batch
+
+
+def test_failed_publish_marks_the_publish_spans_failed(
+    clean_db: Engine, spans: InMemorySpanExporter
+) -> None:
+    add_events(clean_db, 1)
+    with pytest.raises(RuntimeError):
+        relay_batch(session_factory(clean_db), RecordingPublisher(fail=True))
+    [send] = spans.get_finished_spans()
+    assert send.status.status_code is StatusCode.ERROR
+    assert send.status.description == "RuntimeError: broker unavailable"

@@ -131,5 +131,6 @@ def test_smtp_email(monkeypatch: pytest.MonkeyPatch) -> None:
     assert ALERT.url in message.get_content()
 
     FakeSmtp.refuse = True
-    with pytest.raises(PermanentDeliveryError, match="recipient refused"):
+    with pytest.raises(PermanentDeliveryError, match=r"recipient refused \(SMTP 550\)") as error:
         sender.send("gone@example.com", ALERT)
+    assert "gone@example.com" not in str(error.value)  # it ends up in logs

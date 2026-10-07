@@ -2,6 +2,8 @@ from datetime import date
 
 import pytest
 import sqlalchemy as sa
+from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter
+from opentelemetry.trace import StatusCode
 from sqlalchemy.engine import Engine
 
 from filings_common.consumer import PermanentError, Received
@@ -236,3 +238,33 @@ def test_subscriptions_are_only_alerted_about_filings_found_after_them(
     NotificationHandler(session_factory(clean_db), fakes)(ready_event(world["summary_id"]))
     assert late_id not in notifications(clean_db)
     assert (DISCORD, FORM4) in fakes[Channel.DISCORD].sent  # the earlier one still is
+
+
+def test_delivery_spans_name_the_channel_and_outcome_but_never_the_target(
+    clean_db: Engine, world: dict[str, int], spans: InMemorySpanExporter
+) -> None:
+    fakes = senders()
+    # A transient error whose message quotes the webhook URL, as an HTTP client's might.
+    fakes[Channel.SLACK].failures = [DeliveryError(f"Slack unreachable: POST {SLACK}")]
+    handler = NotificationHandler(session_factory(clean_db), fakes)
+    with pytest.raises(PendingAlertsError):
+        handler(ready_event(world["summary_id"]))
+    handler(ready_event(world["summary_id"]))  # the retry
+
+    deliveries = [s for s in spans.get_finished_spans() if s.name == "deliver alert"]
+    assert [dict(s.attributes or {}) for s in deliveries] == [
+        {"filings.alert.channel": "discord", "filings.outcome": "sent"},
+        {"filings.alert.channel": "slack", "filings.outcome": "retry"},
+        {"filings.alert.channel": "email", "filings.outcome": "sent"},
+        {"filings.alert.channel": "discord", "filings.outcome": "failed"},  # the invalid target
+        {"filings.outcome": "already_settled"},
+        {"filings.alert.channel": "slack", "filings.outcome": "sent"},
+        {"filings.outcome": "already_settled"},
+        {"filings.outcome": "already_settled"},
+    ]
+    assert deliveries[1].status.status_code is StatusCode.ERROR
+    assert deliveries[1].status.description == "filings_notifier.channels.DeliveryError"
+    for span in spans.get_finished_spans():
+        recorded = span.to_json()
+        for private in ("discord.com", "hooks.slack.com", "@example.com", "evil.example"):
+            assert private not in recorded

@@ -169,6 +169,40 @@ class GoogleSignInSettings(BaseSettings):
         return None if isinstance(value, str) and not value.strip() else value
 
 
+class TelemetrySettings(BaseSettings):
+    """OpenTelemetry tracing, from the standard OTEL_* variables. Without an endpoint it is off.
+
+    Read here rather than by the OpenTelemetry SDK itself so that, like every other setting, they
+    can also come from `.env` in development.
+    """
+
+    model_config = _config("OTEL_")
+
+    # Base URL of an OTLP/HTTP receiver; spans go to <endpoint>/v1/traces. Grafana Cloud's is
+    # https://otlp-gateway-<zone>.grafana.net/otlp. Unset means tracing is off.
+    exporter_otlp_endpoint: str | None = None
+    # Headers sent with every export, as comma-separated key=value pairs with URL-encoded values.
+    # Grafana Cloud: Authorization=Basic%20<base64 of instance-id:token>. A secret: never logged.
+    exporter_otlp_headers: SecretStr | None = None
+    # Replaces the name the service gives itself (its service.name).
+    service_name: str | None = None
+    # More resource attributes as key=value pairs, e.g. deployment.environment.name=production.
+    resource_attributes: str | None = None
+    # The standard switch to turn the SDK off without removing the rest of the configuration.
+    sdk_disabled: bool = False
+
+    @field_validator(
+        "exporter_otlp_endpoint",
+        "exporter_otlp_headers",
+        "service_name",
+        "resource_attributes",
+        mode="before",
+    )
+    @classmethod
+    def _blank_is_unset(cls, value: object) -> object:
+        return None if isinstance(value, str) and not value.strip() else value
+
+
 class ObjectStoreSettings(BaseSettings):
     """Where raw filings are stored: a local directory in development, R2 (S3 API) in production."""
 

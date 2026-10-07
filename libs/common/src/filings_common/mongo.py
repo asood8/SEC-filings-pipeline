@@ -4,17 +4,34 @@ The accession number is the document `_id`, so writes are naturally idempotent u
 shapes differ by form type, which is why they live in a document store rather than Postgres.
 """
 
+from contextlib import AbstractContextManager
 from datetime import UTC, datetime
 from typing import Any
 
+from opentelemetry import trace
+from opentelemetry.trace import Span, SpanKind
 from pymongo.database import Database
 
 COLLECTION = "parsed_filings"
+
+tracer = trace.get_tracer(__name__)
 
 
 class ParsedFilingStore:
     def __init__(self, database: Database[dict[str, Any]]) -> None:
         self._collection = database[COLLECTION]
+
+    def _span(self, operation: str) -> AbstractContextManager[Span]:
+        return tracer.start_as_current_span(
+            f"{operation} {COLLECTION}",
+            kind=SpanKind.CLIENT,
+            attributes={
+                "db.system.name": "mongodb",
+                "db.namespace": self._collection.database.name,
+                "db.collection.name": COLLECTION,
+                "db.operation.name": operation,
+            },
+        )
 
     def ensure_indexes(self) -> None:
         self._collection.create_index([("cik", 1), ("form_type", 1)])
@@ -28,20 +45,22 @@ class ParsedFilingStore:
         parser_version: int,
         parsed: dict[str, Any],
     ) -> None:
-        self._collection.replace_one(
-            {"_id": accession_no},
-            {
-                "cik": cik,
-                "form_type": form_type,
-                "parser_version": parser_version,
-                "parsed": parsed,
-                "parsed_at": datetime.now(UTC),
-            },
-            upsert=True,
-        )
+        with self._span("replace_one"):
+            self._collection.replace_one(
+                {"_id": accession_no},
+                {
+                    "cik": cik,
+                    "form_type": form_type,
+                    "parser_version": parser_version,
+                    "parsed": parsed,
+                    "parsed_at": datetime.now(UTC),
+                },
+                upsert=True,
+            )
 
     def get(self, accession_no: str) -> dict[str, Any] | None:
-        document = self._collection.find_one({"_id": accession_no})
+        with self._span("find_one"):
+            document = self._collection.find_one({"_id": accession_no})
         if document is None:
             return None
         document["accession_no"] = document.pop("_id")

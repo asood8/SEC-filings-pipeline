@@ -9,6 +9,7 @@ from datetime import timedelta
 import redis
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor
 from redis.backoff import NoBackoff
 from redis.retry import Retry
 from sqlalchemy.orm import Session, sessionmaker
@@ -31,6 +32,7 @@ from filings_common.config import (
 from filings_common.db import create_engine, session_factory
 from filings_common.embeddings import Embedder, embedder_from_settings
 from filings_common.ratelimit import RedisRateLimit
+from filings_common.telemetry import Telemetry, setup_telemetry
 
 logger = logging.getLogger(__name__)
 
@@ -53,6 +55,22 @@ def api_redis_client(url: str) -> redis.Redis:
     )
 
 
+def instrument(app: FastAPI) -> None:
+    """Trace each request with a SERVER span, except health checks (probes would flood traces).
+
+    The span records the method, route, URL, and status, never request headers or bodies, which
+    carry the session cookie, Google ID tokens, and webhook URLs. Query strings hold only search
+    terms and filters. Should header capture ever be turned on (OTEL_INSTRUMENTATION_HTTP_CAPTURE_
+    HEADERS_*), cookie and authorization values are still redacted.
+    """
+    FastAPIInstrumentor.instrument_app(
+        app,
+        excluded_urls="/healthz",
+        exclude_spans=["receive", "send"],
+        http_capture_headers_sanitize_fields=["cookie", "authorization"],
+    )
+
+
 def create_app(
     sessions: sessionmaker[Session] | None = None,
     *,
@@ -62,8 +80,11 @@ def create_app(
     google_verifier: GoogleIdTokenVerifier | None = None,
 ) -> FastAPI:
     """Build the app. Given `sessions` (tests), it uses exactly the dependencies passed in;
-    otherwise it connects to everything from the environment on startup."""
+    otherwise it connects to everything from the environment on startup, and sets up logging and
+    tracing for the process."""
     settings = settings or ApiSettings()
+    telemetry = setup_telemetry("filings-api") if sessions is None else Telemetry()
+    logging.getLogger("httpx2").setLevel(logging.WARNING)  # one line per embedding call is noise
 
     def configure(
         app: FastAPI,
@@ -111,6 +132,7 @@ def create_app(
         google_keys.close()
         client.close()
         engine.dispose()
+        telemetry.shutdown()
 
     app = FastAPI(
         title="SEC Filings API", version="0.2.0", description=DESCRIPTION, lifespan=lifespan
@@ -154,4 +176,6 @@ def create_app(
     app.include_router(search.router)
     app.include_router(auth.router)
     app.include_router(subscriptions.router)
+    if telemetry.enabled:
+        instrument(app)
     return app

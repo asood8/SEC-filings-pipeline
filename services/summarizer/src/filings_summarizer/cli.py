@@ -1,6 +1,5 @@
 """The summarizer process (`filings-summarizer`): consume `filings.parsed` until stopped."""
 
-import logging
 import signal
 import threading
 from typing import Any
@@ -23,6 +22,7 @@ from filings_common.embeddings import embedder_from_settings
 from filings_common.events import Topic
 from filings_common.kafka import KafkaPublisher
 from filings_common.mongo import ParsedFilingStore
+from filings_common.telemetry import setup_telemetry
 from filings_summarizer.handler import SummaryHandler
 from filings_summarizer.summarizers import build_summarizers
 
@@ -35,7 +35,7 @@ MAX_POLL_INTERVAL_SECONDS = 15 * 60
 
 
 def main() -> int:
-    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s %(message)s")
+    telemetry = setup_telemetry("filings-summarizer")
     kafka = KafkaSettings()
     mongo_settings = MongoSettings()
 
@@ -67,12 +67,14 @@ def main() -> int:
             stop,
             max_attempts=MAX_ATTEMPTS,
             backoff_seconds=BACKOFF_SECONDS,
+            consumer_group=CONSUMER_GROUP,
         )
     finally:
         dead_letters.close()
         redis_client.close()
         mongo.close()
         engine.dispose()
+        telemetry.shutdown()
     return 0
 
 

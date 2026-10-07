@@ -1,6 +1,5 @@
 """The parser process (`filings-parser`): consume `filings.discovered` until stopped."""
 
-import logging
 import signal
 import threading
 from typing import Any
@@ -19,6 +18,7 @@ from filings_common.events import Topic
 from filings_common.kafka import KafkaPublisher
 from filings_common.mongo import ParsedFilingStore
 from filings_common.storage import object_store_from_settings
+from filings_common.telemetry import setup_telemetry
 from filings_parser.forms import PARSERS
 from filings_parser.handler import FilingHandler
 
@@ -26,7 +26,7 @@ CONSUMER_GROUP = "parser"
 
 
 def main() -> int:
-    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s %(message)s")
+    telemetry = setup_telemetry("filings-parser")
     kafka = KafkaSettings()
     mongo_settings = MongoSettings()
 
@@ -52,11 +52,13 @@ def main() -> int:
             handler,
             dead_letters,
             stop,
+            consumer_group=CONSUMER_GROUP,
         )
     finally:
         dead_letters.close()
         mongo.close()
         engine.dispose()
+        telemetry.shutdown()
     return 0
 
 

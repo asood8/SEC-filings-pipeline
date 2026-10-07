@@ -152,7 +152,7 @@ Each phase ends with something runnable, tests passing, and docs updated. Check 
   - Google OIDC sign-in, subscriptions CRUD, notifier consumer
   - Discord/Slack webhooks + email, retries with backoff, DLQ, one-alert-per-subscription guarantee
   - _Done when:_ a test subscription receives exactly one alert per new filing, even after a replay.
-- [ ] **Phase 5: Frontend.**
+- [x] **Phase 5: Frontend.**
   - React static site (Vite + TypeScript): latest filings, search, company pages, filing detail (summary + link to the original on sec.gov), subscription management
   - _Done when:_ it works end to end against the local API.
 - [ ] **Phase 6: Observability.**
@@ -219,7 +219,8 @@ CLAUDE.md
 ## 12. Open decisions (ask before choosing)
 
 - ~~Watchlist: which companies and how many to start with~~ Decided 2026-10-05: 35 large, well-known US companies across sectors (`config/watchlist.toml`)
-- Kustomize vs Helm; Sealed Secrets vs SOPS for production secrets
+- ~~Kustomize vs Helm; Sealed Secrets vs SOPS for production secrets~~ Decided 2026-10-07: Kustomize and Sealed Secrets
+- ~~Local observability viewer~~ Decided 2026-10-07: an optional grafana/otel-lgtm container (Compose profile); production uses Grafana Cloud
 - Which local LLM and embedding model (pick a reasonable default in Phase 2; decide properly with the Phase 8 benchmark)
 - ~~Next.js vs a lighter frontend~~ Decided 2026-10-06: Vite + React + TypeScript ([ADR-0015](adr/0015-frontend-stack.md))
 - Project name and domain

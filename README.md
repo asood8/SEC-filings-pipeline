@@ -51,7 +51,7 @@ Example headlines from that run (public filings):
 | 2. Summarization | 8-K items and exhibits, Form 4 template, LLM failover, replay | Done |
 | 3. Search and API | Full-text and semantic search (pgvector), caching, rate limiting | Done |
 | 4. Users and alerts | Google sign-in, subscriptions, Discord/Slack/email alerts | In progress: all built; waiting for a real new filing to reach Discord |
-| 5. Frontend | React site (Vite + TypeScript) on Cloudflare Pages | In progress: every page built and working against the local API |
+| 5. Frontend | React site (Vite + TypeScript) on Cloudflare Pages | Done |
 | 6. Observability | OpenTelemetry traces, metrics, Grafana dashboards and alerts | Planned |
 | 7. Production | Terraform, k3s on Oracle Cloud's free tier, Argo CD, multi-arch images | Started: service images build (amd64; arm64-ready) |
 | 8. Hardening | Load tests, local-model benchmark, backups, runbook | Planned |

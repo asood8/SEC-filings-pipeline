@@ -1,8 +1,8 @@
 .DEFAULT_GOAL := help
-.PHONY: help setup sync up down ps logs llm-up llm-down migrate api pipeline images lint fmt test web-install web web-types web-check
+.PHONY: help setup sync up down ps logs llm-up llm-down migrate api pipeline images lint fmt test web-install web web-types web-check loadtest api-loadtest
 
 help: ## List targets
-	@grep -E '^[a-z-]+:.*## ' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*## "} {printf "  %-11s %s\n", $$1, $$2}'
+	@grep -E '^[a-z-]+:.*## ' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*## "} {printf "  %-12s %s\n", $$1, $$2}'
 
 setup: sync ## First-time setup: install dependencies and git hooks
 	uv run pre-commit install
@@ -82,3 +82,10 @@ web-check: ## Lint, type-check, test, and build the website
 	npm --prefix web run typecheck
 	npm --prefix web test
 	npm --prefix web run build
+
+loadtest: ## Load-test a running API with k6 (start it with `make api-loadtest` in another terminal)
+	@mkdir -p loadtest/results
+	k6 run --summary-export loadtest/results/summary.json loadtest/api.js
+
+api-loadtest: ## Run the API with the per-client rate limit raised, as `make loadtest` needs
+	API_RATE_LIMIT_PER_MINUTE=1000000 API_RATE_LIMIT_BURST=100000 uv run uvicorn --factory filings_api.app:create_app --workers 2

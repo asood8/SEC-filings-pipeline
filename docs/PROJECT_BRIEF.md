@@ -41,7 +41,7 @@ Pipeline: `discovery → filings.discovered → parser → filings.parsed → su
    - 8-K gets the relevant items extracted, then an LLM summary (primary: local model; fallback: Gemini free tier).
    - It computes an embedding into **pgvector**, stores the summary in Postgres, and publishes `filings.ready`.
 6. **notifier** consumes `filings.ready`, matches subscriptions, and sends Discord/Slack/email alerts with retries, a dead-letter queue, and dedupe.
-7. Users visit the **Next.js** site on Cloudflare Pages. It calls the **FastAPI** API, which is exposed through **Cloudflare Tunnel**. The API serves the feed, search (Postgres full-text + pgvector), Google sign-in, and subscriptions, and uses Redis for caching and rate limiting.
+7. Users visit the **React** site (Vite + TypeScript, static files) on Cloudflare Pages. It calls the **FastAPI** API, which is exposed through **Cloudflare Tunnel**. The API serves the feed, search (Postgres full-text + pgvector), Google sign-in, and subscriptions, and uses Redis for caching and rate limiting.
 
 ## 4. Components and why each exists
 
@@ -55,7 +55,7 @@ Pipeline: `discovery → filings.discovered → parser → filings.parsed → su
 | Shared state | Redis (Valkey) | k3s | Global SEC rate limit across all workers (token bucket), API rate limiting, caching, short-lived dedupe |
 | LLM | llama.cpp server (or Ollama) with a small quantized model; Gemini free-tier fallback | k3s / Google | Free summarization; failover keeps the pipeline moving if one provider is down or throttled |
 | API | FastAPI | k3s | Public read API, auth, subscriptions |
-| Frontend | Next.js static export | Cloudflare Pages | Feed, search, company pages, subscription management |
+| Frontend | Vite + React + TypeScript (static) | Cloudflare Pages | Feed, search, company pages, subscription management |
 | Ingress | Cloudflare Tunnel | k3s + Cloudflare | HTTPS access to the API without opening ports on the VM |
 | Observability | OpenTelemetry SDK + collector → Grafana Cloud | k3s + Grafana free tier | Traces across services (including through Kafka headers), metrics, logs; offloaded to save VM RAM |
 | CI | GitHub Actions | GitHub (public repo) | Lint, type-check, test; native arm64 image builds; push to GHCR |
@@ -153,7 +153,7 @@ Each phase ends with something runnable, tests passing, and docs updated. Check 
   - Discord/Slack webhooks + email, retries with backoff, DLQ, one-alert-per-subscription guarantee
   - _Done when:_ a test subscription receives exactly one alert per new filing, even after a replay.
 - [ ] **Phase 5: Frontend.**
-  - Next.js static site: latest filings, search, company pages, filing detail (summary + link to the original on sec.gov), subscription management
+  - React static site (Vite + TypeScript): latest filings, search, company pages, filing detail (summary + link to the original on sec.gov), subscription management
   - _Done when:_ it works end to end against the local API.
 - [ ] **Phase 6: Observability.**
   - OTel instrumentation across services including Kafka header propagation
@@ -197,7 +197,7 @@ Each phase ends with something runnable, tests passing, and docs updated. Check 
 services/
   discovery/  parser/  summarizer/  notifier/  api/
 libs/common/        # config, logging, OTel setup, event models, EDGAR client, ObjectStore, Kafka helpers
-web/                # Next.js frontend
+web/                # React frontend (Vite + TypeScript)
 deploy/k8s/         # manifests (Kustomize or Helm) + Argo CD apps
 infra/terraform/    # modules: oci, cloudflare, atlas, grafana
 docs/adr/           # architecture decision records
@@ -221,6 +221,6 @@ CLAUDE.md
 - ~~Watchlist: which companies and how many to start with~~ Decided 2026-10-05: 35 large, well-known US companies across sectors (`config/watchlist.toml`)
 - Kustomize vs Helm; Sealed Secrets vs SOPS for production secrets
 - Which local LLM and embedding model (pick a reasonable default in Phase 2; decide properly with the Phase 8 benchmark)
-- Next.js vs a lighter frontend
+- ~~Next.js vs a lighter frontend~~ Decided 2026-10-06: Vite + React + TypeScript ([ADR-0015](adr/0015-frontend-stack.md))
 - Project name and domain
 - Later form types (10-Q/10-K section changes, 13F)

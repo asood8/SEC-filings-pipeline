@@ -9,7 +9,7 @@ row below.
 
 | ADR | Title | Status |
 |---|---|---|
-| [0001](0001-architecture-overview.md) | Architecture overview | Accepted |
+| [0001](0001-architecture-overview.md) | Architecture overview | Accepted (frontend superseded by 0015) |
 | [0002](0002-python-monorepo-and-tooling.md) | Python monorepo and tooling | Accepted |
 | [0003](0003-local-development-stack.md) | Local development stack | Accepted |
 | [0004](0004-service-runtime-libraries-and-patterns.md) | Service runtime libraries and patterns | Accepted |
@@ -21,3 +21,4 @@ row below.
 | [0010](0010-local-llm-in-compose-and-default-model.md) | Local LLM in a Compose profile, and the default model | Accepted |
 | [0011](0011-search-and-public-api.md) | Search and the public API | Accepted |
 | [0012](0012-notifier-and-exactly-once-alerts.md) | Notifier and exactly-once alerts | Accepted |
+| [0015](0015-frontend-stack.md) | Frontend stack: Vite, React, and TypeScript | Accepted |

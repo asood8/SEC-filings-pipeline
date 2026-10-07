@@ -1,6 +1,6 @@
 # ADR-0001: Architecture overview
 
-- **Status:** Accepted
+- **Status:** Accepted. The frontend framework is superseded by [ADR-0015](0015-frontend-stack.md) (Vite + React instead of Next.js).
 - **Date:** 2026-10-05
 
 ## Context

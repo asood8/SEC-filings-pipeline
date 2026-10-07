@@ -1,0 +1,211 @@
+# The pipeline's alert rules (brief §7), as Grafana-managed rules in Grafana's provisioning format.
+# The local viewer (`make obs-up`) loads this file when it starts; Terraform provisions the same
+# rules into Grafana Cloud (Phase 7). See docs/adr/0016-observability.md.
+#
+# Kept portable on purpose:
+# - Queries are plain PromQL over the metrics in libs/common/src/filings_common/metrics.py.
+# - `datasourceUid: prometheus` is the local viewer's Prometheus, the only value that differs per
+#   environment: Terraform swaps in Grafana Cloud's (grafanacloud-prom by default).
+# - Annotations use {{ .Labels.x }}, not {{ $labels.x }}: Grafana reads $name in provisioning
+#   files as an environment variable.
+# - No contact points or notification policies: they hold secrets (a Discord webhook) and differ
+#   per environment, so they live with each environment's configuration.
+#
+# Each rule's query A returns one series per alert instance; C is the threshold that fires it.
+apiVersion: 1
+
+groups:
+  - orgId: 1
+    name: pipeline
+    folder: SEC Filings
+    interval: 1m
+    rules:
+      # Discovery found nothing, or nothing made it through to a summary, in a day with SEC
+      # filings. EDGAR accepts filings on weekdays, 6:00 to 22:00 US Eastern. The rule only checks
+      # from Tuesday 12:00 to Saturday 12:00 UTC, so every 24-hour window it looks at covers at
+      # least 14 of those weekday filing hours (US holidays still fire it). Discovery is a
+      # short-lived job whose runs each have their own series, hence max_over_time (see
+      # metrics.py); no discovery run at all counts as zero.
+      - uid: filings-no-new-filings
+        title: No new filings in 24 hours
+        condition: C
+        data:
+          - refId: A
+            relativeTimeRange: { from: 600, to: 0 }
+            datasourceUid: prometheus
+            model:
+              refId: A
+              instant: true
+              range: false
+              expr: |
+                (
+                  label_replace(
+                    sum(max_over_time(filings_discovered_total[24h])) or vector(0),
+                    "stage", "discovered", "", ""
+                  )
+                  or
+                  label_replace(
+                    sum(increase(filings_ready_total[24h])) or vector(0),
+                    "stage", "summarized", "", ""
+                  )
+                )
+                and on ()
+                (
+                    (day_of_week() == 2 and hour() >= 12)
+                  or (day_of_week() >= 3 and day_of_week() <= 5)
+                  or (day_of_week() == 6 and hour() < 12)
+                )
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              refId: C
+              type: threshold
+              expression: A
+              conditions:
+                - evaluator: { type: lt, params: [1] }
+        # Outside the checked hours the query returns nothing, which is fine.
+        noDataState: OK
+        execErrState: Error
+        for: 15m
+        dashboardUid: filings-pipeline
+        panelId: 7
+        labels:
+          severity: warning
+        annotations:
+          summary: No filings {{ .Labels.stage }} in the last 24 hours
+          description: >-
+            No filing was {{ .Labels.stage }} in the last 24 hours, a period with SEC filing hours.
+            "discovered": check the discovery job's runs and logs (SEC errors, the watchlist).
+            "summarized" alone: filings are discovered but stuck after that; check the outbox
+            relay, the consumers' lag, and the dead-letter topics.
+
+      # Messages a stage gave up on (retries ran out, or a permanent error). Nothing consumes the
+      # dead-letter topics, and they are kept indefinitely (retention.ms=-1, like the pipeline
+      # topics), so this fires until an operator trims the topic after fixing the cause and
+      # replaying the filings: rpk topic trim-prefix <topic> --offset end.
+      - uid: filings-dlq-not-empty
+        title: Dead-letter topic not empty
+        condition: C
+        data:
+          - refId: A
+            relativeTimeRange: { from: 600, to: 0 }
+            datasourceUid: prometheus
+            model:
+              refId: A
+              instant: true
+              range: false
+              expr: max by (messaging_destination_name) (filings_dlq_depth)
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              refId: C
+              type: threshold
+              expression: A
+              conditions:
+                - evaluator: { type: gt, params: [0] }
+        # No consumer is measuring (they are all stopped): "not reporting", below, covers that.
+        noDataState: OK
+        execErrState: Error
+        for: 0s
+        dashboardUid: filings-pipeline
+        panelId: 13
+        labels:
+          severity: warning
+        annotations:
+          summary: "{{ .Labels.messaging_destination_name }} holds dead letters"
+          description: >-
+            {{ .Labels.messaging_destination_name }} holds {{ .Values.A.Value }} message(s) that
+            a pipeline stage could not handle. The consumer's log line "dead-lettering ..." has
+            the error and the trace ID; dead letters keep their trace headers. Fix the cause,
+            replay the filings (filings-replay), then empty the topic: rpk topic trim-prefix
+            {{ .Labels.messaging_destination_name }} --offset end
+
+      # A consumer group far behind its topic for a while: a stage is stuck, failing, or too slow
+      # (a replay of many 8-Ks through the local LLM can trigger it on purpose). Normal traffic is
+      # a few filings per discovery run.
+      - uid: filings-consumer-lag-high
+        title: Consumer lag high
+        condition: C
+        data:
+          - refId: A
+            relativeTimeRange: { from: 600, to: 0 }
+            datasourceUid: prometheus
+            model:
+              refId: A
+              instant: true
+              range: false
+              # Per partition first (max): during a rebalance two consumers may both report one.
+              expr: |
+                sum by (messaging_consumer_group_name, messaging_destination_name) (
+                  max by (
+                    messaging_consumer_group_name,
+                    messaging_destination_name,
+                    messaging_destination_partition_id
+                  ) (filings_consumer_lag)
+                )
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              refId: C
+              type: threshold
+              expression: A
+              conditions:
+                - evaluator: { type: gt, params: [100] }
+        noDataState: OK
+        execErrState: Error
+        for: 15m
+        dashboardUid: filings-pipeline
+        panelId: 10
+        labels:
+          severity: warning
+        annotations:
+          summary: >-
+            {{ .Labels.messaging_consumer_group_name }} is {{ .Values.A.Value }} messages behind
+            on {{ .Labels.messaging_destination_name }}
+          description: >-
+            The consumer group has been more than 100 messages behind for 15 minutes. Check the
+            stage's logs for repeated retries, its dependencies (the LLM for the summarizer), and
+            the "process <topic>" spans for slow handling.
+
+      # Not in the brief's list, but the lag and dead-letter rules can't see a consumer that has
+      # stopped: its gauges just disappear. Fires for a long-running service that reported metrics
+      # in the last day but not in the last 10 minutes (every process exports once a minute, and
+      # target_info is written with each export). Short-lived jobs are excluded.
+      - uid: filings-service-not-reporting
+        title: Pipeline service not reporting
+        condition: C
+        data:
+          - refId: A
+            relativeTimeRange: { from: 600, to: 0 }
+            datasourceUid: prometheus
+            model:
+              refId: A
+              instant: true
+              range: false
+              expr: |
+                count by (job) (
+                  last_over_time(
+                    target_info{job=~"(.+/)?filings-(outbox-relay|parser|summarizer|notifier|api)"}[1d]
+                  )
+                )
+                unless
+                count by (job) (last_over_time(target_info[10m]))
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              refId: C
+              type: threshold
+              expression: A
+              conditions:
+                - evaluator: { type: gt, params: [0] }
+        noDataState: OK
+        execErrState: Error
+        for: 0s
+        labels:
+          severity: critical
+        annotations:
+          summary: "{{ .Labels.job }} stopped reporting metrics"
+          description: >-
+            {{ .Labels.job }} exported metrics in the last day but not in the last 10 minutes: it
+            is down, crash-looping, or can't reach the telemetry endpoint. Stopping a service on
+            purpose also fires this, for up to a day.

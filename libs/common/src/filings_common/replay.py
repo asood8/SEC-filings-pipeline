@@ -8,15 +8,21 @@
 
 Events go through the outbox, so they are published by the relay with the usual at-least-once
 guarantee. Consumers are idempotent, so replaying is always safe.
+
+Like discovery, each replayed filing starts a trace of its own (linked to the replay run's span),
+which follows it through the stages it goes through again.
 """
 
 import argparse
 import logging
 from collections.abc import Sequence
+from contextlib import AbstractContextManager
 from itertools import batched
 from typing import Any
 
 import sqlalchemy as sa
+from opentelemetry import trace
+from opentelemetry.trace import Span
 from pymongo import MongoClient
 from sqlalchemy.orm import Session, sessionmaker
 
@@ -25,8 +31,10 @@ from filings_common.db import Filing, FilingStatus, create_engine, session_facto
 from filings_common.events import FilingDiscovered, FilingParsed, Topic
 from filings_common.mongo import ParsedFilingStore
 from filings_common.outbox import enqueue
+from filings_common.telemetry import filing_trace, setup_telemetry
 
 logger = logging.getLogger(__name__)
+tracer = trace.get_tracer(__name__)
 
 BATCH_SIZE = 500
 # Statuses a filing has once it has been parsed.
@@ -34,9 +42,15 @@ PARSED_OR_LATER = (FilingStatus.PARSED, FilingStatus.READY, FilingStatus.NOTIFIE
 
 
 def _filings(
-    session: Session, *, form_type: str | None, statuses: Sequence[FilingStatus] | None
+    session: Session,
+    *,
+    form_type: str | None,
+    statuses: Sequence[FilingStatus] | None,
+    accession_nos: Sequence[str] | None = None,
 ) -> list[Filing]:
     query = sa.select(Filing).order_by(Filing.filed_at, Filing.accession_no)
+    if accession_nos is not None:
+        query = query.where(Filing.accession_no.in_(accession_nos))
     if form_type is not None:
         query = query.where(Filing.form_type == form_type)
     if statuses is not None:
@@ -44,15 +58,24 @@ def _filings(
     return list(session.scalars(query))
 
 
+def _filing_trace(filing: Filing, topic: Topic) -> AbstractContextManager[Span]:
+    return filing_trace(
+        tracer, f"replay {topic}", filing.accession_no, form_type=filing.form_type, cik=filing.cik
+    )
+
+
 def replay_discovered(
     sessions: sessionmaker[Session],
     *,
     form_type: str | None = None,
     statuses: Sequence[FilingStatus] | None = None,
+    accession_nos: Sequence[str] | None = None,
 ) -> int:
     """Enqueue `filings.discovered` for matching filings. Returns how many."""
     with sessions() as session:
-        filings = _filings(session, form_type=form_type, statuses=statuses)
+        filings = _filings(
+            session, form_type=form_type, statuses=statuses, accession_nos=accession_nos
+        )
     for batch in batched(filings, BATCH_SIZE):
         with sessions.begin() as session:
             for filing in batch:
@@ -63,7 +86,8 @@ def replay_discovered(
                     filed_at=filing.filed_at,
                     raw_object_key=filing.raw_object_key,
                 )
-                enqueue(session, Topic.FILINGS_DISCOVERED, event)
+                with _filing_trace(filing, Topic.FILINGS_DISCOVERED):
+                    enqueue(session, Topic.FILINGS_DISCOVERED, event)
     return len(filings)
 
 
@@ -72,13 +96,16 @@ def replay_parsed(
     parsed: ParsedFilingStore,
     *,
     form_type: str | None = None,
+    accession_nos: Sequence[str] | None = None,
 ) -> int:
     """Enqueue `filings.parsed` for parsed filings. Returns how many.
 
     The parser version comes from the stored payload; filings with no payload are skipped.
     """
     with sessions() as session:
-        filings = _filings(session, form_type=form_type, statuses=PARSED_OR_LATER)
+        filings = _filings(
+            session, form_type=form_type, statuses=PARSED_OR_LATER, accession_nos=accession_nos
+        )
     count = 0
     for batch in batched(filings, BATCH_SIZE):
         versions = parsed.parser_versions([f.accession_no for f in batch])
@@ -94,7 +121,8 @@ def replay_parsed(
                     form_type=filing.form_type,
                     parser_version=version,
                 )
-                enqueue(session, Topic.FILINGS_PARSED, event)
+                with _filing_trace(filing, Topic.FILINGS_PARSED):
+                    enqueue(session, Topic.FILINGS_PARSED, event)
                 count += 1
     return count
 
@@ -109,29 +137,53 @@ def main(argv: list[str] | None = None) -> int:
         action="append",
         help="only filings in this status (repeatable; discovered replays only)",
     )
+    parser.add_argument(
+        "--accession",
+        action="append",
+        help="only this filing, by accession number (repeatable): e.g. to reprocess one filing",
+    )
     args = parser.parse_args(argv)
-    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s %(message)s")
+    if args.status and args.event != "discovered":
+        parser.error("--status applies to discovered replays only")
+    telemetry = setup_telemetry("filings-replay", distribution="filings-common")
 
     engine = create_engine(DatabaseSettings().database_url.get_secret_value())
     sessions = session_factory(engine)
     try:
-        if args.event == "discovered":
-            statuses = [FilingStatus(s) for s in args.status] if args.status else None
-            count = replay_discovered(sessions, form_type=args.form_type, statuses=statuses)
-        else:
-            if args.status:
-                parser.error("--status applies to discovered replays only")
-            mongo = MongoSettings()
-            client: MongoClient[dict[str, Any]] = MongoClient(mongo.mongodb_url.get_secret_value())
-            try:
-                store = ParsedFilingStore(client[mongo.mongodb_database])
-                count = replay_parsed(sessions, store, form_type=args.form_type)
-            finally:
-                client.close()
+        with tracer.start_as_current_span(f"replay {args.event}"):
+            if args.event == "discovered":
+                statuses = [FilingStatus(s) for s in args.status] if args.status else None
+                count = replay_discovered(
+                    sessions,
+                    form_type=args.form_type,
+                    statuses=statuses,
+                    accession_nos=args.accession,
+                )
+            else:
+                count = _replay_parsed(
+                    sessions, form_type=args.form_type, accession_nos=args.accession
+                )
     finally:
         engine.dispose()
+        telemetry.shutdown()
     logger.info("enqueued %d %s events; the outbox relay publishes them", count, args.event)
     return 0
+
+
+def _replay_parsed(
+    sessions: sessionmaker[Session], *, form_type: str | None, accession_nos: list[str] | None
+) -> int:
+    mongo = MongoSettings()
+    client: MongoClient[dict[str, Any]] = MongoClient(mongo.mongodb_url.get_secret_value())
+    try:
+        return replay_parsed(
+            sessions,
+            ParsedFilingStore(client[mongo.mongodb_database]),
+            form_type=form_type,
+            accession_nos=accession_nos,
+        )
+    finally:
+        client.close()
 
 
 if __name__ == "__main__":

@@ -4,16 +4,18 @@ Safe to run more than once for the same filing (the consume loop delivers at lea
 - the parsed payload (MongoDB) and key fields (Postgres) are upserts keyed by accession number;
 - the status moves discovered → parsed with a conditional update, and the `filings.parsed` outbox
   event is written in that same transaction only when the update happens, so a redelivery never
-  announces the filing twice.
+  announces the filing twice. Only that first time counts in `filings.parsed`.
 """
 
 import logging
 from collections.abc import Mapping
 
 import sqlalchemy as sa
+from opentelemetry import trace
 from pydantic import ValidationError
 from sqlalchemy.orm import Session, sessionmaker
 
+from filings_common import metrics, telemetry
 from filings_common.consumer import PermanentError, Received
 from filings_common.db import Filing, FilingExhibit, FilingStatus
 from filings_common.events import FilingDiscovered, FilingParsed, Topic
@@ -24,6 +26,7 @@ from filings_parser.documents import RawExhibit
 from filings_parser.forms import FormParser
 
 logger = logging.getLogger(__name__)
+tracer = trace.get_tracer(__name__)
 
 
 class FilingHandler:
@@ -38,12 +41,14 @@ class FilingHandler:
         self._objects = objects
         self._parsed = parsed
         self._parsers = parsers
+        metrics.start_at_zero(metrics.FILINGS_PARSED, map(metrics.form_type, parsers))
 
     def __call__(self, received: Received) -> None:
         try:
             event = FilingDiscovered.model_validate_json(received.value)
         except ValidationError as exc:
             raise PermanentError(f"invalid {Topic.FILINGS_DISCOVERED} event: {exc}") from exc
+        telemetry.tag_filing(event.accession_no, form_type=event.form_type, cik=event.cik)
 
         parser = self._parsers.get(event.form_type)
         if parser is None:
@@ -58,11 +63,14 @@ class FilingHandler:
         except ObjectNotFoundError as exc:
             raise PermanentError(f"raw document missing: {event.raw_object_key}") from exc
         exhibits = self._exhibits(event.accession_no)
-        try:
-            payload = parser.parse(raw, exhibits)
-        except Exception as exc:
-            # Parsing is deterministic: the same document fails the same way on every retry.
-            raise PermanentError(f"form {event.form_type} parser failed: {exc!r}") from exc
+        with tracer.start_as_current_span(
+            "parse", attributes={"filings.parser_version": parser.version}
+        ):
+            try:
+                payload = parser.parse(raw, exhibits)
+            except Exception as exc:
+                # Parsing is deterministic: the same document fails the same way on every retry.
+                raise PermanentError(f"form {event.form_type} parser failed: {exc!r}") from exc
 
         self._parsed.upsert(
             accession_no=event.accession_no,
@@ -98,6 +106,7 @@ class FilingHandler:
                     parser_version=parser.version,
                 ),
             )
+        metrics.FILINGS_PARSED.add(1, metrics.form_type(event.form_type))
         logger.info("parsed %s (form %s)", event.accession_no, event.form_type)
 
     def _exhibits(self, accession_no: str) -> list[RawExhibit]:

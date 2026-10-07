@@ -3,6 +3,10 @@
 Every SEC request goes through `EdgarClient`, which sends a declared User-Agent, takes a token from
 the shared rate limiter before each attempt, and backs off on 429/5xx and network errors.
 See https://www.sec.gov/os/accessing-edgar-data.
+
+Each request is one CLIENT span, retries included, with the time spent waiting for the rate
+limiter. SEC URLs are public, so they are recorded. Metrics count every attempt: its wait for the
+rate limiter, its response's status class, and 429s on their own.
 """
 
 import logging
@@ -11,14 +15,19 @@ import time
 from collections.abc import Callable
 from types import TracebackType
 from typing import Any, Self
+from urllib.parse import urlsplit
 
 import httpx2
 import redis
+from opentelemetry import trace
+from opentelemetry.trace import SpanKind
 
+from filings_common import metrics, telemetry
 from filings_common.config import EdgarSettings
 from filings_common.ratelimit import RateLimiter, RedisTokenBucket
 
 logger = logging.getLogger(__name__)
+tracer = trace.get_tracer(__name__)
 
 SEC_WWW = "https://www.sec.gov"
 SEC_DATA = "https://data.sec.gov"
@@ -49,6 +58,7 @@ class EdgarClient:
         self._max_attempts = settings.max_attempts
         self._sleep = sleep
         self._rng = rng or random.Random()
+        metrics.SEC_THROTTLED.add(0)  # a series to alert on, from the start
         self._http = httpx2.Client(
             headers={"User-Agent": settings.user_agent},
             timeout=settings.timeout_seconds,
@@ -83,31 +93,52 @@ class EdgarClient:
 
     def get(self, url: str) -> httpx2.Response:
         """GET a URL, retrying transient failures. Raises httpx2.HTTPStatusError otherwise."""
-        for attempt in range(1, self._max_attempts + 1):
-            self._limiter.acquire()
-            last_attempt = attempt == self._max_attempts
-            try:
-                response = self._http.get(url)
-            except httpx2.TransportError as exc:
-                if last_attempt:
-                    raise
-                delay = self._backoff(attempt, retry_after=None)
-                logger.warning("SEC request failed (%s); retry %d in %.1fs", exc, attempt, delay)
-                self._sleep(delay)
-                continue
-            if response.status_code in RETRY_STATUSES and not last_attempt:
-                delay = self._backoff(attempt, retry_after=response.headers.get("Retry-After"))
-                logger.warning(
-                    "SEC returned %d for %s; retry %d in %.1fs",
-                    response.status_code,
-                    url,
-                    attempt,
-                    delay,
+        attributes = {
+            "http.request.method": "GET",
+            "url.full": url,
+            "server.address": urlsplit(url).hostname or "",
+        }
+        with tracer.start_as_current_span(
+            "GET", kind=SpanKind.CLIENT, attributes=attributes
+        ) as span:
+            waited = 0.0
+            for attempt in range(1, self._max_attempts + 1):
+                wait = self._limiter.acquire()
+                metrics.SEC_RATE_LIMIT_WAIT.record(wait)
+                waited += wait
+                span.set_attributes(
+                    {telemetry.RATE_LIMIT_WAIT: waited, "http.request.resend_count": attempt - 1}
                 )
-                self._sleep(delay)
-                continue
-            response.raise_for_status()
-            return response
+                last_attempt = attempt == self._max_attempts
+                try:
+                    response = self._http.get(url)
+                except httpx2.TransportError as exc:
+                    metrics.SEC_RESPONSES.add(1, {metrics.STATUS_CLASS: "error"})
+                    if last_attempt:
+                        raise
+                    delay = self._backoff(attempt, retry_after=None)
+                    logger.warning(
+                        "SEC request failed (%s); retry %d in %.1fs", exc, attempt, delay
+                    )
+                    span.add_event("retry", {"error.type": telemetry.exception_type(exc)})
+                    self._sleep(delay)
+                    continue
+                span.set_attribute("http.response.status_code", response.status_code)
+                self._count(response.status_code)
+                if response.status_code in RETRY_STATUSES and not last_attempt:
+                    delay = self._backoff(attempt, retry_after=response.headers.get("Retry-After"))
+                    logger.warning(
+                        "SEC returned %d for %s; retry %d in %.1fs",
+                        response.status_code,
+                        url,
+                        attempt,
+                        delay,
+                    )
+                    span.add_event("retry", {"http.response.status_code": response.status_code})
+                    self._sleep(delay)
+                    continue
+                response.raise_for_status()
+                return response
         raise AssertionError("unreachable")  # the loop always returns or raises
 
     def get_json(self, url: str) -> Any:
@@ -122,6 +153,12 @@ class EdgarClient:
         """SEC's ticker ↔ CIK ↔ exchange map for all listed companies."""
         result: dict[str, Any] = self.get_json(f"{SEC_WWW}/files/company_tickers_exchange.json")
         return result
+
+    @staticmethod
+    def _count(status_code: int) -> None:
+        metrics.SEC_RESPONSES.add(1, {metrics.STATUS_CLASS: metrics.status_class(status_code)})
+        if status_code == 429:
+            metrics.SEC_THROTTLED.add(1)
 
     def _backoff(self, attempt: int, retry_after: str | None) -> float:
         # Exponential backoff with jitter so concurrent workers don't retry in lockstep.

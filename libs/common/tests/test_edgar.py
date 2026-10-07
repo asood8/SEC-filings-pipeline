@@ -1,19 +1,23 @@
 import random
+from typing import Any
 
 import httpx2
 import pytest
+from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter
+from opentelemetry.trace import SpanKind, StatusCode
 
 from filings_common.config import EdgarSettings
 from filings_common.edgar import EdgarClient, archive_url
 
 
 class CountingLimiter:
-    def __init__(self) -> None:
+    def __init__(self, wait: float = 0.0) -> None:
         self.calls = 0
+        self.wait = wait
 
     def acquire(self) -> float:
         self.calls += 1
-        return 0.0
+        return self.wait
 
 
 class Harness:
@@ -101,3 +105,59 @@ def test_archive_url_strips_dashes_from_accession_number() -> None:
         archive_url(320193, "0000320193-24-000123", "doc.htm")
         == "https://www.sec.gov/Archives/edgar/data/320193/000032019324000123/doc.htm"
     )
+
+
+def test_each_request_is_one_client_span_with_its_retries_and_rate_limit_wait(
+    spans: InMemorySpanExporter,
+) -> None:
+    h = Harness(httpx2.Response(503), httpx2.Response(200, text="ok"))
+    h.limiter.wait = 0.25
+    h.client.get("https://www.sec.gov/Archives/edgar/data/320193/x.htm")
+
+    [span] = spans.get_finished_spans()
+    assert (span.name, span.kind) == ("GET", SpanKind.CLIENT)
+    assert dict(span.attributes or {}) == {
+        "http.request.method": "GET",
+        "url.full": "https://www.sec.gov/Archives/edgar/data/320193/x.htm",
+        "server.address": "www.sec.gov",
+        "filings.rate_limit.wait_seconds": 0.5,  # both attempts waited for a token
+        "http.request.resend_count": 1,
+        "http.response.status_code": 200,
+    }
+    assert [(e.name, dict(e.attributes or {})) for e in span.events] == [
+        ("retry", {"http.response.status_code": 503})
+    ]
+
+
+def test_a_failed_request_marks_its_span_failed(spans: InMemorySpanExporter) -> None:
+    h = Harness(httpx2.Response(404))
+    with pytest.raises(httpx2.HTTPStatusError):
+        h.client.get("https://www.sec.gov/missing")
+    [span] = spans.get_finished_spans()
+    assert span.status.status_code is StatusCode.ERROR
+    assert (span.attributes or {})["http.response.status_code"] == 404
+
+
+def test_each_attempt_is_measured_by_status_class_with_429s_counted_on_their_own(
+    measured: Any,
+) -> None:
+    h = Harness(
+        httpx2.Response(429),
+        httpx2.ConnectError("reset"),
+        httpx2.Response(200, text="ok"),
+        httpx2.Response(404),
+    )
+    h.limiter.wait = 0.2
+    h.client.get("https://www.sec.gov/a")
+    with pytest.raises(httpx2.HTTPStatusError):
+        h.client.get("https://www.sec.gov/missing")
+
+    def responses(status_class: str) -> float:
+        return float(
+            measured.total("filings.sec.responses", {"filings.status_class": status_class})
+        )
+
+    assert [responses(c) for c in ("2xx", "4xx", "error")] == [1, 2, 1]
+    assert measured.total("filings.sec.throttled") == 1
+    assert measured.count("filings.sec.rate_limit.wait") == 4  # every attempt waits its turn
+    assert measured.attribute_sets("filings.sec.rate_limit.wait") == [{}]

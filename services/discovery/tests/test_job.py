@@ -7,6 +7,9 @@ from typing import Any
 import httpx2
 import pytest
 import sqlalchemy as sa
+from opentelemetry import trace
+from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter
+from opentelemetry.trace import StatusCode
 from sqlalchemy.engine import Engine
 
 from filings_common.config import EdgarSettings
@@ -162,6 +165,27 @@ def test_discovers_stores_and_announces_new_filings_exactly_once(
     assert not any("000114036126000202-index" in url for url in fake_sec.hits)  # Form 4: none
 
 
+def test_new_filings_are_counted_by_form_type_and_a_run_without_any_reports_zero(
+    clean_db: Engine,
+    fake_sec: FakeSec,
+    company_tickers: dict[str, Any],
+    tmp_path: Path,
+    measured: Any,
+) -> None:
+    seed_companies(clean_db, company_tickers)
+    store = LocalObjectStore(tmp_path)
+    run(clean_db, fake_sec, store)
+    assert measured.total("filings.discovered", {"filings.form_type": "4"}) == 1
+    assert measured.total("filings.discovered", {"filings.form_type": "8-K"}) == 1
+
+    run(clean_db, fake_sec, store)  # nothing new: zeros, for the "no filings" alert to see
+    assert measured.total("filings.discovered") == 2
+    assert measured.attribute_sets("filings.discovered") == [
+        {"filings.form_type": "4"},
+        {"filings.form_type": "8-K"},
+    ]
+
+
 def test_backfill_fetches_exhibits_for_filings_that_have_none(
     clean_db: Engine, fake_sec: FakeSec, company_tickers: dict[str, Any], tmp_path: Path
 ) -> None:
@@ -175,3 +199,56 @@ def test_backfill_fetches_exhibits_for_filings_that_have_none(
         assert backfill_exhibits(sessions, edgar, store, form_types={"8-K"}) == (0, 0)
     with sessions() as session:
         assert session.scalar(sa.select(sa.func.count()).select_from(FilingExhibit)) == 1
+
+
+def test_each_new_filing_gets_its_own_trace_linked_to_the_poll(
+    clean_db: Engine,
+    fake_sec: FakeSec,
+    company_tickers: dict[str, Any],
+    tmp_path: Path,
+    spans: InMemorySpanExporter,
+) -> None:
+    seed_companies(clean_db, company_tickers)
+    run(clean_db, fake_sec, LocalObjectStore(tmp_path))
+
+    finished = spans.get_finished_spans()
+    [poll] = [s for s in finished if s.name == "discovery poll"]
+    apple, microsoft = (s for s in finished if s.name == "poll company")
+    filings = {
+        (s.attributes or {})["filings.accession_no"]: s
+        for s in finished
+        if s.name == "discover filing"
+    }
+    assert set(filings) == {"0001140361-26-000202", "0000320193-26-000101"}
+
+    # The poll is one trace: a span per company, the failed one marked failed.
+    assert poll.parent is None
+    assert {apple.context.trace_id, microsoft.context.trace_id} == {poll.context.trace_id}
+    assert (poll.attributes or {})["filings.new_filings"] == 2
+    assert microsoft.status.status_code is StatusCode.ERROR
+
+    # Each filing is the root of a trace of its own, linked to the company poll that found it,
+    # with its SEC requests and stores inside it.
+    for filing in filings.values():
+        assert filing.parent is None
+        assert filing.context.trace_id != poll.context.trace_id
+        assert [link.context for link in filing.links] == [apple.context]
+        inside = [s.name for s in finished if s.context.trace_id == filing.context.trace_id]
+        assert {"GET", "object_store put", "record filing"} <= set(inside)
+    assert len({f.context.trace_id for f in filings.values()}) == 2
+
+    # Its outbox event carries that trace, from the span that recorded it.
+    with session_factory(clean_db)() as session:
+        events = session.scalars(sa.select(OutboxEvent)).all()
+    for event in events:
+        assert event.trace_context is not None
+        _, trace_id, span_id, _ = event.trace_context["traceparent"].split("-")
+        filing = filings[event.key]
+        assert trace_id == trace.format_trace_id(filing.context.trace_id)
+        [record] = [
+            s
+            for s in finished
+            if s.name == "record filing" and trace.format_span_id(s.context.span_id) == span_id
+        ]
+        assert record.parent is not None
+        assert record.parent.span_id == filing.context.span_id

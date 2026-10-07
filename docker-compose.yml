@@ -116,8 +116,50 @@ services:
         limits:
           memory: 5G
 
+  # Optional local viewer for traces and metrics: `make obs-up`, then Grafana on
+  # http://localhost:3001. Not started by `make up`. One container with an OpenTelemetry collector,
+  # Prometheus, Tempo, Loki, Pyroscope (unused here), and Grafana, which loads our dashboards and
+  # alert rules from deploy/grafana. Point the services at it with OTEL_EXPORTER_OTLP_ENDPOINT
+  # (see .env.example).
+  # Production uses Grafana Cloud instead. See docs/adr/0016-observability.md.
+  otel-lgtm:
+    image: grafana/otel-lgtm:0.35.0
+    profiles: ["observability"]
+    environment:
+      # No usage reports, update checks, news feed, or plugin downloads: nothing phones home.
+      GF_ANALYTICS_REPORTING_ENABLED: "false"
+      GF_ANALYTICS_CHECK_FOR_UPDATES: "false"
+      GF_ANALYTICS_CHECK_FOR_PLUGIN_UPDATES: "false"
+      GF_NEWS_NEWS_FEED_ENABLED: "false"
+      GF_PLUGINS_PREINSTALL_DISABLED: "true"
+      TEMPO_EXTRA_ARGS: "-reporting.enabled=false"
+      LOKI_EXTRA_ARGS: "-reporting.enabled=false"
+      PYROSCOPE_EXTRA_ARGS: "-usage-stats.enabled=false"
+    ports:
+      - "127.0.0.1:3001:3000" # Grafana (the website's dev server has 3000)
+      - "127.0.0.1:4318:4318" # OTLP over HTTP, where the services send telemetry
+      - "127.0.0.1:9090:9090" # Prometheus, to try queries directly
+    volumes:
+      - lgtm-data:/data
+      # Grafana picks up dashboard changes within seconds; alert rules only when it starts
+      # (`docker compose --profile observability restart otel-lgtm`).
+      - ./deploy/grafana/dashboards:/otel-lgtm/filings-dashboards:ro
+      - ./deploy/grafana/local/dashboards.yaml:/otel-lgtm/grafana/conf/provisioning/dashboards/filings.yaml:ro
+      - ./deploy/grafana/alerting:/otel-lgtm/grafana/conf/provisioning/alerting:ro
+    healthcheck:
+      test: ["CMD", "/otel-lgtm/docker/healthcheck.sh"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 120s
+    deploy:
+      resources:
+        limits:
+          memory: 1536M
+
 volumes:
   postgres-data:
   redpanda-data:
   mongodb-data:
   ollama-models:
+  lgtm-data:

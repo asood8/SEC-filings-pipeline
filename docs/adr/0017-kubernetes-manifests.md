@@ -167,15 +167,15 @@ caps), reading the kernel's `memory.peak` for the container:
 - **Python services:** resident memory of each stage running locally with tracing and metrics on,
   and 77 MiB for the discovery image after importing everything a job needs.
 
-These are laptop numbers, and the A1 is likely slower per core. `LLM_TIMEOUT_SECONDS` is 600:
-about twice the measured run, while one local attempt plus its Gemini fallback (60 s) still fits
-in the summarizer's 15-minute Kafka poll interval. Handling one message, retries included, must
-fit in that interval, or the broker hands the message to a new consumer. A second attempt does
-not fit, so if both providers fail, the filing starts over (idempotently) instead of being
-retried and dead-lettered; without a Gemini key, a prompt the local model can't finish in 600 s
-would keep starting over. Production should therefore keep the Gemini key set. The longest prompts
-(about 6k tokens, with several exhibits) may exceed the timeout on the VM; those fall back to
-Gemini. The Phase 8 benchmark measures this on the VM.
+These are laptop numbers, and the A1 is likely slower per core. `LLM_TIMEOUT_SECONDS` is 600,
+about twice the measured run. Handling one message, retries included, must fit in the summarizer's
+Kafka poll interval, or the broker hands the message to a new consumer and it is never
+dead-lettered. The summarizer therefore derives that interval from its settings (every attempt
+waiting out each provider's timeout, plus the backoff: about 72 minutes with these values), so a
+filing both providers fail on is retried and dead-lettered as designed, with or without a Gemini
+key. The longest prompts (about 6k tokens, with several exhibits) may exceed the timeout on the
+VM; those fall back to Gemini. The Phase 8 benchmark (`filings-benchmark`) measures this on the
+VM.
 
 ### Sync order
 
@@ -382,9 +382,6 @@ under the namespace's restricted profile, and a control Pod without those settin
   features they control stay off or harmless. The tunnel's routing rule and the backups bucket's
   lifecycle rule are Terraform's (ADR-0018).
 - **What the service code could add:**
-  - The summarizer's Kafka poll interval (15 minutes) is a constant. If the A1 proves slow, the
-    LLM timeout can't grow past it; making both configurable together, or capping the prompt for
-    the local model, would let long 8-Ks finish locally.
   - The consumers and the relay have no health endpoint, so Kubernetes restarts them only if the
     process exits, not if it hangs. A heartbeat file or a small HTTP endpoint would allow
     liveness probes.

@@ -3,8 +3,9 @@
 [![CI](https://github.com/asood8/SEC-filings-pipeline/actions/workflows/ci.yml/badge.svg)](https://github.com/asood8/SEC-filings-pipeline/actions/workflows/ci.yml)
 
 > **Work in progress.** This project is under active development. Ingestion, parsing,
-> summarization, search, the API, Google sign-in, alerts, and the website run end to end locally
-> on real SEC data; the cloud deployment is still to come. See [Progress](#progress).
+> summarization, search, the API, Google sign-in, alerts, the website, and tracing and metrics
+> run end to end locally on real SEC data. The cloud deployment (Kubernetes manifests and
+> Terraform) is written and validated offline but not yet applied. See [Progress](#progress).
 
 A pipeline that watches SEC EDGAR for new filings from a watchlist of public companies, parses
 them, summarizes them in plain English, makes them searchable by keyword and by meaning, and
@@ -52,9 +53,9 @@ Example headlines from that run (public filings):
 | 3. Search and API | Full-text and semantic search (pgvector), caching, rate limiting | Done |
 | 4. Users and alerts | Google sign-in, subscriptions, Discord/Slack/email alerts | In progress: all built; waiting for a real new filing to reach Discord |
 | 5. Frontend | React site (Vite + TypeScript) on Cloudflare Pages | Done |
-| 6. Observability | OpenTelemetry traces, metrics, Grafana dashboards and alerts | Planned |
-| 7. Production | Terraform, k3s on Oracle Cloud's free tier, Argo CD, multi-arch images | Started: service images build (amd64; arm64-ready) |
-| 8. Hardening | Load tests, local-model benchmark, backups, runbook | Planned |
+| 6. Observability | OpenTelemetry traces, metrics, Grafana dashboards and alerts | Done |
+| 7. Production | Terraform, k3s on Oracle Cloud's free tier, Argo CD, multi-arch images | In progress: images, Kubernetes manifests, and Terraform written and validated offline; needs cloud accounts to apply |
+| 8. Hardening | Load tests, local-model benchmark, backups, runbook | Started: k6 load test and the model benchmark tool |
 
 The full plan is in the [project brief](docs/PROJECT_BRIEF.md#8-build-plan).
 
@@ -100,6 +101,9 @@ worth a look:
 - **Sign-in without handling passwords**: Google's ID token is verified against Google's
   published keys, then exchanged for the API's own HttpOnly session cookie; only a hash of each
   session token is stored. ([ADR-0013](docs/adr/0013-sign-in-and-sessions.md))
+- **One trace per filing**: the outbox stores each event's trace context and Kafka headers carry
+  it, so a single OpenTelemetry trace follows a filing from discovery through every service to
+  its alert. ([ADR-0016](docs/adr/0016-observability.md))
 - **Hybrid search in Postgres**: full-text and vector results merged with reciprocal rank
   fusion, degrading to keywords when the embedding model is down.
   ([ADR-0011](docs/adr/0011-search-and-public-api.md))
@@ -138,6 +142,11 @@ make web-install && make web               # the website on http://localhost:300
 ```
 
 Or run every stage at once, with discovery every 10 minutes: `make pipeline` (Ctrl+C stops it).
+
+To watch traces and metrics: `make obs-up`, set `OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4318`
+in `.env` (see `.env.example`), restart the services, and open http://localhost:3001 (dashboards
+"SEC Filings: Pipeline" and "SEC Filings: API"; traces under Explore, Tempo). With the endpoint
+unset, telemetry is off and costs nothing.
 
 Sign-in needs a Google OAuth client ID (Google Cloud console, APIs & Services, Credentials: a
 "Web application" client with `http://localhost` and `http://localhost:3000` as authorized
@@ -180,6 +189,11 @@ uv run filings-replay parsed --form-type 4 # re-summarize history (also: discove
 | `make web-check` | Lint, type-check, test, and build the website |
 | `make web-types` | Regenerate the website's API types from the API's OpenAPI schema |
 | `make tf-check` / `make tf-fmt` | Check the Terraform code (fmt, validate, tests on mock providers, free-tier allowlist) / format it |
+| `make k8s-tools` / `make k8s-check` | Install kubectl and kubeconform (checksums verified) / render and validate the Kubernetes manifests |
+| `make obs-up` / `make obs-down` | Start / stop the optional local trace and metrics viewer (Grafana on :3001) |
+| `make loadtest` | Load-test a running API with k6 (`make api-loadtest` runs the API with rate limits raised) |
+| `uv run filings-benchmark --model <name>` | Compare 8-K summarization across models: latency, failures, grounding |
+| `uv run filings-replay discovered --accession <no>` | Reprocess one filing (also `--form-type`, `--status`, or `parsed`) |
 
 ## Local services
 
@@ -192,6 +206,7 @@ All bound to `127.0.0.1`. Credentials are throwaway local values in `.env`.
 | Valkey | `localhost:6379` | same image on k3s |
 | MongoDB 8.0 | `localhost:27017` | MongoDB Atlas M0 |
 | Ollama (optional, `make llm-up`) | `localhost:11434` | llama.cpp server on k3s |
+| Grafana + Tempo + Prometheus (optional, `make obs-up`) | `localhost:3001` | Grafana Cloud |
 
 Details and memory budget: [ADR-0003](docs/adr/0003-local-development-stack.md).
 
@@ -208,11 +223,11 @@ docs/PROJECT_BRIEF.md spec, architecture, and build plan
 docs/adr/             architecture decision records
 docker/               the Dockerfile for the service images
 scripts/              development helpers (`make pipeline`)
+deploy/               Kubernetes manifests (Kustomize, Sealed Secrets, Argo CD) and Grafana dashboards
 infra/terraform/      the cloud resources outside the cluster, for $0 a month (see its README)
+loadtest/             the k6 load test of the API
 docker-compose.yml    local backing services
 ```
-
-`deploy/` (Kubernetes manifests) arrives in a later phase.
 
 ## License
 

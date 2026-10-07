@@ -1,0 +1,13 @@
+# EXAMPLE ONLY: placeholder values. Never commit a filled-in copy; seal it instead
+# (deploy/k8s/README.md, "Secrets").
+#
+# Gemini API key (Google AI Studio, free tier), for the fallback LLM. Optional: without it the
+# summarizer uses the local model only. Used by: summarizer.
+apiVersion: v1
+kind: Secret
+metadata:
+  name: gemini
+  namespace: filings
+type: Opaque
+stringData:
+  GEMINI_API_KEY: replace-me

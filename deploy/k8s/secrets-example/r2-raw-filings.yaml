@@ -1,0 +1,16 @@
+# EXAMPLE ONLY: placeholder values. Never commit a filled-in copy; seal it instead
+# (deploy/k8s/README.md, "Secrets").
+#
+# Cloudflare R2, raw filings bucket (OBJECT_STORE_S3_BUCKET): an R2 API token with Object Read &
+# Write on that bucket only. The endpoint contains the Cloudflare account ID.
+# Used by: discovery (writes), parser (reads).
+apiVersion: v1
+kind: Secret
+metadata:
+  name: r2-raw-filings
+  namespace: filings
+type: Opaque
+stringData:
+  OBJECT_STORE_S3_ENDPOINT_URL: https://replace-with-account-id.r2.cloudflarestorage.com
+  OBJECT_STORE_S3_ACCESS_KEY_ID: replace-me
+  OBJECT_STORE_S3_SECRET_ACCESS_KEY: replace-me

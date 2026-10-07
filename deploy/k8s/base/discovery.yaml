@@ -1,0 +1,135 @@
+# Discovery runs on a schedule rather than as a service: each run polls every watchlist company
+# through the shared EDGAR client (User-Agent, Valkey token bucket), stores new filings in R2, and
+# writes each filing row with its outbox event.
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: discovery
+spec:
+  schedule: "*/10 * * * *"
+  timeZone: Etc/UTC
+  # A slow run is never overlapped by the next one; a missed run is skipped, not made up.
+  concurrencyPolicy: Forbid
+  startingDeadlineSeconds: 300
+  successfulJobsHistoryLimit: 1
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      # No retries: the next run is ten minutes away, and re-runs are idempotent.
+      backoffLimit: 0
+      activeDeadlineSeconds: 540
+      template:
+        metadata:
+          labels:
+            app.kubernetes.io/name: discovery
+            app.kubernetes.io/component: pipeline
+        spec:
+          restartPolicy: Never
+          automountServiceAccountToken: false
+          enableServiceLinks: false
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 10001
+            runAsGroup: 10001
+            seccompProfile:
+              type: RuntimeDefault
+          containers:
+            - name: discovery
+              image: filings-discovery # default command: filings-discovery run
+              envFrom:
+                - configMapRef:
+                    name: filings-config
+                - secretRef:
+                    name: postgres
+                - secretRef:
+                    name: sec-edgar
+                - secretRef:
+                    name: r2-raw-filings
+              env:
+                - name: DATABASE_URL
+                  value: postgresql+psycopg://$(POSTGRES_USER):$(POSTGRES_PASSWORD)@postgres:5432/$(POSTGRES_DB)
+              resources:
+                requests:
+                  cpu: 50m
+                  memory: 128Mi
+                limits:
+                  cpu: 500m
+                  memory: 256Mi
+              securityContext:
+                allowPrivilegeEscalation: false
+                readOnlyRootFilesystem: true
+                capabilities:
+                  drop: ["ALL"]
+              volumeMounts:
+                - name: tmp
+                  mountPath: /tmp
+          volumes:
+            - name: tmp
+              emptyDir: {}
+---
+# Loads SEC's ticker map and flags the watchlist companies (filings-discovery load-companies).
+# Discovery polls only flagged companies, so after the first install run it once by hand:
+#   kubectl -n filings create job --from=cronjob/load-companies load-companies-initial
+# Afterwards it runs daily, which also picks up watchlist changes shipped in a new image.
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: load-companies
+spec:
+  schedule: "17 5 * * *"
+  timeZone: Etc/UTC
+  concurrencyPolicy: Forbid
+  startingDeadlineSeconds: 3600
+  successfulJobsHistoryLimit: 1
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      backoffLimit: 2
+      activeDeadlineSeconds: 600
+      template:
+        metadata:
+          labels:
+            app.kubernetes.io/name: load-companies
+            app.kubernetes.io/component: pipeline
+        spec:
+          restartPolicy: Never
+          automountServiceAccountToken: false
+          enableServiceLinks: false
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 10001
+            runAsGroup: 10001
+            seccompProfile:
+              type: RuntimeDefault
+          containers:
+            - name: load-companies
+              image: filings-discovery
+              command: ["filings-discovery", "load-companies"]
+              envFrom:
+                - configMapRef:
+                    name: filings-config
+                - secretRef:
+                    name: postgres
+                - secretRef:
+                    name: sec-edgar
+              env:
+                - name: DATABASE_URL
+                  value: postgresql+psycopg://$(POSTGRES_USER):$(POSTGRES_PASSWORD)@postgres:5432/$(POSTGRES_DB)
+              resources:
+                requests:
+                  cpu: 50m
+                  memory: 96Mi
+                limits:
+                  cpu: 500m
+                  memory: 160Mi
+              securityContext:
+                allowPrivilegeEscalation: false
+                readOnlyRootFilesystem: true
+                capabilities:
+                  drop: ["ALL"]
+              volumeMounts:
+                - name: tmp
+                  mountPath: /tmp
+          volumes:
+            - name: tmp
+              emptyDir: {}

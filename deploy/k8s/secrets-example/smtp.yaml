@@ -1,0 +1,14 @@
+# EXAMPLE ONLY: placeholder values. Never commit a filled-in copy; seal it instead
+# (deploy/k8s/README.md, "Secrets").
+#
+# SMTP credentials for email alerts (Oracle Cloud Email Delivery). Needed once the production
+# config sets EMAIL_BACKEND=smtp; host, port, and sender are config. Used by: notifier.
+apiVersion: v1
+kind: Secret
+metadata:
+  name: smtp
+  namespace: filings
+type: Opaque
+stringData:
+  EMAIL_SMTP_USERNAME: replace-me
+  EMAIL_SMTP_PASSWORD: replace-me

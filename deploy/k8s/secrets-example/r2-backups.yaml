@@ -1,0 +1,16 @@
+# EXAMPLE ONLY: placeholder values. Never commit a filled-in copy; seal it instead
+# (deploy/k8s/README.md, "Secrets").
+#
+# Cloudflare R2, backups bucket (BACKUP_S3_BUCKET): a separate R2 API token with Object Read &
+# Write on that bucket only, so the application's token can't touch the backups.
+# Used by: postgres-backup.
+apiVersion: v1
+kind: Secret
+metadata:
+  name: r2-backups
+  namespace: filings
+type: Opaque
+stringData:
+  R2_ENDPOINT_URL: https://replace-with-account-id.r2.cloudflarestorage.com
+  R2_ACCESS_KEY_ID: replace-me
+  R2_SECRET_ACCESS_KEY: replace-me

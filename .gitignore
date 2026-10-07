@@ -2,6 +2,12 @@
 .env
 .env.*
 !.env.example
+# Unsealed Kubernetes Secrets: filled-in copies wait here to be sealed and are never committed.
+# Only SealedSecrets go into git (deploy/k8s/README.md, "Secrets").
+/deploy/k8s/secrets-local/
+*.unsealed.yaml
+# The sealing key backup (deploy/k8s/README.md): it decrypts every SealedSecret.
+*sealed-secrets-key*.yaml
 
 # Python
 __pycache__/

@@ -1,0 +1,13 @@
+# One namespace for the whole application. Pod Security Admission enforces the "restricted"
+# profile: the API server rejects any pod that could run as root, escalate privileges, keep Linux
+# capabilities, or skip the default seccomp profile.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: filings
+  annotations:
+    # First, before anything that lives in it (Argo CD sync waves run lowest first).
+    argocd.argoproj.io/sync-wave: "-4"
+  labels:
+    pod-security.kubernetes.io/enforce: restricted
+    pod-security.kubernetes.io/warn: restricted

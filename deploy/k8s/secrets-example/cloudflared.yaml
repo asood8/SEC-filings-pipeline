@@ -1,0 +1,13 @@
+# EXAMPLE ONLY: placeholder values. Never commit a filled-in copy; seal it instead
+# (deploy/k8s/README.md, "Secrets").
+#
+# The Cloudflare Tunnel token (from Terraform's tunnel resource, or the Zero Trust dashboard).
+# Anyone holding it can serve traffic for the tunnel's hostname. Used by: cloudflared.
+apiVersion: v1
+kind: Secret
+metadata:
+  name: cloudflared
+  namespace: filings
+type: Opaque
+stringData:
+  TUNNEL_TOKEN: replace-me

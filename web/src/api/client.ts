@@ -6,6 +6,10 @@ export type Filing = Schemas['FilingOut']
 export type FilingDetail = Schemas['FilingDetail']
 export type SearchResult = Schemas['SearchResultOut']
 export type Company = Schemas['CompanyOut']
+export type User = Schemas['UserOut']
+export type Subscription = Schemas['SubscriptionOut']
+export type NewSubscription = Schemas['SubscriptionCreate']
+export type Channel = Schemas['Channel']
 
 export const API_BASE_URL: string =
   import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:8000'
@@ -37,7 +41,17 @@ function errorMessage(status: number, error: unknown): string {
   if (status === 429) return 'Too many requests. Wait a moment and try again.'
   if (status >= 500) return 'The server had a problem. Try again later.'
   const detail = (error as { detail?: unknown } | undefined)?.detail
-  return typeof detail === 'string' ? detail : `Request failed (${status}).`
+  if (typeof detail === 'string') return capitalize(detail)
+  // Request validation errors: a list of { msg } objects.
+  if (Array.isArray(detail) && detail.length > 0) {
+    return detail.map((item: { msg?: string }) => item.msg ?? '').join('; ')
+  }
+  return `Request failed (${status}).`
+}
+
+function capitalize(text: string): string {
+  const sentence = text.charAt(0).toUpperCase() + text.slice(1)
+  return /[.!?]$/.test(sentence) ? sentence : `${sentence}.`
 }
 
 type Result<T> = { data?: T; error?: unknown; response: Response }

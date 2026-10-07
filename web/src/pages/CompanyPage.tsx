@@ -1,5 +1,5 @@
 import { useInfiniteQuery, useQuery } from '@tanstack/react-query'
-import { useParams } from 'react-router'
+import { Link, useParams } from 'react-router'
 import { isNotFound } from '../api/client'
 import { companyQuery, filingsQuery } from '../api/queries'
 import { FilingList } from '../components/FilingList'
@@ -30,6 +30,11 @@ export function CompanyPage() {
         <a href={edgarCompanyUrl(cik)} target="_blank" rel="noreferrer">
           All filings on EDGAR ↗
         </a>
+      </p>
+      <p>
+        <Link to={`/alerts?ticker=${company.data.ticker}`}>
+          Get alerts for {company.data.ticker}
+        </Link>
       </p>
       <h2>Recent filings</h2>
       {filings.isPending ? (

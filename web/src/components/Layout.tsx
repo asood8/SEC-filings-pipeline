@@ -25,6 +25,7 @@ export function Layout() {
             </NavLink>
             <NavLink to="/companies">Companies</NavLink>
             <NavLink to="/search">Search</NavLink>
+            <NavLink to="/alerts">Alerts</NavLink>
           </nav>
           <form className={styles.search} role="search" onSubmit={search}>
             <label htmlFor="header-search" className="visually-hidden">

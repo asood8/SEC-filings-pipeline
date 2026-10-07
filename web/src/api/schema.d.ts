@@ -97,10 +97,126 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/auth/google": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Sign in with a Google ID token
+         * @description Exchange the credential from Google's Sign in with Google button for a session cookie.
+         *     The first sign-in creates the account.
+         */
+        post: operations["sign_in_with_google_auth_google_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/auth/logout": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Sign out
+         * @description End this browser's session. Safe to repeat.
+         */
+        post: operations["sign_out_auth_logout_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/me": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** The signed-in user */
+        get: operations["get_me_me_get"];
+        put?: never;
+        post?: never;
+        /**
+         * Delete your account
+         * @description Delete the account and everything attached to it: subscriptions, alert history, and
+         *     sessions on every device.
+         */
+        delete: operations["delete_me_me_delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/subscriptions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Your subscriptions
+         * @description Oldest first. At most 25, so there are no pages.
+         */
+        get: operations["list_subscriptions_subscriptions_get"];
+        put?: never;
+        /**
+         * Subscribe to a company's filings
+         * @description Alerts are available for watchlist companies. For email, `target` defaults to your account's address, the only one allowed. At most 25 per account.
+         */
+        post: operations["create_subscription_subscriptions_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/subscriptions/{subscription_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * Unsubscribe
+         * @description Its alert history is deleted with it.
+         */
+        delete: operations["delete_subscription_subscriptions__subscription_id__delete"];
+        options?: never;
+        head?: never;
+        /**
+         * Change a subscription
+         * @description Omitted fields keep their values. A new channel needs a new `target`, except email, which uses your account's address.
+         */
+        patch: operations["update_subscription_subscriptions__subscription_id__patch"];
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        /**
+         * Channel
+         * @enum {string}
+         */
+        Channel: "discord" | "slack" | "email";
         /** CompanyDetail */
         CompanyDetail: {
             /** Cik */
@@ -128,6 +244,15 @@ export interface components {
             exchange: string | null;
             /** On Watchlist */
             on_watchlist: boolean;
+        };
+        /** CompanyRef */
+        CompanyRef: {
+            /** Cik */
+            cik: number;
+            /** Ticker */
+            ticker: string;
+            /** Name */
+            name: string;
         };
         /** ExhibitOut */
         ExhibitOut: {
@@ -237,6 +362,14 @@ export interface components {
             /** Is 10B5 1 */
             is_10b5_1: boolean | null;
         };
+        /** GoogleSignIn */
+        GoogleSignIn: {
+            /**
+             * Credential
+             * @description The ID token (a JWT) that Google's Sign in with Google button returns.
+             */
+            credential: string;
+        };
         /** HTTPValidationError */
         HTTPValidationError: {
             /** Detail */
@@ -316,6 +449,65 @@ export interface components {
              */
             score: number;
         };
+        /** SubscriptionCreate */
+        SubscriptionCreate: {
+            /**
+             * Ticker
+             * @example AAPL
+             */
+            ticker: string;
+            /**
+             * Form Types
+             * @description Alert only about these forms; empty means every form.
+             */
+            form_types?: ("4" | "8-K")[];
+            channel: components["schemas"]["Channel"];
+            /**
+             * Target
+             * @description A Discord or Slack webhook URL. For email, your account's address: the default, and the only one allowed.
+             */
+            target?: string | null;
+        };
+        /** SubscriptionOut */
+        SubscriptionOut: {
+            /** Id */
+            id: number;
+            company: components["schemas"]["CompanyRef"];
+            /**
+             * Form Types
+             * @description Empty means every form.
+             */
+            form_types: string[];
+            channel: components["schemas"]["Channel"];
+            /**
+             * Target
+             * @description Webhook URLs are masked: they contain a secret token, shown only by its last 4 characters. Email addresses are shown in full.
+             */
+            target: string;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+        };
+        /**
+         * SubscriptionUpdate
+         * @description Omitted fields keep their current values.
+         */
+        SubscriptionUpdate: {
+            /**
+             * Form Types
+             * @description Alert only about these forms; empty means every form.
+             */
+            form_types?: ("4" | "8-K")[] | null;
+            /** @description A new channel needs a new `target`, except email, which uses your address. */
+            channel?: components["schemas"]["Channel"] | null;
+            /**
+             * Target
+             * @description A Discord or Slack webhook URL. For email, your account's address: the default, and the only one allowed.
+             */
+            target?: string | null;
+        };
         /** SummaryOut */
         SummaryOut: {
             /** Headline */
@@ -343,6 +535,18 @@ export interface components {
              * @description Numbers in an LLM summary that don't appear in the filing text, worth verifying. Empty when all were found; null when not checked (template summaries).
              */
             ungrounded_numbers: string[] | null;
+        };
+        /** UserOut */
+        UserOut: {
+            /** Id */
+            id: number;
+            /** Email */
+            email: string;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
         };
         /** ValidationError */
         ValidationError: {
@@ -518,6 +722,212 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["SearchResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    sign_in_with_google_auth_google_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["GoogleSignIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UserOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    sign_out_auth_logout_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    get_me_me_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UserOut"];
+                };
+            };
+        };
+    };
+    delete_me_me_delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    list_subscriptions_subscriptions_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SubscriptionOut"][];
+                };
+            };
+        };
+    };
+    create_subscription_subscriptions_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SubscriptionCreate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SubscriptionOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_subscription_subscriptions__subscription_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                subscription_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    update_subscription_subscriptions__subscription_id__patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                subscription_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SubscriptionUpdate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SubscriptionOut"];
                 };
             };
             /** @description Validation Error */

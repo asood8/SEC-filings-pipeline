@@ -9,9 +9,14 @@ from collections.abc import Sequence
 from typing import Protocol
 
 import httpx2
+from opentelemetry import trace
+from opentelemetry.trace import SpanKind
 
+from filings_common import telemetry
 from filings_common.config import EmbeddingSettings
 from filings_common.db import EMBEDDING_DIMENSIONS
+
+tracer = trace.get_tracer(__name__)
 
 
 class EmbeddingError(Exception):
@@ -57,6 +62,20 @@ class OpenAICompatibleEmbedder:
     def _embed(self, inputs: list[str]) -> list[list[float]]:
         if not inputs:
             return []
+        # The span never holds the texts (search queries are user input); nor do its errors.
+        with telemetry.redacted_span(
+            tracer,
+            f"embeddings {self.model}",
+            kind=SpanKind.CLIENT,
+            attributes={
+                telemetry.GEN_AI_OPERATION: "embeddings",
+                telemetry.GEN_AI_MODEL: self.model,
+                "filings.embedding.inputs": len(inputs),
+            },
+        ):
+            return self._request(inputs)
+
+    def _request(self, inputs: list[str]) -> list[list[float]]:
         try:
             response = self._http.post("/embeddings", json={"model": self.model, "input": inputs})
             response.raise_for_status()

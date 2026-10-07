@@ -6,6 +6,9 @@ from typing import Literal
 import pytest
 from confluent_kafka import Consumer, KafkaError, Message, TopicPartition
 from confluent_kafka.admin import AdminClient
+from opentelemetry import trace
+from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter
+from opentelemetry.trace import SpanKind, StatusCode
 
 from filings_common.consumer import (
     MessageSource,
@@ -16,8 +19,10 @@ from filings_common.consumer import (
 )
 from filings_common.kafka import KafkaPublisher, ensure_topics
 from filings_common.outbox import OutboundMessage
+from filings_common.telemetry import current_trace_context, kafka_headers
 
 TOPIC = "filings.discovered"
+tracer = trace.get_tracer(__name__)
 
 
 class FakeSource:
@@ -57,8 +62,21 @@ class RecordingPublisher:
         self.messages.extend(messages)
 
 
-def message(offset: int, key: str) -> Message:
-    return Message(topic=TOPIC, partition=0, offset=offset, key=key.encode(), value=b"{}")
+def message(offset: int, key: str, headers: Sequence[tuple[str, bytes]] = ()) -> Message:
+    return Message(
+        topic=TOPIC,
+        partition=0,
+        offset=offset,
+        key=key.encode(),
+        value=b"{}",
+        headers=list(headers) or None,
+    )
+
+
+def relay_headers() -> tuple[trace.Span, tuple[tuple[str, bytes], ...]]:
+    """A finished publish span, as the relay's, and the headers it sent."""
+    with tracer.start_as_current_span("send filings.discovered", kind=SpanKind.PRODUCER) as span:
+        return span, kafka_headers(span)
 
 
 def consume(source: FakeSource, handler: object, dlq: RecordingPublisher, **kwargs: float) -> None:
@@ -162,12 +180,78 @@ def test_dlq_failure_stops_the_consumer_without_committing() -> None:
     assert source.closed
 
 
+def test_each_message_is_handled_in_a_consumer_span_that_continues_its_trace(
+    spans: InMemorySpanExporter,
+) -> None:
+    send, headers = relay_headers()
+    stop = threading.Event()
+    seen: list[dict[str, str] | None] = []
+    source = FakeSource(stop, message(5, "0000320193-26-000101", headers))
+    run_consumer(
+        source,
+        TOPIC,
+        lambda r: seen.append(current_trace_context()),  # what the handler's enqueue would store
+        RecordingPublisher(),
+        stop,
+        consumer_group="parser",
+    )
+
+    [process] = [s for s in spans.get_finished_spans() if s.name == "process filings.discovered"]
+    assert process.kind is SpanKind.CONSUMER
+    assert process.parent is not None
+    assert process.parent.span_id == send.get_span_context().span_id
+    assert process.context.trace_id == send.get_span_context().trace_id
+    assert dict(process.attributes or {}) == {
+        "messaging.system": "kafka",
+        "messaging.operation.type": "process",
+        "messaging.destination.name": TOPIC,
+        "messaging.destination.partition.id": "0",
+        "messaging.kafka.offset": 5,
+        "messaging.consumer.group.name": "parser",
+        "messaging.kafka.message.key": "0000320193-26-000101",
+        "filings.attempts": 1,
+        "filings.outcome": "handled",
+    }
+    [stored] = seen
+    assert stored is not None
+    assert trace.format_span_id(process.context.span_id) in stored["traceparent"]
+
+
+def test_dead_letters_keep_their_trace_headers(spans: InMemorySpanExporter) -> None:
+    _, headers = relay_headers()
+    stop = threading.Event()
+
+    def handler(received: Received) -> None:
+        raise PermanentError("rejected https://hooks.slack.com/services/T1/B1/secret")
+
+    dlq = RecordingPublisher()
+    consume(FakeSource(stop, message(0, "a", headers)), handler, dlq)
+
+    [dead] = dlq.messages
+    assert dead.headers[: len(headers)] == headers  # the trace headers, unchanged
+    [process] = [s for s in spans.get_finished_spans() if s.name == "process filings.discovered"]
+    assert process.status.status_code is StatusCode.ERROR
+    assert process.status.description == "filings_common.consumer.PermanentError"
+    assert (process.attributes or {})["filings.outcome"] == "dead_lettered"
+    assert "secret" not in process.to_json()  # failures are recorded by type only
+
+
+def test_messages_without_trace_headers_start_a_new_trace(spans: InMemorySpanExporter) -> None:
+    stop = threading.Event()
+    consume(FakeSource(stop, message(0, "a")), lambda r: None, RecordingPublisher())
+    [process] = spans.get_finished_spans()
+    assert process.parent is None
+
+
 @pytest.mark.integration
 def test_round_trip_with_redpanda_commits_offsets_and_dead_letters(kafka_bootstrap: str) -> None:
     topic = f"test.{uuid.uuid4().hex[:8]}"
     ensure_topics(kafka_bootstrap, [topic, f"{topic}.dlq"], partitions=1, replication_factor=1)
     publisher = KafkaPublisher(kafka_bootstrap)
-    publisher.publish([OutboundMessage(topic, k, b"{}") for k in ("good-1", "bad", "good-2")])
+    _, trace_headers = relay_headers()
+    publisher.publish(
+        [OutboundMessage(topic, k, b"{}", trace_headers) for k in ("good-1", "bad", "good-2")]
+    )
 
     group = f"test-{uuid.uuid4().hex[:8]}"
     source: MessageSource = make_consumer(kafka_bootstrap, group)  # the real consumer fits
@@ -198,7 +282,9 @@ def test_round_trip_with_redpanda_commits_offsets_and_dead_letters(kafka_bootstr
         dead = checker.poll(10)
         assert dead is not None
         assert dead.key() == b"bad"
-        assert dict(dead.headers() or [])["dlq.source"] == f"{topic}/0/1".encode()
+        dead_headers = dict(dead.headers() or [])
+        assert dead_headers["dlq.source"] == f"{topic}/0/1".encode()
+        assert dead_headers["traceparent"] == dict(trace_headers)["traceparent"]
     finally:
         checker.close()
         admin = AdminClient({"bootstrap.servers": kafka_bootstrap})

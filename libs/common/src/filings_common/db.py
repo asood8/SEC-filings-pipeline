@@ -344,6 +344,9 @@ class OutboxEvent(Base):
     topic: Mapped[str]
     key: Mapped[str]
     payload: Mapped[dict[str, Any]] = mapped_column(JSONB)
+    # W3C trace context ({"traceparent": ..., "tracestate": ...}) of the span that wrote the
+    # event, so the relay continues that trace. NULL when no trace was active.
+    trace_context: Mapped[dict[str, str] | None] = mapped_column(JSONB)
     created_at: Mapped[datetime] = mapped_column(server_default=sa.func.now())
     published_at: Mapped[datetime | None]
 

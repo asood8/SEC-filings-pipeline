@@ -11,9 +11,11 @@ import logging
 from collections.abc import Mapping
 
 import sqlalchemy as sa
+from opentelemetry import trace
 from pydantic import ValidationError
 from sqlalchemy.orm import Session, sessionmaker
 
+from filings_common import telemetry
 from filings_common.consumer import PermanentError, Received
 from filings_common.db import Filing, FilingExhibit, FilingStatus
 from filings_common.events import FilingDiscovered, FilingParsed, Topic
@@ -24,6 +26,7 @@ from filings_parser.documents import RawExhibit
 from filings_parser.forms import FormParser
 
 logger = logging.getLogger(__name__)
+tracer = trace.get_tracer(__name__)
 
 
 class FilingHandler:
@@ -44,6 +47,7 @@ class FilingHandler:
             event = FilingDiscovered.model_validate_json(received.value)
         except ValidationError as exc:
             raise PermanentError(f"invalid {Topic.FILINGS_DISCOVERED} event: {exc}") from exc
+        telemetry.tag_filing(event.accession_no, form_type=event.form_type, cik=event.cik)
 
         parser = self._parsers.get(event.form_type)
         if parser is None:
@@ -58,11 +62,14 @@ class FilingHandler:
         except ObjectNotFoundError as exc:
             raise PermanentError(f"raw document missing: {event.raw_object_key}") from exc
         exhibits = self._exhibits(event.accession_no)
-        try:
-            payload = parser.parse(raw, exhibits)
-        except Exception as exc:
-            # Parsing is deterministic: the same document fails the same way on every retry.
-            raise PermanentError(f"form {event.form_type} parser failed: {exc!r}") from exc
+        with tracer.start_as_current_span(
+            "parse", attributes={"filings.parser_version": parser.version}
+        ):
+            try:
+                payload = parser.parse(raw, exhibits)
+            except Exception as exc:
+                # Parsing is deterministic: the same document fails the same way on every retry.
+                raise PermanentError(f"form {event.form_type} parser failed: {exc!r}") from exc
 
         self._parsed.upsert(
             accession_no=event.accession_no,

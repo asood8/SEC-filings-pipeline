@@ -17,7 +17,7 @@ from cryptography.hazmat.primitives.asymmetric import rsa
 from fastapi.testclient import TestClient
 from sqlalchemy.engine import Engine
 
-from filings_api.app import create_app
+from filings_api.app import create_app, instrument
 from filings_api.google import GoogleIdTokenVerifier
 from filings_common.config import ApiSettings
 from filings_common.db import (
@@ -243,7 +243,8 @@ def make_client(
     seeded: Engine, redis_client: redis.Redis, google_key: rsa.RSAPrivateKey
 ) -> Iterator[ClientFactory]:
     """Build a client; by default with generous rate limits, caching off, and sign-in accepting
-    tokens from the `google` fixture. It talks https, so Secure cookies round-trip."""
+    tokens from the `google` fixture. It talks https, so Secure cookies round-trip. With
+    traced=True, the app is instrumented as when tracing is on."""
     redis_client.flushdb()  # DB 15 belongs to tests
     clients: list[TestClient] = []
 
@@ -264,6 +265,8 @@ def make_client(
             settings=settings,
             google_verifier=overrides.pop("google_verifier", GoogleTokens(google_key).verifier()),
         )
+        if overrides.pop("traced", False):
+            instrument(app)
         client = TestClient(app, base_url="https://testserver")
         client.__enter__()
         clients.append(client)

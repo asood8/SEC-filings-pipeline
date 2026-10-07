@@ -2,6 +2,8 @@ import json
 
 import httpx2
 import pytest
+from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter
+from opentelemetry.trace import SpanKind, StatusCode
 
 from filings_common.config import EmbeddingSettings
 from filings_common.embeddings import (
@@ -74,3 +76,23 @@ def test_settings_enable_embeddings_only_with_a_model() -> None:
     configured = embedder_from_settings(EmbeddingSettings(_env_file=None, model="nomic"))
     assert configured is not None
     assert configured.model == "nomic"
+
+
+def test_embedding_calls_are_spans_without_the_texts(spans: InMemorySpanExporter) -> None:
+    requests: list[httpx2.Request] = []
+    embedder(vectors([1.0, 0.0, 0.0]), requests).embed_query("insider selling at acme")
+    with pytest.raises(EmbeddingError):  # an error that could quote the input
+        embedder(ValueError("bad input: insider selling at acme"), requests).embed_documents(
+            ["insider selling at acme"]
+        )
+
+    ok, failed = spans.get_finished_spans()
+    assert (ok.name, ok.kind) == ("embeddings embed-test", SpanKind.CLIENT)
+    assert dict(ok.attributes or {}) == {
+        "gen_ai.operation.name": "embeddings",
+        "gen_ai.request.model": "embed-test",
+        "filings.embedding.inputs": 1,
+    }
+    assert failed.status.status_code is StatusCode.ERROR
+    for span in (ok, failed):
+        assert "acme" not in span.to_json()

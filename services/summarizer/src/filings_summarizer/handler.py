@@ -12,10 +12,12 @@ import logging
 from collections.abc import Mapping
 
 import sqlalchemy as sa
+from opentelemetry import trace
 from pydantic import ValidationError
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.orm import Session, sessionmaker
 
+from filings_common import telemetry
 from filings_common.consumer import PermanentError, Received
 from filings_common.db import Company, Filing, FilingStatus, Summary
 from filings_common.embeddings import Embedder, EmbeddingError
@@ -28,6 +30,7 @@ from filings_summarizer.form8k_prompt import FilingContext
 from filings_summarizer.summarizers import Summarizer
 
 logger = logging.getLogger(__name__)
+tracer = trace.get_tracer(__name__)
 
 
 class SummaryHandler:
@@ -48,6 +51,7 @@ class SummaryHandler:
             event = FilingParsed.model_validate_json(received.value)
         except ValidationError as exc:
             raise PermanentError(f"invalid {Topic.FILINGS_PARSED} event: {exc}") from exc
+        telemetry.tag_filing(event.accession_no, form_type=event.form_type, cik=event.cik)
 
         summarizer = self._summarizers.get(event.form_type)
         if summarizer is None:
@@ -76,8 +80,21 @@ class SummaryHandler:
             ticker=company.ticker,
             filed_at=filing.filed_at,
         )
-        # No transaction is open during the (possibly slow) LLM call.
-        result = summarizer.summarize(document["parsed"], context)
+        # No transaction is open during the (possibly slow) LLM call. Its errors can quote the
+        # model's answer, so the span records them by type only.
+        with telemetry.redacted_span(tracer, "summarize") as span:
+            result = summarizer.summarize(document["parsed"], context)
+            span.set_attributes(
+                {
+                    "filings.summary.provider": result.provider,
+                    "filings.summary.model": result.model,
+                    "filings.summary.prompt_version": result.prompt_version,
+                }
+            )
+            if result.ungrounded_numbers is not None:  # a count only: the numbers are LLM text
+                span.set_attribute(
+                    "filings.summary.ungrounded_numbers", len(result.ungrounded_numbers)
+                )
         search_document = build_document(
             result.summary,
             company_name=context.company_name,

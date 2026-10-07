@@ -1,8 +1,8 @@
 """Alert delivery channels: Discord and Slack webhooks, and email.
 
-Targets come from users, so they are validated strictly: a webhook URL must be an official
-Discord or Slack webhook (nothing else is ever requested, and redirects are not followed, so the
-notifier can't be pointed at internal addresses), and an email address can't carry extra headers.
+Targets come from users. Every sender checks its target first with the shared validation in
+`filings_common.targets` (official Discord or Slack webhook URLs only, email addresses without extra
+headers), and redirects are never followed, so the notifier can't be pointed at internal addresses.
 
 Failures are classified so retries stay sensible: `DeliveryError` is transient (rate limits,
 server errors, network trouble: retry later); `PermanentDeliveryError` means the target rejected
@@ -10,7 +10,6 @@ the alert (a deleted webhook, a refused recipient: retrying would never help).
 """
 
 import logging
-import re
 import smtplib
 from dataclasses import dataclass
 from datetime import date
@@ -20,18 +19,11 @@ from typing import Any, Protocol
 import httpx2
 
 from filings_common.db import Channel
+from filings_common.targets import target_is_valid
 
 logger = logging.getLogger(__name__)
 
 DISCLAIMER = "Automated summary; may contain errors and is not investment advice."
-
-_DISCORD_WEBHOOK = re.compile(
-    r"^https://(?:(?:ptb|canary)\.)?discord(?:app)?\.com/api/webhooks/\d+/[\w-]+$"
-)
-_SLACK_WEBHOOK = re.compile(
-    r"^https://hooks\.slack\.com/services/[A-Z0-9]+/[A-Z0-9]+/[A-Za-z0-9]+$"
-)
-_EMAIL = re.compile(r"^[^@\s<>,;]+@[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)+$")
 
 
 class DeliveryError(Exception):
@@ -57,15 +49,6 @@ class Alert:
 
 class Sender(Protocol):
     def send(self, target: str, alert: Alert) -> None: ...
-
-
-def target_is_valid(channel: Channel, target: str) -> bool:
-    pattern = {
-        Channel.DISCORD: _DISCORD_WEBHOOK,
-        Channel.SLACK: _SLACK_WEBHOOK,
-        Channel.EMAIL: _EMAIL,
-    }
-    return bool(pattern[channel].match(target))
 
 
 def _post(http: httpx2.Client, url: str, payload: dict[str, Any], service: str) -> httpx2.Response:

@@ -155,7 +155,7 @@ Each phase ends with something runnable, tests passing, and docs updated. Check 
 - [x] **Phase 5: Frontend.**
   - React static site (Vite + TypeScript): latest filings, search, company pages, filing detail (summary + link to the original on sec.gov), subscription management
   - _Done when:_ it works end to end against the local API.
-- [ ] **Phase 6: Observability.**
+- [x] **Phase 6: Observability.**
   - OTel instrumentation across services including Kafka header propagation
   - Metrics from §7, Grafana Cloud dashboards and alerts
   - _Done when:_ one trace follows a filing from discovery to alert.

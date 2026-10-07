@@ -1,4 +1,4 @@
-"""The public read API: filings, companies, and search. Docs at /docs."""
+"""The API: filings, companies, and search (public), and alert subscriptions. Docs at /docs."""
 
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
@@ -10,7 +10,7 @@ from redis.retry import Retry
 from sqlalchemy.orm import Session, sessionmaker
 
 from filings_api.middleware import CacheMiddleware, RateLimitMiddleware, RedisBackoff
-from filings_api.routes import companies, filings, search
+from filings_api.routes import companies, filings, search, subscriptions
 from filings_common.config import ApiSettings, DatabaseSettings, EmbeddingSettings, RedisSettings
 from filings_common.db import create_engine, session_factory
 from filings_common.embeddings import Embedder, embedder_from_settings
@@ -96,4 +96,5 @@ def create_app(
     app.include_router(filings.router)
     app.include_router(companies.router)
     app.include_router(search.router)
+    app.include_router(subscriptions.router)
     return app

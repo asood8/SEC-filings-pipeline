@@ -1,4 +1,5 @@
-"""Shared query pieces: a filing joined with its company and current headline."""
+"""Shared query pieces: a filing joined with its company and current headline, and a company
+looked up by ticker."""
 
 from collections.abc import Iterator
 from typing import Annotated
@@ -48,3 +49,11 @@ def to_filing_out(filing: Filing, ticker: str, name: str, headline: str | None) 
         headline=headline,
         sec_url=filing.primary_doc_url,
     )
+
+
+def company_by_ticker(session: Session, ticker: str) -> Company | None:
+    """Case-insensitive, with a dot or a dash as the class separator (BRK.B or BRK-B)."""
+    normalized = ticker.strip().upper().replace(".", "-")  # BRK.B -> BRK-B, as SEC writes it
+    return session.scalars(
+        sa.select(Company).where(Company.ticker == normalized).order_by(Company.cik).limit(1)
+    ).first()

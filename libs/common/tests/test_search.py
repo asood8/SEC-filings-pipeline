@@ -156,6 +156,17 @@ def test_keyword_search_supports_web_search_syntax(indexed: Engine) -> None:
         assert FILINGS[0][0] not in accessions(keyword_search(session, "Acme -executive"))
 
 
+def test_plain_queries_relax_to_any_word_when_nothing_matches_all(indexed: Engine) -> None:
+    with session_factory(indexed)() as session:
+        # No filing contains both "insider" and "selling" ("sold" doesn't stem to "sell").
+        assert accessions(keyword_search(session, "insider selling")) == [FILINGS[2][0]]
+        # A filing matching more of the words ranks first.
+        assert accessions(keyword_search(session, "credit facility pizza"))[0] == FILINGS[1][0]
+        # Explicit syntax is never relaxed: these keep their strict meaning.
+        assert keyword_search(session, '"insider selling"') == []
+        assert keyword_search(session, "insider -Bob") == []
+
+
 def test_filters_by_form_and_company(indexed: Engine) -> None:
     with session_factory(indexed)() as session:
         assert accessions(keyword_search(session, "Acme OR Globex", form_type="4")) == [

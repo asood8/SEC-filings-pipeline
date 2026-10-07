@@ -26,10 +26,12 @@ logs: ## Follow local stack logs
 	docker compose logs -f
 
 LLM_MODEL ?= llama3.2:3b
+EMBEDDING_MODEL ?= nomic-embed-text:v1.5
 
-llm-up: ## Start the optional local LLM (Ollama) and pull the default model
+llm-up: ## Start the optional local LLM (Ollama) and pull the default LLM and embedding models
 	docker compose --profile llm up -d --wait ollama
 	docker compose exec ollama ollama pull $(LLM_MODEL)
+	docker compose exec ollama ollama pull $(EMBEDDING_MODEL)
 
 llm-down: ## Stop the local LLM (downloaded models are kept)
 	docker compose --profile llm stop ollama

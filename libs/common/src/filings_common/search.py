@@ -12,6 +12,7 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 
 import sqlalchemy as sa
+from sqlalchemy.dialects.postgresql import TSQUERY
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.orm import Session, aliased, sessionmaker
 
@@ -98,6 +99,16 @@ def _filters(*, form_type: str | None, cik: int | None) -> list[sa.ColumnElement
     return clauses
 
 
+def _is_plain(text: str) -> bool:
+    """No search syntax (quotes, OR, -word), so relaxing AND to OR keeps the user's meaning."""
+    words = text.split()
+    return (
+        '"' not in text
+        and "or" not in {w.lower() for w in words}
+        and not any(w.startswith("-") for w in words)
+    )
+
+
 def keyword_search(
     session: Session,
     text: str,
@@ -106,7 +117,25 @@ def keyword_search(
     form_type: str | None = None,
     cik: int | None = None,
 ) -> list[SearchHit]:
-    tsquery = sa.func.websearch_to_tsquery("english", text)
+    """All words must match. If a plain query (no search syntax) matches nothing that way, any
+    word may match, and filings matching more words rank higher: "insider selling" finds insider
+    trades whose summaries say "sold"."""
+    strict = sa.func.websearch_to_tsquery("english", text)
+    hits = _keyword_hits(session, strict, limit=limit, form_type=form_type, cik=cik)
+    if hits or not _is_plain(text) or len(text.split()) < 2:
+        return hits
+    relaxed = sa.cast(sa.func.replace(sa.cast(strict, sa.Text), "&", "|"), TSQUERY)
+    return _keyword_hits(session, relaxed, limit=limit, form_type=form_type, cik=cik)
+
+
+def _keyword_hits(
+    session: Session,
+    tsquery: sa.ColumnElement[str],
+    *,
+    limit: int,
+    form_type: str | None,
+    cik: int | None,
+) -> list[SearchHit]:
     rank = sa.func.ts_rank_cd(FilingSearch.tsv, tsquery).label("rank")
     query = (
         sa.select(FilingSearch.accession_no, rank)

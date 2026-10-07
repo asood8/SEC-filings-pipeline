@@ -67,7 +67,9 @@ def create_app(
             configure(app, redis_client, embedder)
             yield
             return
-        engine = create_engine(DatabaseSettings().database_url.get_secret_value())
+        engine = create_engine(
+            DatabaseSettings().database_url.get_secret_value(), hide_parameters=True
+        )
         client = api_redis_client(RedisSettings().redis_url)
         app.state.sessions = session_factory(engine)
         configure(app, client, embedder_from_settings(EmbeddingSettings()))

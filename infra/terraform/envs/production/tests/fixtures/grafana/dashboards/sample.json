@@ -1,0 +1,26 @@
+{
+  "uid": "sample-dashboard",
+  "title": "Sample",
+  "schemaVersion": 41,
+  "templating": {
+    "list": [
+      { "type": "datasource", "name": "datasource", "query": "prometheus" }
+    ]
+  },
+  "panels": [
+    {
+      "id": 1,
+      "title": "Through the template variable",
+      "type": "timeseries",
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "targets": [{ "refId": "A", "expr": "sum(rate(filings_ready_total[5m]))" }]
+    },
+    {
+      "id": 2,
+      "title": "Exported with the local viewer's data source",
+      "type": "timeseries",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [{ "refId": "A", "expr": "sum(filings_dlq_depth)" }]
+    }
+  ]
+}

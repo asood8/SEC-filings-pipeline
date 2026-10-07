@@ -179,6 +179,7 @@ uv run filings-replay parsed --form-type 4 # re-summarize history (also: discove
 | `make web-install` / `make web` | Install the website's dependencies / run it with hot reload on :3000 |
 | `make web-check` | Lint, type-check, test, and build the website |
 | `make web-types` | Regenerate the website's API types from the API's OpenAPI schema |
+| `make tf-check` / `make tf-fmt` | Check the Terraform code (fmt, validate, tests on mock providers, free-tier allowlist) / format it |
 
 ## Local services
 
@@ -207,10 +208,11 @@ docs/PROJECT_BRIEF.md spec, architecture, and build plan
 docs/adr/             architecture decision records
 docker/               the Dockerfile for the service images
 scripts/              development helpers (`make pipeline`)
+infra/terraform/      the cloud resources outside the cluster, for $0 a month (see its README)
 docker-compose.yml    local backing services
 ```
 
-`deploy/` (Kubernetes manifests) and `infra/` (Terraform) arrive in later phases.
+`deploy/` (Kubernetes manifests) arrives in a later phase.
 
 ## License
 

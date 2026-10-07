@@ -1,5 +1,5 @@
 .DEFAULT_GOAL := help
-.PHONY: help setup sync up down ps logs llm-up llm-down migrate api pipeline images lint fmt test web-install web web-types web-check loadtest api-loadtest
+.PHONY: help setup sync up down ps logs llm-up llm-down migrate api pipeline images lint fmt test web-install web web-types web-check loadtest api-loadtest tf-check tf-fmt
 
 help: ## List targets
 	@grep -E '^[a-z-]+:.*## ' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*## "} {printf "  %-12s %s\n", $$1, $$2}'
@@ -89,3 +89,19 @@ loadtest: ## Load-test a running API with k6 (start it with `make api-loadtest` 
 
 api-loadtest: ## Run the API with the per-client rate limit raised, as `make loadtest` needs
 	API_RATE_LIMIT_PER_MINUTE=1000000 API_RATE_LIMIT_BURST=100000 uv run uvicorn --factory filings_api.app:create_app --workers 2
+
+TF_DIR := infra/terraform
+TF_ENV := $(TF_DIR)/envs/production
+# Providers are large (about 700 MB in all); keep one downloaded copy for every checkout.
+export TF_PLUGIN_CACHE_DIR ?= $(HOME)/.terraform.d/plugin-cache
+
+tf-check: ## Check the Terraform code: format, validate, tests on mock providers, free-tier allowlist (no accounts; creates nothing)
+	@mkdir -p $(TF_PLUGIN_CACHE_DIR)
+	terraform -chdir=$(TF_DIR) fmt -recursive -check -diff
+	terraform -chdir=$(TF_ENV) init -backend=false -input=false -lockfile=readonly
+	terraform -chdir=$(TF_ENV) validate
+	terraform -chdir=$(TF_ENV) test
+	$(TF_DIR)/check-free-tier.sh
+
+tf-fmt: ## Format the Terraform code
+	terraform -chdir=$(TF_DIR) fmt -recursive

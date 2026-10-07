@@ -10,6 +10,7 @@ from pymongo import MongoClient
 
 from filings_common.config import (
     DatabaseSettings,
+    EmbeddingSettings,
     GeminiSettings,
     KafkaSettings,
     LlmSettings,
@@ -18,6 +19,7 @@ from filings_common.config import (
 )
 from filings_common.consumer import make_consumer, run_consumer
 from filings_common.db import create_engine, session_factory
+from filings_common.embeddings import embedder_from_settings
 from filings_common.events import Topic
 from filings_common.kafka import KafkaPublisher
 from filings_common.mongo import ParsedFilingStore
@@ -50,6 +52,7 @@ def main() -> int:
             session_factory(engine),
             ParsedFilingStore(mongo[mongo_settings.mongodb_database]),
             build_summarizers(LlmSettings(), GeminiSettings(), redis_client),
+            embedder_from_settings(EmbeddingSettings()),
         )
         consumer = make_consumer(
             kafka.bootstrap_servers,

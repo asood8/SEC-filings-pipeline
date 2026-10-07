@@ -109,6 +109,32 @@ class GeminiSettings(BaseSettings):
         return None if isinstance(value, str) and not value.strip() else value
 
 
+class EmbeddingSettings(BaseSettings):
+    """The embedding model behind semantic search (an OpenAI-compatible server such as Ollama)."""
+
+    model_config = _config("EMBEDDING_")
+
+    base_url: str = "http://localhost:11434/v1"
+    # Unset means no embeddings: search falls back to keywords only.
+    model: str | None = None
+    # nomic-embed-text is trained with these task prefixes; other models may want none.
+    document_prefix: str = "search_document: "
+    query_prefix: str = "search_query: "
+    timeout_seconds: float = Field(default=60.0, gt=0)
+
+
+class ApiSettings(BaseSettings):
+    model_config = _config("API_")
+
+    # Per client, shared by all API replicas through Redis.
+    rate_limit_per_minute: float = Field(default=60.0, gt=0)
+    rate_limit_burst: int = Field(default=20, ge=1)
+    cache_ttl_seconds: int = Field(default=60, ge=0)
+    # Behind Cloudflare Tunnel the client address is in CF-Connecting-IP. Only trust it when the
+    # API is reachable through the tunnel alone, or clients could spoof it.
+    trust_proxy_headers: bool = False
+
+
 class ObjectStoreSettings(BaseSettings):
     """Where raw filings are stored: a local directory in development, R2 (S3 API) in production."""
 

@@ -2,13 +2,13 @@
 
 [![CI](https://github.com/asood8/SEC-filings-pipeline/actions/workflows/ci.yml/badge.svg)](https://github.com/asood8/SEC-filings-pipeline/actions/workflows/ci.yml)
 
-> **Work in progress.** This project is under active development. The ingestion, parsing, and
-> summarization stages run end to end on real SEC data; search, alerts, the web frontend, and the
-> cloud deployment are still to come. See [Progress](#progress).
+> **Work in progress.** This project is under active development. Ingestion, parsing,
+> summarization, search, and the read API run end to end on real SEC data; alerts, the web
+> frontend, and the cloud deployment are still to come. See [Progress](#progress).
 
 A pipeline that watches SEC EDGAR for new filings from a watchlist of public companies, parses
-them, summarizes them in plain English, and (when finished) makes them searchable and alerts
-subscribed users. It is designed to run indefinitely on free tiers at $0/month, on a single arm64
+them, summarizes them in plain English, makes them searchable by keyword and by meaning, and
+(when finished) alerts subscribed users. It is designed to run indefinitely on free tiers at $0/month, on a single arm64
 VM, and it's built with production practices: event-driven services, infrastructure as code,
 CI, tests against real filings, and architecture decision records.
 
@@ -21,9 +21,14 @@ On a live run against EDGAR, for a watchlist of 35 large US companies:
   across workers through Redis. Running it again creates no duplicates.
 - **Parsing** turned every Form 4 into structured transactions and split every 8-K into its
   numbered items, plus the text of its EX-99 press releases.
+- **Search** finds filings by keyword (Postgres full-text search) and by meaning (pgvector
+  embeddings from a local model), combined into one ranking: "trading plan cancelled" finds
+  Oracle's 8-K about Larry Ellison's plan, and "debt offering" finds Amazon's note offering.
 - **Summarization** wrote every summary: Form 4s with a deterministic template, 8-Ks with an LLM
-  behind a failover chain (a local model, then Gemini's free tier). A grounding check flags any
-  number in an LLM summary that doesn't appear in the filing.
+  behind a failover chain (a local model, then Gemini's free tier). Stopping the local model
+  mid-run moved the remaining work to Gemini automatically, and the local model took over again
+  once it was back. A grounding check flags any number in an LLM summary that doesn't appear in
+  the filing.
 
 Example headlines from that run (public filings):
 
@@ -43,9 +48,9 @@ Example headlines from that run (public filings):
 |---|---|---|
 | 0. Foundations | Monorepo, local stack, CI, ADRs | Done |
 | 1. Thin vertical slice | EDGAR client, discovery, outbox relay, Form 4 parser, `GET /filings` | Done |
-| 2. Summarization | 8-K items and exhibits, Form 4 template, LLM failover, replay | In progress: local-model path still to verify |
-| 3. Search and API | Full-text and semantic search (pgvector), caching, rate limiting | Planned |
-| 4. Users and alerts | Google sign-in, subscriptions, Discord/Slack/email alerts | Planned |
+| 2. Summarization | 8-K items and exhibits, Form 4 template, LLM failover, replay | Done |
+| 3. Search and API | Full-text and semantic search (pgvector), caching, rate limiting | Done |
+| 4. Users and alerts | Google sign-in, subscriptions, Discord/Slack/email alerts | Next |
 | 5. Frontend | Next.js site on Cloudflare Pages | Planned |
 | 6. Observability | OpenTelemetry traces, metrics, Grafana dashboards and alerts | Planned |
 | 7. Production | Terraform, k3s on Oracle Cloud's free tier, Argo CD, multi-arch images | Planned |
@@ -74,7 +79,7 @@ flowchart LR
   API --> PG
 ```
 
-This is the target design. The notifier, search, and web frontend are not built yet.
+This is the target design. The notifier and the web frontend are not built yet.
 
 Each stage is a separate service connected by Redpanda (Kafka API) topics. Some design choices
 worth a look:
@@ -89,6 +94,9 @@ worth a look:
 - **LLM failover with circuit breakers**, plus a deterministic grounding check on every LLM
   summary. ([ADR-0008](docs/adr/0008-llm-providers-failover-and-exhibits.md),
   [ADR-0009](docs/adr/0009-grounding-check-for-llm-summaries.md))
+- **Hybrid search in Postgres**: full-text and vector results merged with reciprocal rank
+  fusion, degrading to keywords when the embedding model is down.
+  ([ADR-0011](docs/adr/0011-search-and-public-api.md))
 
 Every component's reason for existing is recorded in the
 [architecture decision records](docs/adr/README.md).
@@ -117,11 +125,18 @@ uv run filings-discovery run               # new filings -> object store + Postg
 uv run filings-outbox-relay                # outbox -> Redpanda topics (runs until Ctrl+C)
 uv run filings-parser                      # filings.discovered -> MongoDB + filings.parsed
 uv run filings-summarizer                  # filings.parsed -> summaries + filings.ready
-make api                                   # http://127.0.0.1:8000/filings, docs at /docs
+uv run filings-index                       # build the search index (embeddings need EMBEDDING_MODEL)
+make api                                   # http://127.0.0.1:8000, interactive docs at /docs
 ```
 
+The API: `GET /search?q=...` (hybrid by default; `mode=keyword|semantic`), `GET /filings`,
+`GET /filings/{accession_no}`, `GET /companies`, and `GET /companies/{ticker}`. Lists use cursor
+pagination, and responses are cached briefly and rate-limited per client through Redis.
+
 8-K summaries need an LLM: set `GEMINI_API_KEY` (free from Google AI Studio, no billing needed)
-and/or `LLM_MODEL` (a local Ollama model). Form 4 summaries need neither. Other tools:
+and/or a local model. `make llm-up` runs Ollama in Docker and pulls `llama3.2:3b` and the
+`nomic-embed-text:v1.5` embedding model; then set `LLM_MODEL=llama3.2:3b` and
+`EMBEDDING_MODEL=nomic-embed-text:v1.5`. Form 4 summaries need neither. Other tools:
 
 ```sh
 uv run filings-discovery fetch-exhibits    # download EX-99 exhibits for 8-Ks found before exhibits
@@ -136,6 +151,7 @@ uv run filings-replay parsed --form-type 4 # re-summarize history (also: discove
 | `make sync` | Install all workspace packages and dev tools into `.venv` |
 | `make up` / `make down` | Start (and wait until healthy) / stop the local stack |
 | `make ps` / `make logs` | Stack status / follow logs |
+| `make llm-up` / `make llm-down` | Start (and pull the default model) / stop the optional local LLM |
 | `make migrate` | Apply database migrations (`uv run alembic revision --autogenerate -m "..."` creates one) |
 | `make api` | Run the API locally with auto-reload |
 | `make lint` | ruff (lint + format check) and mypy |
@@ -152,6 +168,7 @@ All bound to `127.0.0.1`. Credentials are throwaway local values in `.env`.
 | Redpanda (Kafka API) | `localhost:19092` | same image on k3s |
 | Valkey | `localhost:6379` | same image on k3s |
 | MongoDB 8.0 | `localhost:27017` | MongoDB Atlas M0 |
+| Ollama (optional, `make llm-up`) | `localhost:11434` | llama.cpp server on k3s |
 
 Details and memory budget: [ADR-0003](docs/adr/0003-local-development-stack.md).
 

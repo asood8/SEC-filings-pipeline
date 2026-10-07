@@ -8,6 +8,7 @@ dependencies = [
     "boto3>=1.40",
     "confluent-kafka>=2.11",
     "httpx2>=2.13",
+    "pgvector>=0.4",
     "psycopg[binary]>=3.2",
     "pydantic>=2.11",
     "pydantic-settings>=2.10",
@@ -19,6 +20,7 @@ dependencies = [
 [project.scripts]
 filings-outbox-relay = "filings_common.relay:main"
 filings-replay = "filings_common.replay:main"
+filings-index = "filings_common.indexer:main"
 
 [build-system]
 requires = ["uv_build>=0.12.23,<0.13.0"]

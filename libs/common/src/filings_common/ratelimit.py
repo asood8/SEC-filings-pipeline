@@ -68,3 +68,48 @@ class RedisTokenBucket:
         if wait > 0:
             self._sleep(wait)
         return wait
+
+
+# Classic bucket for request admission: a token is taken only if one is available; otherwise the
+# reply says how long until one will be. Nothing waits server-side.
+_ADMISSION_LUA = """
+local rate = tonumber(ARGV[1])
+local burst = tonumber(ARGV[2])
+local t = redis.call('TIME')
+local now = tonumber(t[1]) + tonumber(t[2]) / 1000000
+local state = redis.call('HMGET', KEYS[1], 'tokens', 'ts')
+local tokens = tonumber(state[1]) or burst
+local ts = tonumber(state[2]) or now
+tokens = math.min(burst, tokens + math.max(0, now - ts) * rate)
+local retry = 0
+if tokens >= 1 then
+  tokens = tokens - 1
+else
+  retry = (1 - tokens) / rate
+end
+redis.call('HSET', KEYS[1], 'tokens', tokens, 'ts', now)
+redis.call('PEXPIRE', KEYS[1], math.ceil((burst - tokens) / rate * 1000) + 1000)
+return tostring(retry)
+"""
+
+
+class RedisRateLimit:
+    """Per-key admission control (for example per API client), shared through Redis.
+
+    `check(key)` takes a token when one is available and returns 0; otherwise it returns the
+    seconds until the next token, and the caller should reject the request (HTTP 429).
+    """
+
+    def __init__(
+        self, client: redis.Redis, prefix: str, rate_per_second: float, burst: int
+    ) -> None:
+        if rate_per_second <= 0 or burst < 1:
+            raise ValueError("rate_per_second must be positive and burst at least 1")
+        self._script = client.register_script(_ADMISSION_LUA)
+        self._prefix = prefix
+        self._rate = rate_per_second
+        self._burst = burst
+
+    def check(self, key: str) -> float:
+        reply = self._script(keys=[f"{self._prefix}:{key}"], args=[self._rate, self._burst])
+        return float(reply.decode() if isinstance(reply, bytes) else reply)

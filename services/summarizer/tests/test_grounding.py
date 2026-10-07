@@ -45,6 +45,13 @@ def test_stated_figures_in_another_format_are_grounded() -> None:
         ("elected 3 new directors", "elected three new directors"),
         ("free cash flow of $14.4 billion", "(in millions) Free Cash Flow $ 5,283 $ 14,402"),
         ("filed on September 17, 2026", "Form 8-K filed 2026-09-17"),
+        # Ranges: the unit after the range covers both ends (found with granite4 on Adobe's 8-K).
+        ("guidance of $6.80 to $6.85 billion", "revenue $6.80 billion to $6.85 billion"),
+        (
+            "$1.93-$1.95 billion and $4.665\u20134.695 billion",
+            "$1.93 billion to $1.95 billion; $4.665 billion to $4.695 billion",
+        ),
+        ("between 5 and 10 million users", "5 million to 10 million users"),
         ("Q3 FY27 results under a 10b5-1 plan", "third quarter of fiscal 2027, Rule 10b5-1"),
     ],
 )
@@ -58,6 +65,9 @@ def test_grounded(summary: str, source: str) -> None:
         ("revenue of $1.4 billion", "revenue of $1,324 million", ["1.4 billion"]),
         ("up 13%", "up 11.6%", ["13"]),
         ("4 directors", "three directors", ["4"]),
+        ("$6.80 to $6.95 billion", "revenue $6.80 billion to $6.85 billion", ["6.95 billion"]),
+        # "and" without "between" is not a range: 2029 must not become "2029 billion".
+        ("notes due 2029 and £9.0 billion", "notes due 2029", ["9.0 billion"]),
         # Only bare table numbers are scaled by "in millions", not ones that state a unit.
         ("$5 quadrillion", "(in millions) a $5 billion facility", ["5"]),
         ("a $5,000 trillion", "(in millions) a $5 billion facility", ["5,000 trillion"]),

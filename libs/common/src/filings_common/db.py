@@ -11,7 +11,8 @@ from typing import Any
 import sqlalchemy as sa
 from alembic import command
 from alembic.config import Config
-from sqlalchemy.dialects.postgresql import ARRAY, JSONB
+from pgvector.sqlalchemy import Vector
+from sqlalchemy.dialects.postgresql import ARRAY, JSONB, TSVECTOR
 from sqlalchemy.orm import DeclarativeBase, Mapped, Session, mapped_column, sessionmaker
 
 # Deterministic constraint names, so migrations can refer to them.
@@ -22,6 +23,18 @@ NAMING_CONVENTION = {
     "fk": "fk_%(table_name)s_%(column_0_name)s_%(referred_table_name)s",
     "pk": "pk_%(table_name)s",
 }
+
+
+# Embedding size of the default model (nomic-embed-text v1.5). A model with another size needs a
+# migration, because pgvector columns have a fixed dimension.
+EMBEDDING_DIMENSIONS = 768
+
+# Weighted full-text vector: the headline and company count more than the body.
+_SEARCH_TSV = (
+    "setweight(to_tsvector('english', title), 'A') || "
+    "setweight(to_tsvector('english', company), 'A') || "
+    "setweight(to_tsvector('english', body), 'B')"
+)
 
 
 class Base(DeclarativeBase):
@@ -166,6 +179,53 @@ class Summary(Base):
     # [] = all found; NULL = not checked (template summaries compute totals by design).
     ungrounded_numbers: Mapped[list[str] | None] = mapped_column(ARRAY(sa.Text()))
     created_at: Mapped[datetime] = mapped_column(server_default=sa.func.now())
+
+
+class FilingSearch(Base):
+    """One searchable document per filing, rebuilt from its current summary."""
+
+    __tablename__ = "filing_search"
+    __table_args__ = (sa.Index("ix_filing_search_tsv", "tsv", postgresql_using="gin"),)
+
+    accession_no: Mapped[str] = mapped_column(
+        sa.ForeignKey("filings.accession_no", ondelete="CASCADE"), primary_key=True
+    )
+    summary_id: Mapped[int] = mapped_column(
+        sa.BigInteger, sa.ForeignKey("summaries.id", ondelete="CASCADE")
+    )
+    title: Mapped[str]  # the summary's headline
+    company: Mapped[str]  # company name and ticker
+    body: Mapped[str]  # the summary and its key points
+    tsv: Mapped[str] = mapped_column(
+        TSVECTOR, sa.Computed(_SEARCH_TSV, persisted=True), deferred=True
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        server_default=sa.func.now(), onupdate=sa.func.now()
+    )
+
+
+class FilingEmbedding(Base):
+    """A filing's search document as a vector. Keyed by model: vectors from different models
+    can't be compared, so a model change re-embeds alongside the old vectors."""
+
+    __tablename__ = "filing_embeddings"
+    __table_args__ = (
+        sa.Index(
+            "ix_filing_embeddings_embedding_hnsw",
+            "embedding",
+            postgresql_using="hnsw",
+            postgresql_ops={"embedding": "vector_cosine_ops"},
+        ),
+    )
+
+    accession_no: Mapped[str] = mapped_column(
+        sa.ForeignKey("filings.accession_no", ondelete="CASCADE"), primary_key=True
+    )
+    model: Mapped[str] = mapped_column(primary_key=True)
+    embedding: Mapped[list[float]] = mapped_column(Vector(EMBEDDING_DIMENSIONS))
+    updated_at: Mapped[datetime] = mapped_column(
+        server_default=sa.func.now(), onupdate=sa.func.now()
+    )
 
 
 class OutboxEvent(Base):

@@ -28,3 +28,20 @@ Thumbs.db
 
 # Local raw-filing object store (OBJECT_STORE_LOCAL_ROOT)
 /data/
+
+# Terraform (infra/terraform): downloaded providers, state (it holds secrets), variable files
+# (they hold credentials; the committed *.tfvars.example files are the templates), plans, and
+# crash logs. The dependency lock file, .terraform.lock.hcl, is committed on purpose.
+.terraform/
+*.tfstate
+*.tfstate.*
+*.tfvars
+*.tfvars.json
+!*.tfvars.example
+*.tfplan
+crash.log
+crash.*.log
+override.tf
+override.tf.json
+*_override.tf
+*_override.tf.json

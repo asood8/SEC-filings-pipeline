@@ -1,0 +1,46 @@
+# Template for terraform.tfvars (gitignored, like every *.tfvars file). Copy it and fill it in:
+#   cp terraform.tfvars.example terraform.tfvars
+# Every value below is a placeholder. The repository is public: never commit a filled-in copy.
+#
+# Credentials are better left out of this file entirely and exported in the shell instead, so
+# they never touch the disk in plain text (README.md, "Accounts and credentials"):
+#   export TF_VAR_cloudflare_api_token=...     # or CLOUDFLARE_API_TOKEN
+#   export MONGODB_ATLAS_CLIENT_ID=...         # Atlas service account
+#   export MONGODB_ATLAS_CLIENT_SECRET=...
+#   export GRAFANA_AUTH=...                    # Grafana Cloud service account token
+# OCI reads its API signing key from ~/.oci/config.
+
+# --- Oracle Cloud ---
+oci_region       = "us-ashburn-1" # your tenancy's HOME region
+oci_tenancy_ocid = "ocid1.tenancy.oc1..replace-me"
+# oci_compartment_ocid = "ocid1.compartment.oc1..replace-me"  # default: the root compartment
+# oci_config_file_profile = "DEFAULT"
+# oci_availability_domain_number = 1  # try 2 or 3 after "Out of host capacity"
+# data_volume_size_gbs = 100           # boot (50) + data must stay within 200 GB
+
+# SSH stays closed unless you set a source range; open it only while you need it.
+# ssh_ingress_cidr    = "203.0.113.7/32"
+ssh_authorized_keys = "ssh-ed25519 AAAA...replace-me you@laptop"
+
+# k3s_version  = "v1.36.5+k3s1"
+# git_revision = "main"
+
+# --- Cloudflare ---
+cloudflare_account_id = "0123456789abcdef0123456789abcdef"
+domain                = "example.com" # the zone must already be active in the account
+# api_subdomain = "api"
+# web_subdomain = "app"
+# r2_location   = "enam"   # nearest to the VM: apac, eeur, enam, weur, wnam, oc
+# backup_retention_days = 30
+# pages_github_integration = true  # install the Cloudflare Pages GitHub app first
+# google_client_id = "1234567890-abc.apps.googleusercontent.com"  # public, not a secret
+
+# --- MongoDB Atlas ---
+atlas_org_id = "0123456789abcdef01234567"
+# atlas_backing_provider = "AWS"
+# atlas_region           = "US_EAST_1"
+# atlas_extra_access = { laptop = "203.0.113.7/32" }  # temporary, for mongosh from your machine
+
+# --- Grafana Cloud ---
+grafana_url = "https://replace-me.grafana.net"
+# grafana_datasource_uids = { prometheus = "grafanacloud-prom", loki = "grafanacloud-logs", tempo = "grafanacloud-traces" }

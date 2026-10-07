@@ -118,8 +118,9 @@ services:
 
   # Optional local viewer for traces and metrics: `make obs-up`, then Grafana on
   # http://localhost:3001. Not started by `make up`. One container with an OpenTelemetry collector,
-  # Prometheus, Tempo, Loki, Pyroscope (unused here), and Grafana. Point the services at it with
-  # OTEL_EXPORTER_OTLP_ENDPOINT (see .env.example).
+  # Prometheus, Tempo, Loki, Pyroscope (unused here), and Grafana, which loads our dashboards and
+  # alert rules from deploy/grafana. Point the services at it with OTEL_EXPORTER_OTLP_ENDPOINT
+  # (see .env.example).
   # Production uses Grafana Cloud instead. See docs/adr/0016-observability.md.
   otel-lgtm:
     image: grafana/otel-lgtm:0.35.0
@@ -140,6 +141,11 @@ services:
       - "127.0.0.1:9090:9090" # Prometheus, to try queries directly
     volumes:
       - lgtm-data:/data
+      # Grafana picks up dashboard changes within seconds; alert rules only when it starts
+      # (`docker compose --profile observability restart otel-lgtm`).
+      - ./deploy/grafana/dashboards:/otel-lgtm/filings-dashboards:ro
+      - ./deploy/grafana/local/dashboards.yaml:/otel-lgtm/grafana/conf/provisioning/dashboards/filings.yaml:ro
+      - ./deploy/grafana/alerting:/otel-lgtm/grafana/conf/provisioning/alerting:ro
     healthcheck:
       test: ["CMD", "/otel-lgtm/docker/healthcheck.sh"]
       interval: 10s

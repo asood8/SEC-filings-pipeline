@@ -10,6 +10,7 @@ dev = [
     "mypy>=1.18",
     "pre-commit>=4",
     "pytest>=8.4",
+    "pyyaml>=6",
     "ruff>=0.14",
 ]
 
@@ -54,6 +55,12 @@ mypy_path = [
 # confluent_kafka.admin re-exports classes such as NewTopic without marking them public.
 module = "confluent_kafka.*"
 implicit_reexport = true
+
+[[tool.mypy.overrides]]
+# PyYAML has no type hints of its own (types-PyYAML would add them). Only tests use it, to read
+# the Grafana provisioning files.
+module = "yaml"
+ignore_missing_imports = true
 
 [tool.pytest.ini_options]
 testpaths = ["libs", "services", "tests"]

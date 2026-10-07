@@ -16,6 +16,12 @@ that first appears at 1 would hide its first event.
 
 Prometheus names: dots become underscores, counters get `_total`, and a unit is appended, so
 `filings.sec.rate_limit.wait` (seconds) is `filings_sec_rate_limit_wait_seconds`.
+
+Short-lived jobs (discovery, replay) are different: each run is a new process with its own
+`service.instance.id`, so its own series, and a run usually ends before its first periodic export.
+Its series then hold one value, the run's total, exported on the way out. Prometheus's `rate()`
+and `increase()` need at least two values per series, so the dashboards and alert rules
+(deploy/grafana) add up a job's counters with `max_over_time` instead: each run's latest total.
 """
 
 import threading

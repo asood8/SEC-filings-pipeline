@@ -348,8 +348,11 @@ class OutboxEvent(Base):
     published_at: Mapped[datetime | None]
 
 
-def create_engine(url: str) -> sa.Engine:
-    return sa.create_engine(url, pool_pre_ping=True)
+def create_engine(url: str, *, hide_parameters: bool = False) -> sa.Engine:
+    """`hide_parameters` keeps bound values out of SQLAlchemy's error messages and logs, for
+    services whose queries carry user secrets (the API stores webhook URLs). Postgres's own error
+    details can still quote a row, e.g. the key in a unique violation."""
+    return sa.create_engine(url, pool_pre_ping=True, hide_parameters=hide_parameters)
 
 
 def session_factory(engine: sa.Engine) -> sessionmaker[Session]:

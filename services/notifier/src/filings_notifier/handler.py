@@ -37,13 +37,8 @@ from filings_common.db import (
 )
 from filings_common.events import FilingReady, Topic
 from filings_common.summaries import FilingSummary
-from filings_notifier.channels import (
-    Alert,
-    DeliveryError,
-    PermanentDeliveryError,
-    Sender,
-    target_is_valid,
-)
+from filings_common.targets import target_is_valid
+from filings_notifier.channels import Alert, DeliveryError, PermanentDeliveryError, Sender
 
 logger = logging.getLogger(__name__)
 

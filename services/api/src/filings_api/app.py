@@ -1,4 +1,5 @@
-"""The API: filings, companies, and search, plus Google sign-in. Docs at /docs."""
+"""The API: filings, companies, and search (public), plus Google sign-in and alert
+subscriptions. Docs at /docs."""
 
 import logging
 from collections.abc import AsyncIterator
@@ -19,7 +20,7 @@ from filings_api.middleware import (
     RateLimitMiddleware,
     RedisBackoff,
 )
-from filings_api.routes import auth, companies, filings, search
+from filings_api.routes import auth, companies, filings, search, subscriptions
 from filings_common.config import (
     ApiSettings,
     DatabaseSettings,
@@ -91,7 +92,9 @@ def create_app(
             configure(app, redis_client, embedder, google_verifier)
             yield
             return
-        engine = create_engine(DatabaseSettings().database_url.get_secret_value())
+        engine = create_engine(
+            DatabaseSettings().database_url.get_secret_value(), hide_parameters=True
+        )
         client = api_redis_client(RedisSettings().redis_url)
         google_keys = GoogleSigningKeys()
         client_id = GoogleSignInSettings().client_id
@@ -150,4 +153,5 @@ def create_app(
     app.include_router(companies.router)
     app.include_router(search.router)
     app.include_router(auth.router)
+    app.include_router(subscriptions.router)
     return app

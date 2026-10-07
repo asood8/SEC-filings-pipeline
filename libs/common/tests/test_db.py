@@ -6,7 +6,15 @@ from alembic.autogenerate import compare_metadata
 from alembic.migration import MigrationContext
 from sqlalchemy.engine import Engine
 
-from filings_common.db import Base, Company, Filing, FilingStatus, OutboxEvent, session_factory
+from filings_common.db import (
+    Base,
+    Company,
+    Filing,
+    FilingStatus,
+    OutboxEvent,
+    create_engine,
+    session_factory,
+)
 
 pytestmark = pytest.mark.integration
 
@@ -49,6 +57,19 @@ def test_database_rejects_unknown_status(clean_db: Engine) -> None:
                 " 'u', 'k', 'bogus')"
             )
         )
+
+
+def test_engine_can_keep_parameters_out_of_errors(db_engine: Engine) -> None:
+    url = db_engine.url.render_as_string(hide_password=False)
+    failing = sa.text("SELECT CAST(:secret AS text), 1 / 0")  # the error itself echoes nothing
+    for hide, shown in [(False, True), (True, False)]:
+        engine = create_engine(url, hide_parameters=hide)
+        try:
+            with pytest.raises(sa.exc.DBAPIError) as excinfo, engine.connect() as conn:
+                conn.execute(failing, {"secret": "webhook-token"})
+        finally:
+            engine.dispose()
+        assert ("webhook-token" in str(excinfo.value)) is shown
 
 
 def test_outbox_ids_increase_and_rows_start_unpublished(clean_db: Engine) -> None:

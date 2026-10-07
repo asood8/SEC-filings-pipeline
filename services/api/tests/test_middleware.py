@@ -115,7 +115,8 @@ def test_responses_that_set_cookies_are_not_cached(make_client: ClientFactory) -
     assert [client.get("/cookie").json()["calls"] for _ in range(2)] == [1, 2]
 
 
-@pytest.mark.parametrize("path", ["/subscriptions", "/subscriptions/1", "/me/x", "/auth/x"])
+# Paths without real routes (GET /subscriptions itself is a real, signed-in route).
+@pytest.mark.parametrize("path", ["/subscriptions/x", "/subscriptions/1", "/me/x", "/auth/x"])
 def test_private_paths_are_never_cached_and_say_no_store(
     make_client: ClientFactory, path: str
 ) -> None:

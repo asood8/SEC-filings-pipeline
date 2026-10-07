@@ -4,7 +4,7 @@ import sqlalchemy as sa
 from fastapi import APIRouter, HTTPException, Query
 
 from filings_api.pagination import decode_cursor, encode_cursor
-from filings_api.queries import SessionDep, filing_select, to_filing_out
+from filings_api.queries import SessionDep, company_by_ticker, filing_select, to_filing_out
 from filings_api.schemas import CompanyDetail, CompanyOut, Page
 from filings_common.db import Company, Filing
 
@@ -53,10 +53,7 @@ def list_companies(
 
 @router.get("/companies/{ticker}", summary="One company with its recent filings")
 def get_company(session: SessionDep, ticker: str) -> CompanyDetail:
-    normalized = ticker.strip().upper().replace(".", "-")  # BRK.B -> BRK-B, as SEC writes it
-    company = session.scalars(
-        sa.select(Company).where(Company.ticker == normalized).order_by(Company.cik).limit(1)
-    ).first()
+    company = company_by_ticker(session, ticker)
     if company is None:
         raise HTTPException(status_code=404, detail="company not found")
     rows = session.execute(

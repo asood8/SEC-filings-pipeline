@@ -6,7 +6,6 @@ from typing import Any, ClassVar
 import httpx2
 import pytest
 
-from filings_common.db import Channel
 from filings_notifier.channels import (
     Alert,
     DeliveryError,
@@ -15,7 +14,6 @@ from filings_notifier.channels import (
     PermanentDeliveryError,
     SlackSender,
     SmtpEmailSender,
-    target_is_valid,
 )
 
 DISCORD = "https://discord.com/api/webhooks/123456/abc-DEF_789"
@@ -31,25 +29,6 @@ ALERT = Alert(
     key_points=["Effective October 1"],
     url="https://www.sec.gov/Archives/x.htm",
 )
-
-
-@pytest.mark.parametrize(
-    ("channel", "target", "valid"),
-    [
-        (Channel.DISCORD, DISCORD, True),
-        (Channel.DISCORD, "https://discordapp.com/api/webhooks/1/x", True),
-        (Channel.DISCORD, "https://discord.com.evil.example/api/webhooks/1/x", False),
-        (Channel.DISCORD, "http://discord.com/api/webhooks/1/x", False),  # not https
-        (Channel.DISCORD, "https://169.254.169.254/latest/meta-data", False),
-        (Channel.SLACK, SLACK, True),
-        (Channel.SLACK, "https://hooks.slack.com.evil.example/services/T/B/x", False),
-        (Channel.EMAIL, "ops@example.com", True),
-        (Channel.EMAIL, "ops@example.com\nBcc: victim@example.com", False),  # header injection
-        (Channel.EMAIL, "not-an-email", False),
-    ],
-)
-def test_targets_are_validated_strictly(channel: Channel, target: str, valid: bool) -> None:
-    assert target_is_valid(channel, target) is valid
 
 
 def recorder(

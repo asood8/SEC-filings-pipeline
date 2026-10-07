@@ -16,7 +16,7 @@ from fastapi import Request, Response
 from fastapi.responses import JSONResponse
 from starlette.middleware.base import BaseHTTPMiddleware, RequestResponseEndpoint
 
-from filings_api.auth import SESSION_COOKIE
+from filings_api.auth import SESSION_COOKIE_NAMES
 from filings_common.ratelimit import RedisRateLimit
 
 logger = logging.getLogger(__name__)
@@ -84,7 +84,8 @@ def is_private_path(path: str) -> bool:
 
 
 def _is_per_user(request: Request) -> bool:
-    return SESSION_COOKIE in request.cookies or "authorization" in request.headers
+    has_session = any(name in request.cookies for name in SESSION_COOKIE_NAMES)
+    return has_session or "authorization" in request.headers
 
 
 def _forbids_storing(response: Response) -> bool:

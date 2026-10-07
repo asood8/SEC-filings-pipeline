@@ -1,7 +1,8 @@
-"""Subscriptions CRUD. Users are signed in by overriding the `current_user` dependency."""
+"""Subscriptions CRUD. Most tests sign users in by overriding the `current_user` dependency;
+one goes through Google sign-in and the real session cookie."""
 
 import logging
-from collections.abc import Callable, Iterator
+from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
 from typing import Any, cast
 
@@ -15,7 +16,7 @@ from sqlalchemy.engine import Engine
 from filings_api.auth import current_user
 from filings_api.queries import SessionDep
 from filings_api.routes import subscriptions
-from filings_api.routes.subscriptions import MAX_SUBSCRIPTIONS
+from filings_api.routes.subscriptions import MAX_SUBSCRIPTIONS, _lock_user
 from filings_common.db import Company, Notification, Subscription, User, session_factory
 
 pytestmark = pytest.mark.integration
@@ -312,27 +313,11 @@ def test_duplicates_are_refused(sign_in: SignIn) -> None:
     assert same.status_code == 200
 
 
-@pytest.fixture
-def unique_targets(seeded: Engine) -> Iterator[None]:
-    """A unique index like the constraint the sign-in migration adds on (user_id, cik, channel,
-    target), dropped afterwards."""
-    with seeded.begin() as conn:
-        conn.execute(
-            sa.text(
-                "CREATE UNIQUE INDEX test_subscriptions_unique "
-                "ON subscriptions (user_id, cik, channel, target)"
-            )
-        )
-    yield
-    with seeded.begin() as conn:
-        conn.execute(sa.text("DROP INDEX test_subscriptions_unique"))
-
-
-@pytest.mark.usefixtures("unique_targets")
 def test_a_duplicate_that_slips_past_the_check_is_a_conflict(
     sign_in: SignIn, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    # As if a concurrent insert landed between the duplicate check and the commit.
+    # As if a concurrent insert landed between the duplicate check and the commit: the unique
+    # constraint on (user_id, cik, channel, target) catches it.
     monkeypatch.setattr(subscriptions, "_check_not_duplicate", lambda *args, **kwargs: None)
     alice = sign_in("alice")
     assert subscribe(alice).status_code == 201
@@ -353,3 +338,40 @@ def test_alert_history_is_deleted_with_the_subscription(
     assert alice.delete(f"/subscriptions/{subscription_id}").status_code == 204
     with session_factory(seeded)() as session:
         assert session.scalars(sa.select(Notification)).all() == []
+
+
+def test_checks_use_the_email_as_read_under_the_lock(seeded: Engine, users: dict[str, int]) -> None:
+    """A sign-in can change the account's email between `current_user` and the lock."""
+    sessions = session_factory(seeded)
+    with sessions() as session:
+        alice = session.get_one(User, users["alice"])
+        assert alice.email == ALICE_EMAIL
+        with sessions.begin() as other:  # a concurrent sign-in with a new Google address
+            other.get_one(User, users["alice"]).email = "alice@new.example"
+        assert _lock_user(session, alice).email == "alice@new.example"
+
+
+def test_signed_in_with_google_and_the_real_cookie(make_client: ClientFactory, google: Any) -> None:
+    """End to end, without the override: Google sign-in, the session cookie, and the cross-site
+    request checks in front of the subscription routes."""
+    client = make_client()
+    assert client.post("/auth/google", json={"credential": google.token()}).status_code == 200
+    created = subscribe(client, channel="email", target=None)
+    assert created.status_code == 201
+    assert created.json()["target"] == "ada@example.com"  # the Google account's address
+    path = f"/subscriptions/{created.json()['id']}"
+
+    foreign = {"Origin": "https://evil.example"}
+    assert client.patch(path, json={"form_types": ["4"]}, headers=foreign).status_code == 403
+    assert client.delete(path, headers=foreign).status_code == 403
+    form = client.post(
+        "/subscriptions",
+        content="ticker=AAPL&channel=email",
+        headers={"Content-Type": "application/x-www-form-urlencoded"},
+    )
+    assert form.status_code == 415
+    website = {"Origin": "http://localhost:3000"}
+    assert client.patch(path, json={"form_types": ["4"]}, headers=website).status_code == 200
+
+    assert client.post("/auth/logout").status_code == 204
+    assert client.get("/subscriptions").status_code == 401

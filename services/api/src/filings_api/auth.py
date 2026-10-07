@@ -3,8 +3,10 @@
 Signing in creates a `sessions` row and sets a cookie holding a random token. The table stores
 only the token's SHA-256 hash, so a leaked table or backup can't be replayed as sessions. The
 cookie is HttpOnly (page scripts can't read it) and SameSite=Lax (browsers don't send it on
-cross-site POSTs). Routes that need a signed-in user take `CurrentUser`; tests can replace it
-with `app.dependency_overrides[current_user]`.
+cross-site POSTs). When it's Secure, it's named `__Host-session`: browsers then refuse a cookie of
+that name set by another subdomain or with a Domain attribute, so a sibling site can't plant its
+own session on this API (login CSRF). Routes that need a signed-in user take `CurrentUser`; tests
+can replace it with `app.dependency_overrides[current_user]`.
 """
 
 import hashlib
@@ -21,16 +23,32 @@ from filings_api.google import GoogleIdentity, GoogleIdTokenVerifier
 from filings_api.queries import SessionDep
 from filings_common.db import Channel, Subscription, User, UserSession
 
-SESSION_COOKIE = "session"
+# The plain name is only for local development over http (`API_COOKIE_SECURE=false`), where
+# browsers reject __Host- cookies.
+SESSION_COOKIE = "__Host-session"
+INSECURE_SESSION_COOKIE = "session"
+SESSION_COOKIE_NAMES = (SESSION_COOKIE, INSECURE_SESSION_COOKIE)
+
+# Signed-in browsers per user; signing in on an eleventh ends the oldest session. Bounds how many
+# rows one account (or a script replaying one Google token) can create.
+MAX_SESSIONS_PER_USER = 10
 
 
 def hash_token(token: str) -> str:
     return hashlib.sha256(token.encode()).hexdigest()
 
 
+def session_cookie_name(request: Request) -> str:
+    return SESSION_COOKIE if request.app.state.cookie_secure else INSECURE_SESSION_COOKIE
+
+
+def session_token(request: Request) -> str | None:
+    return request.cookies.get(session_cookie_name(request))
+
+
 def current_user(request: Request, session: SessionDep) -> User:
     """The signed-in user. 401 when the session cookie is missing, unknown, or expired."""
-    token = request.cookies.get(SESSION_COOKIE)
+    token = session_token(request)
     user = None
     if token:
         user = session.scalars(
@@ -99,16 +117,27 @@ def _move_email_alerts(session: Session, user_id: int, email: str) -> None:
 
 def start_session(session: Session, user_id: int, lifetime: timedelta) -> str:
     """Create a session and return its token, which belongs in the cookie and nowhere else.
-    Also deletes the user's expired sessions, so they don't pile up."""
-    session.execute(
-        sa.delete(UserSession).where(
-            UserSession.user_id == user_id, UserSession.expires_at <= sa.func.now()
-        )
-    )
+
+    Also deletes every expired session (anyone's: sign-ins are rare, and the table stays small)
+    and this user's oldest sessions beyond `MAX_SESSIONS_PER_USER`. The caller holds the user's
+    row lock (`upsert_user`), so concurrent sign-ins can't overshoot the cap.
+    """
+    session.execute(sa.delete(UserSession).where(UserSession.expires_at <= sa.func.now()))
     token = secrets.token_urlsafe(32)
     session.execute(
         sa.insert(UserSession).values(
             user_id=user_id, token_hash=hash_token(token), expires_at=sa.func.now() + lifetime
+        )
+    )
+    newest = (
+        sa.select(UserSession.id)
+        .where(UserSession.user_id == user_id)
+        .order_by(UserSession.id.desc())
+        .limit(MAX_SESSIONS_PER_USER)
+    )
+    session.execute(
+        sa.delete(UserSession).where(
+            UserSession.user_id == user_id, UserSession.id.not_in(newest.scalar_subquery())
         )
     )
     return token
@@ -121,7 +150,7 @@ def end_session(session: Session, token: str) -> None:
 def set_session_cookie(request: Request, response: Response, token: str) -> None:
     lifetime: timedelta = request.app.state.session_lifetime
     response.set_cookie(
-        SESSION_COOKIE,
+        session_cookie_name(request),
         token,
         max_age=int(lifetime.total_seconds()),
         path="/",
@@ -133,7 +162,7 @@ def set_session_cookie(request: Request, response: Response, token: str) -> None
 
 def clear_session_cookie(request: Request, response: Response) -> None:
     response.delete_cookie(
-        SESSION_COOKIE,
+        session_cookie_name(request),
         path="/",
         secure=request.app.state.cookie_secure,
         httponly=True,

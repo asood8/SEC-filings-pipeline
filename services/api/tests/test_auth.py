@@ -10,7 +10,7 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from sqlalchemy.engine import Engine
 
-from filings_api.auth import SESSION_COOKIE, current_user
+from filings_api.auth import MAX_SESSIONS_PER_USER, SESSION_COOKIE, current_user
 from filings_common.db import (
     Channel,
     Notification,
@@ -66,6 +66,38 @@ def test_cookie_secure_flag_follows_the_setting(make_client: ClientFactory, goog
     client = make_client(cookie_secure=False)  # local development over plain http
     response = client.post("/auth/google", json={"credential": google.token()})
     assert "Secure" not in response.headers["set-cookie"]
+
+
+def test_secure_session_cookies_use_the_host_prefix(
+    make_client: ClientFactory, google: Any
+) -> None:
+    secure = make_client().post("/auth/google", json={"credential": google.token()})
+    assert secure.headers["set-cookie"].startswith("__Host-session=")
+    insecure = make_client(cookie_secure=False)
+    response = insecure.post("/auth/google", json={"credential": google.token()})
+    assert response.headers["set-cookie"].startswith("session=")
+    assert insecure.get("/me").status_code == 200
+
+
+def test_a_plain_session_cookie_is_ignored_when_cookies_are_secure(
+    client: TestClient, google: Any
+) -> None:
+    """Another subdomain could set a cookie named `session`, but never `__Host-session`."""
+    sign_in(client, google.token())
+    token = client.cookies[SESSION_COOKIE]
+    client.cookies.clear()
+    assert client.get("/me", headers={"Cookie": f"session={token}"}).status_code == 401
+
+
+def test_sessions_per_user_are_capped(client: TestClient, google: Any, seeded: Engine) -> None:
+    sign_in(client, google.token())
+    oldest = client.cookies[SESSION_COOKIE]
+    for _ in range(MAX_SESSIONS_PER_USER):
+        client.cookies.clear()  # a new browser: the earlier sessions stay
+        sign_in(client, google.token())
+    assert count(seeded, UserSession) == MAX_SESSIONS_PER_USER
+    client.cookies.clear()
+    assert client.get("/me", headers={"Cookie": f"{SESSION_COOKIE}={oldest}"}).status_code == 401
 
 
 def test_signing_in_again_reuses_the_account(client: TestClient, google: Any) -> None:
@@ -208,9 +240,9 @@ def test_sign_in_deletes_only_expired_sessions(
             .values(expires_at=sa.func.now() - sa.text("interval '1 day'"))
         )
 
-    sign_in(phone, google.token())  # a fresh sign-in on the phone sweeps the user's dead sessions
+    sign_in(phone, google.token())  # a fresh sign-in sweeps expired sessions, anyone's
     assert count(seeded, UserSession, UserSession.user_id == user["id"]) == 1
-    assert count(seeded, UserSession, UserSession.user_id != user["id"]) == 1  # not other users'
+    assert count(seeded, UserSession, UserSession.user_id != user["id"]) == 0
     assert phone.get("/me").status_code == 200
 
 

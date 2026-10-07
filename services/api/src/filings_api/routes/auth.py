@@ -4,11 +4,11 @@ import sqlalchemy as sa
 from fastapi import APIRouter, HTTPException, Request, Response
 
 from filings_api.auth import (
-    SESSION_COOKIE,
     CurrentUser,
     GoogleVerifierDep,
     clear_session_cookie,
     end_session,
+    session_token,
     set_session_cookie,
     start_session,
     upsert_user,
@@ -45,7 +45,7 @@ def sign_in_with_google(
         raise HTTPException(status_code=401, detail="invalid Google credential") from None
     except SigningKeysUnavailableError:
         raise HTTPException(status_code=503, detail="sign-in is temporarily unavailable") from None
-    if previous := request.cookies.get(SESSION_COOKIE):
+    if previous := session_token(request):
         end_session(session, previous)  # a sign-in always gets a fresh session token
     user = upsert_user(session, identity)
     token = start_session(session, user.id, request.app.state.session_lifetime)
@@ -58,7 +58,7 @@ def sign_in_with_google(
 @router.post("/auth/logout", status_code=204, summary="Sign out")
 def sign_out(request: Request, session: SessionDep) -> Response:
     """End this browser's session. Safe to repeat."""
-    if token := request.cookies.get(SESSION_COOKIE):
+    if token := session_token(request):
         end_session(session, token)
         session.commit()
     response = Response(status_code=204)

@@ -10,13 +10,13 @@ import re
 
 from filings_common.db import Channel
 
+# Matched against the whole string (fullmatch), so nothing can trail a valid URL, not even a
+# newline. ASCII only: no look-alike Unicode characters.
 _DISCORD_WEBHOOK = re.compile(
-    r"^https://(?:(?:ptb|canary)\.)?discord(?:app)?\.com/api/webhooks/\d+/[\w-]+$"
+    r"https://(?:(?:ptb|canary)\.)?discord(?:app)?\.com/api/webhooks/\d+/[\w-]+", re.ASCII
 )
-_SLACK_WEBHOOK = re.compile(
-    r"^https://hooks\.slack\.com/services/[A-Z0-9]+/[A-Z0-9]+/[A-Za-z0-9]+$"
-)
-_EMAIL = re.compile(r"^[^@\s<>,;]+@[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)+$")
+_SLACK_WEBHOOK = re.compile(r"https://hooks\.slack\.com/services/[A-Z0-9]+/[A-Z0-9]+/[A-Za-z0-9]+")
+_EMAIL = re.compile(r"[^@\s<>,;]+@[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)+", re.ASCII)
 
 
 def target_is_valid(channel: Channel, target: str) -> bool:
@@ -25,7 +25,7 @@ def target_is_valid(channel: Channel, target: str) -> bool:
         Channel.SLACK: _SLACK_WEBHOOK,
         Channel.EMAIL: _EMAIL,
     }
-    return bool(pattern[channel].match(target))
+    return pattern[channel].fullmatch(target) is not None
 
 
 def masked_target(channel: Channel, target: str) -> str:

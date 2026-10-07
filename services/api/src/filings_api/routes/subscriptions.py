@@ -79,8 +79,15 @@ def _own_subscription(
     return subscription, company
 
 
-def _lock_user(session: Session, user: User) -> None:
-    session.execute(sa.select(User.id).where(User.id == user.id).with_for_update())
+def _lock_user(session: Session, user: User) -> User:
+    """Lock the user's row and re-read it, so checks see its current email: a concurrent
+    sign-in may have changed it (and moved the email alerts) since `current_user` loaded it."""
+    return session.scalars(
+        sa.select(User)
+        .where(User.id == user.id)
+        .with_for_update()
+        .execution_options(populate_existing=True)
+    ).one()
 
 
 def _checked_target(user: User, channel: Channel, target: str | None) -> str:
@@ -172,9 +179,8 @@ def create_subscription(
             f"{company.ticker} is not on the watchlist; filings (and so alerts) are only "
             "collected for watchlist companies",
         )
+    user = _lock_user(session, user)
     target = _checked_target(user, body.channel, body.target)
-
-    _lock_user(session, user)
     count = session.execute(
         sa.select(sa.func.count()).select_from(Subscription).where(Subscription.user_id == user.id)
     ).scalar_one()
@@ -209,7 +215,7 @@ def update_subscription(
     subscription_id: SubscriptionId,
     body: SubscriptionUpdate,
 ) -> SubscriptionOut:
-    _lock_user(session, user)
+    user = _lock_user(session, user)
     subscription, company = _own_subscription(session, user, subscription_id)
     channel = body.channel or subscription.channel
     if body.target is None and channel == subscription.channel:

@@ -20,6 +20,10 @@ SLACK = "https://hooks.slack.com/services/T000/B000/XXXXyyyy1234"
         (Channel.EMAIL, "ops@example.com", True),
         (Channel.EMAIL, "ops@example.com\nBcc: victim@example.com", False),  # header injection
         (Channel.EMAIL, "not-an-email", False),
+        (Channel.DISCORD, f"{DISCORD}\n", False),  # nothing may trail the URL
+        (Channel.SLACK, f"{SLACK}\n", False),
+        (Channel.EMAIL, "ops@example.com\n", False),
+        (Channel.DISCORD, "https://discord.com/api/webhooks/1/\u0430bc", False),  # Cyrillic
     ],
 )
 def test_targets_are_validated_strictly(channel: Channel, target: str, valid: bool) -> None:

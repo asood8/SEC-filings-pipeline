@@ -213,3 +213,26 @@ def test_unknown_filing_is_a_permanent_error(clean_db: Engine, world: dict[str, 
         handler(ready_event(world["summary_id"] + 999))
     with pytest.raises(PermanentError):
         handler(Received(Topic.FILINGS_READY, 0, 0, FORM4, b"not json"))
+
+
+def test_subscriptions_are_only_alerted_about_filings_found_after_them(
+    clean_db: Engine, world: dict[str, int]
+) -> None:
+    """Replaying the topic must not send a newer subscription every past filing."""
+    with session_factory(clean_db).begin() as session:
+        user = session.scalars(sa.select(User).where(User.google_sub == "google-123")).one()
+        late = Subscription(
+            user_id=user.id,
+            cik=1067983,
+            form_types=[],
+            channel=Channel.DISCORD,
+            target="https://discord.com/api/webhooks/2/late-hook",
+            created_at=sa.func.now() + sa.text("interval '1 minute'"),
+        )
+        session.add(late)
+        session.flush()
+        late_id = late.id
+    fakes = senders()
+    NotificationHandler(session_factory(clean_db), fakes)(ready_event(world["summary_id"]))
+    assert late_id not in notifications(clean_db)
+    assert (DISCORD, FORM4) in fakes[Channel.DISCORD].sent  # the earlier one still is

@@ -18,9 +18,11 @@ from sqlalchemy.orm import Session, sessionmaker
 
 from filings_common.consumer import PermanentError, Received
 from filings_common.db import Company, Filing, FilingStatus, Summary
+from filings_common.embeddings import Embedder, EmbeddingError
 from filings_common.events import FilingParsed, FilingReady, Topic
 from filings_common.mongo import ParsedFilingStore
 from filings_common.outbox import enqueue
+from filings_common.search import SearchDocument, build_document, upsert_document, upsert_embedding
 from filings_summarizer.form4_template import company_name
 from filings_summarizer.form8k_prompt import FilingContext
 from filings_summarizer.summarizers import Summarizer
@@ -34,10 +36,12 @@ class SummaryHandler:
         sessions: sessionmaker[Session],
         parsed: ParsedFilingStore,
         summarizers: Mapping[str, Summarizer],
+        embedder: Embedder | None = None,
     ) -> None:
         self._sessions = sessions
         self._parsed = parsed
         self._summarizers = summarizers
+        self._embedder = embedder
 
     def __call__(self, received: Received) -> None:
         try:
@@ -74,6 +78,13 @@ class SummaryHandler:
         )
         # No transaction is open during the (possibly slow) LLM call.
         result = summarizer.summarize(document["parsed"], context)
+        search_document = build_document(
+            result.summary,
+            company_name=context.company_name,
+            ticker=context.ticker,
+            form_type=context.form_type,
+        )
+        vector = self._embed(search_document, event.accession_no)
         if result.ungrounded_numbers:
             logger.warning(
                 "%s summary has numbers not found in the filing: %s",
@@ -101,6 +112,10 @@ class SummaryHandler:
                     },
                 ).returning(Summary.id)
             ).scalar_one()
+            # The newest summary is the current one, so it becomes the search document.
+            upsert_document(session, event.accession_no, summary_id, search_document)
+            if vector is not None and self._embedder is not None:
+                upsert_embedding(session, event.accession_no, self._embedder.model, vector)
             moved = session.execute(
                 sa.update(Filing)
                 .where(
@@ -124,3 +139,16 @@ class SummaryHandler:
                 ),
             )
         logger.info("summarized %s with %s/%s", event.accession_no, result.provider, result.model)
+
+    def _embed(self, document: SearchDocument, accession_no: str) -> list[float] | None:
+        """The document's embedding, or None if embeddings are off or the embedder fails.
+
+        Never fatal: the filing stays keyword-searchable, and `filings-index` embeds it later.
+        """
+        if self._embedder is None:
+            return None
+        try:
+            return self._embedder.embed_documents([document.text()])[0]
+        except EmbeddingError as exc:
+            logger.warning("not embedding %s now: %s", accession_no, exc)
+            return None

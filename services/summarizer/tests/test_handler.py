@@ -1,3 +1,4 @@
+from collections.abc import Sequence
 from datetime import date
 from pathlib import Path
 from typing import Any
@@ -8,7 +9,18 @@ from pymongo.database import Database
 from sqlalchemy.engine import Engine
 
 from filings_common.consumer import PermanentError, Received
-from filings_common.db import Company, Filing, FilingStatus, OutboxEvent, Summary, session_factory
+from filings_common.db import (
+    EMBEDDING_DIMENSIONS,
+    Company,
+    Filing,
+    FilingEmbedding,
+    FilingSearch,
+    FilingStatus,
+    OutboxEvent,
+    Summary,
+    session_factory,
+)
+from filings_common.embeddings import EmbeddingError
 from filings_common.events import FilingParsed, FilingReady, Topic
 from filings_common.mongo import ParsedFilingStore
 from filings_common.summaries import FilingSummary
@@ -136,3 +148,50 @@ def test_unprocessable_events_are_permanent_errors(
     engine, store = setup
     with pytest.raises(PermanentError, match=reason):
         SummaryHandler(session_factory(engine), store, SUMMARIZERS)(received)
+
+
+class FakeEmbedder:
+    model = "fake-embed"
+
+    def __init__(self, *, fail: bool = False) -> None:
+        self.fail = fail
+
+    def embed_documents(self, texts: Sequence[str]) -> list[list[float]]:
+        if self.fail:
+            raise EmbeddingError("embedding server down")
+        return [[1.0] + [0.0] * (EMBEDDING_DIMENSIONS - 1) for _ in texts]
+
+    def embed_query(self, text: str) -> list[float]:
+        return self.embed_documents([text])[0]
+
+
+def search_rows(engine: Engine) -> tuple[list[FilingSearch], list[FilingEmbedding]]:
+    with session_factory(engine)() as session:
+        return (
+            list(session.scalars(sa.select(FilingSearch))),
+            list(session.scalars(sa.select(FilingEmbedding))),
+        )
+
+
+def test_new_summaries_are_indexed_for_search(setup: tuple[Engine, ParsedFilingStore]) -> None:
+    engine, store = setup
+    SummaryHandler(session_factory(engine), store, SUMMARIZERS, FakeEmbedder())(parsed_event())
+    [document], [embedding] = search_rows(engine)
+    assert document.title.startswith("Douglas J Herrington sold")
+    assert document.company == "Amazon Com Inc AMZN"
+    assert document.body.endswith("Form 4 insider trading report")
+    assert (embedding.accession_no, embedding.model) == (ACCESSION, "fake-embed")
+
+
+def test_embedding_failure_does_not_block_the_summary(
+    setup: tuple[Engine, ParsedFilingStore],
+) -> None:
+    engine, store = setup
+    handler = SummaryHandler(session_factory(engine), store, SUMMARIZERS, FakeEmbedder(fail=True))
+    handler(parsed_event())
+    documents, embeddings = search_rows(engine)
+    assert len(documents) == 1  # still keyword-searchable
+    assert embeddings == []
+    _, events, status = rows(engine)
+    assert status is FilingStatus.READY
+    assert len(events) == 1

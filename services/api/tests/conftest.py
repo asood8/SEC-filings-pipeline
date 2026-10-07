@@ -1,19 +1,24 @@
-"""API test fixtures: a seeded database with a search index, and a client factory."""
+"""API test fixtures: a seeded database with a search index, a client factory, and Google ID
+tokens signed with a test key (tests never call Google)."""
 
 import hashlib
 import math
 import re
+import time
 from collections.abc import Callable, Iterator, Sequence
 from dataclasses import dataclass
 from datetime import date
 from typing import Any
 
+import jwt
 import pytest
 import redis
+from cryptography.hazmat.primitives.asymmetric import rsa
 from fastapi.testclient import TestClient
 from sqlalchemy.engine import Engine
 
 from filings_api.app import create_app
+from filings_api.google import GoogleIdTokenVerifier
 from filings_common.config import ApiSettings
 from filings_common.db import (
     EMBEDDING_DIMENSIONS,
@@ -31,6 +36,9 @@ from filings_common.search import rebuild_index
 FORM4 = "0001140361-26-000002"
 APPLE_8K = "0000320193-26-000001"
 MSFT_8K = "0000789019-26-000003"
+GOOGLE_CLIENT_ID = "1234-test.apps.googleusercontent.com"
+GOOGLE_KID = "test-key-1"
+FRONTEND_ORIGIN = "http://localhost:3000"
 
 
 class WordHashEmbedder:
@@ -179,9 +187,63 @@ def make_embedder() -> Callable[..., WordHashEmbedder]:
     return WordHashEmbedder
 
 
+@pytest.fixture(scope="session")
+def google_key() -> rsa.RSAPrivateKey:
+    """Stands in for Google's signing key."""
+    return rsa.generate_private_key(public_exponent=65537, key_size=2048)
+
+
+@dataclass(frozen=True)
+class GoogleTokens:
+    """Mints Google-style ID tokens for this app's client ID, signed with the test key."""
+
+    key: rsa.RSAPrivateKey
+    client_id: str = GOOGLE_CLIENT_ID
+    kid: str = GOOGLE_KID
+
+    def verifier(self) -> GoogleIdTokenVerifier:
+        return GoogleIdTokenVerifier(self.client_id, {self.kid: self.key.public_key()})
+
+    def claims(self, **overrides: Any) -> dict[str, Any]:
+        """Valid claims; an override of None removes that claim."""
+        now = int(time.time())
+        claims = {
+            "iss": "https://accounts.google.com",
+            "aud": self.client_id,
+            "sub": "100000000000000000001",
+            "email": "ada@example.com",
+            "email_verified": True,
+            "iat": now,
+            "exp": now + 3600,
+        } | overrides
+        return {name: value for name, value in claims.items() if value is not None}
+
+    def token(
+        self,
+        *,
+        key: rsa.RSAPrivateKey | None = None,
+        headers: dict[str, Any] | None = None,
+        **claims: Any,
+    ) -> str:
+        return jwt.encode(
+            self.claims(**claims),
+            key or self.key,
+            algorithm="RS256",
+            headers={"kid": self.kid} | (headers or {}),
+        )
+
+
 @pytest.fixture
-def make_client(seeded: Engine, redis_client: redis.Redis) -> Iterator[ClientFactory]:
-    """Build a client; by default with generous rate limits and caching off."""
+def google(google_key: rsa.RSAPrivateKey) -> GoogleTokens:
+    return GoogleTokens(google_key)
+
+
+@pytest.fixture
+def make_client(
+    seeded: Engine, redis_client: redis.Redis, google_key: rsa.RSAPrivateKey
+) -> Iterator[ClientFactory]:
+    """Build a client; by default with generous rate limits, caching off, and sign-in accepting
+    tokens from the `google` fixture. It talks https, so Secure cookies round-trip."""
     redis_client.flushdb()  # DB 15 belongs to tests
     clients: list[TestClient] = []
 
@@ -192,14 +254,17 @@ def make_client(seeded: Engine, redis_client: redis.Redis) -> Iterator[ClientFac
             rate_limit_burst=overrides.pop("rate_limit_burst", 10_000),
             cache_ttl_seconds=overrides.pop("cache_ttl_seconds", 0),
             trust_proxy_headers=overrides.pop("trust_proxy_headers", False),
+            cors_origins=overrides.pop("cors_origins", [FRONTEND_ORIGIN]),
+            cookie_secure=overrides.pop("cookie_secure", True),
         )
         app = create_app(
             session_factory(seeded),
             redis_client=overrides.pop("redis_client", redis_client),
             embedder=overrides.pop("embedder", WordHashEmbedder()),
             settings=settings,
+            google_verifier=overrides.pop("google_verifier", GoogleTokens(google_key).verifier()),
         )
-        client = TestClient(app)
+        client = TestClient(app, base_url="https://testserver")
         client.__enter__()
         clients.append(client)
         return client

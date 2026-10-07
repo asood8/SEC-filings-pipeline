@@ -1,8 +1,8 @@
 .DEFAULT_GOAL := help
-.PHONY: help setup sync up down ps logs llm-up llm-down migrate api pipeline images lint fmt test web-install web web-types web-check loadtest api-loadtest tf-check tf-fmt
+.PHONY: help setup sync up down ps logs llm-up llm-down migrate api pipeline images lint fmt test web-install web web-types web-check loadtest api-loadtest tf-check tf-fmt k8s-tools k8s-check
 
 help: ## List targets
-	@grep -E '^[a-z-]+:.*## ' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*## "} {printf "  %-12s %s\n", $$1, $$2}'
+	@grep -E '^[a-z0-9-]+:.*## ' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*## "} {printf "  %-12s %s\n", $$1, $$2}'
 
 setup: sync ## First-time setup: install dependencies and git hooks
 	uv run pre-commit install
@@ -105,3 +105,9 @@ tf-check: ## Check the Terraform code: format, validate, tests on mock providers
 
 tf-fmt: ## Format the Terraform code
 	terraform -chdir=$(TF_DIR) fmt -recursive
+
+k8s-tools: ## Install pinned, checksum-verified kubectl, kubeconform, and kubeseal into ~/.local/bin
+	scripts/install-k8s-tools.sh
+
+k8s-check: ## Render the Kubernetes manifests and validate them, no cluster needed (make k8s-tools first)
+	scripts/check-k8s.sh

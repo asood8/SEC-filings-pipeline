@@ -31,7 +31,30 @@ CONSUMER_GROUP = "summarizer"
 # 80s, 160s (about 5 minutes) before a filing is dead-lettered (replay recovers it).
 MAX_ATTEMPTS = 6
 BACKOFF_SECONDS = 10.0
-MAX_POLL_INTERVAL_SECONDS = 15 * 60
+# librdkafka's limits for max.poll.interval.ms, in seconds.
+MIN_POLL_INTERVAL_SECONDS = 15 * 60
+MAX_POLL_INTERVAL_SECONDS = 24 * 60 * 60
+POLL_INTERVAL_MARGIN_SECONDS = 60.0
+
+
+def poll_interval_seconds(
+    llm: LlmSettings, gemini: GeminiSettings, embedding: EmbeddingSettings
+) -> int:
+    """How long handling one message may take, every retry included.
+
+    Past this the broker assumes the consumer died and takes its partitions away: the message is
+    redelivered and the same thing happens again, so it is never dead-lettered and blocks its
+    partition. The worst case is every attempt waiting out each configured provider's full
+    timeout (and the embedding call's), plus the backoff between attempts.
+    """
+    per_attempt = (
+        (llm.timeout_seconds if llm.model else 0.0)
+        + (gemini.timeout_seconds if gemini.api_key is not None else 0.0)
+        + (embedding.timeout_seconds if embedding.model else 0.0)
+    )
+    backoff = sum(BACKOFF_SECONDS * 2**attempt for attempt in range(MAX_ATTEMPTS - 1))
+    worst = MAX_ATTEMPTS * per_attempt + backoff + POLL_INTERVAL_MARGIN_SECONDS
+    return int(min(max(worst, MIN_POLL_INTERVAL_SECONDS), MAX_POLL_INTERVAL_SECONDS))
 
 
 def main() -> int:
@@ -47,17 +70,18 @@ def main() -> int:
     mongo: MongoClient[dict[str, Any]] = MongoClient(mongo_settings.mongodb_url.get_secret_value())
     redis_client = redis.Redis.from_url(RedisSettings().redis_url)
     dead_letters = KafkaPublisher(kafka.bootstrap_servers)
+    llm, gemini, embedding = LlmSettings(), GeminiSettings(), EmbeddingSettings()
     try:
         handler = SummaryHandler(
             session_factory(engine),
             ParsedFilingStore(mongo[mongo_settings.mongodb_database]),
-            build_summarizers(LlmSettings(), GeminiSettings(), redis_client),
-            embedder_from_settings(EmbeddingSettings()),
+            build_summarizers(llm, gemini, redis_client),
+            embedder_from_settings(embedding),
         )
         consumer = make_consumer(
             kafka.bootstrap_servers,
             CONSUMER_GROUP,
-            max_poll_interval_seconds=MAX_POLL_INTERVAL_SECONDS,
+            max_poll_interval_seconds=poll_interval_seconds(llm, gemini, embedding),
         )
         run_consumer(
             consumer,

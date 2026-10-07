@@ -80,8 +80,9 @@ groups:
             relay, the consumers' lag, and the dead-letter topics.
 
       # Messages a stage gave up on (retries ran out, or a permanent error). Nothing consumes the
-      # dead-letter topics, so this fires until an operator trims the topic after fixing the cause
-      # and replaying the filings, or its retention (7 days by default) removes them.
+      # dead-letter topics, and they are kept indefinitely (retention.ms=-1, like the pipeline
+      # topics), so this fires until an operator trims the topic after fixing the cause and
+      # replaying the filings: rpk topic trim-prefix <topic> --offset end.
       - uid: filings-dlq-not-empty
         title: Dead-letter topic not empty
         condition: C
@@ -200,7 +201,6 @@ groups:
         noDataState: OK
         execErrState: Error
         for: 0s
-        dashboardUid: filings-pipeline
         labels:
           severity: critical
         annotations:

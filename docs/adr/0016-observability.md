@@ -244,7 +244,8 @@ computed by the dashboards from these counters rather than recorded separately.
   this is what they hold, which is what the alert is about; `filings.dlq.messages` shows when
   dead letters arrived. Replay works from Postgres, not from the dead-letter topics, so after
   fixing the cause and replaying, an operator empties the topic
-  (`rpk topic trim-prefix <topic> --offset end`), or its 7-day retention does.
+  (`rpk topic trim-prefix <topic> --offset end`). Dead-letter topics are kept indefinitely
+  (`retention.ms=-1`, like the pipeline topics), so nothing removes them otherwise.
 - **Short-lived jobs.** Discovery and replay run for seconds to minutes. Each run has its own
   series, usually holding a single value: the run's total, exported on the way out. `rate()` and
   `increase()` need two values per series, so the dashboards and rules add up a job's counters

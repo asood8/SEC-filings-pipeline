@@ -844,7 +844,7 @@
     {
       "type": "timeseries",
       "title": "Dead letters held, by topic",
-      "description": "Messages kept in each dead-letter topic. Nothing consumes them: they stay until the topic's retention removes them or an operator trims the topic after fixing and replaying.",
+      "description": "Messages kept in each dead-letter topic. Nothing consumes them and they never expire (retention.ms=-1): they stay until an operator trims the topic after fixing the cause and replaying.",
       "datasource": {
         "type": "prometheus",
         "uid": "${datasource}"

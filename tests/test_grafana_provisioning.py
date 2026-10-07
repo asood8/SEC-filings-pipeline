@@ -272,8 +272,9 @@ def test_alert_rules_are_well_formed() -> None:
         assert rule["noDataState"] in {"OK", "NoData", "Alerting", "KeepLast"}
         assert rule["execErrState"] in {"OK", "Error", "Alerting", "KeepLast"}
         assert re.fullmatch(r"\d+[smh]", rule["for"])
-        assert rule["dashboardUid"] in panels
-        if "panelId" in rule:
+        # Grafana accepts a dashboard link only with a panel, or neither.
+        assert ("dashboardUid" in rule) == ("panelId" in rule), rule["uid"]
+        if "dashboardUid" in rule:
             assert rule["panelId"] in panels[rule["dashboardUid"]]
         # Grafana would read "$labels" in a provisioning file as an environment variable.
         for text in [*rule["annotations"].values(), *rule["labels"].values()]:

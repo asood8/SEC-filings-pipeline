@@ -6,7 +6,9 @@ from typing import Any, Literal
 import pytest
 from confluent_kafka import Consumer, KafkaError, KafkaException, Message, TopicPartition
 from confluent_kafka.admin import AdminClient, ClusterMetadata, PartitionMetadata, TopicMetadata
+from opentelemetry import metrics as metrics_api
 from opentelemetry import trace
+from opentelemetry.metrics import NoOpMeterProvider
 from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter
 from opentelemetry.trace import SpanKind, StatusCode
 
@@ -466,3 +468,42 @@ def test_round_trip_with_redpanda_commits_offsets_and_dead_letters(kafka_bootstr
         admin = AdminClient({"bootstrap.servers": kafka_bootstrap})
         for future in admin.delete_topics([topic, f"{topic}.dlq"]).values():
             future.result()
+
+
+def test_a_failed_commit_is_logged_and_the_loop_carries_on(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """After a rebalance the commit fails; the message comes back later instead of the
+    consumer exiting (which would crash-loop on the same message)."""
+
+    class LosesAssignment(FakeSource):
+        def commit(self, *, message: Message, asynchronous: Literal[False]) -> object:
+            if message.offset() == 0:
+                raise KafkaException(KafkaError(KafkaError.UNKNOWN_MEMBER_ID))
+            return super().commit(message=message, asynchronous=asynchronous)
+
+    stop = threading.Event()
+    seen: list[str | None] = []
+    source = LosesAssignment(stop, message(0, "a"), message(1, "b"))
+    consume(source, lambda r: seen.append(r.key), RecordingPublisher())
+    assert seen == ["a", "b"]
+    assert source.commits == [1]
+    assert "will be redelivered" in caplog.text
+
+
+def test_offsets_are_not_measured_when_metrics_are_off(monkeypatch: pytest.MonkeyPatch) -> None:
+    """With telemetry off the gauges go nowhere, so the monitor makes no broker calls."""
+    monkeypatch.setattr(metrics_api, "get_meter_provider", NoOpMeterProvider)
+    calls: list[str] = []
+
+    class Counting(FakeSource):
+        def assignment(self) -> list[TopicPartition]:
+            calls.append("assignment")
+            return super().assignment()
+
+        def list_topics(self, topic: str | None = None, timeout: float = -1) -> Any:
+            calls.append("list_topics")
+            return super().list_topics(topic, timeout)
+
+    OffsetMonitor(Counting(threading.Event()), TOPIC, "parser", interval=0).measure_if_due()
+    assert calls == []

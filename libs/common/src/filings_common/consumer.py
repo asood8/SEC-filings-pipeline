@@ -26,6 +26,7 @@ from dataclasses import dataclass
 from typing import Any, Literal, Protocol
 
 from confluent_kafka import Consumer, KafkaException, Message, TopicPartition
+from opentelemetry import metrics as otel_metrics
 from opentelemetry import trace
 from opentelemetry.trace import Span, SpanKind, StatusCode
 
@@ -142,10 +143,34 @@ def run_consumer(
                     received, handler, dead_letters, stop, max_attempts, backoff_seconds, span
                 )
                 if settled:
-                    source.commit(message=message, asynchronous=False)
+                    _commit(source, message)
     finally:
         monitor.close()
         source.close()
+
+
+def _commit(source: MessageSource, message: Message) -> None:
+    """Commit the message's offset. A failure (e.g. the group took the partition away after a
+    rebalance) is logged rather than fatal: the message is redelivered, which is harmless because
+    every handler is idempotent, and the loop rejoins the group on its next poll."""
+    try:
+        source.commit(message=message, asynchronous=False)
+    except KafkaException as exc:
+        logger.warning(
+            "could not commit %s[%s]@%s (%s); it will be redelivered",
+            message.topic(),
+            message.partition(),
+            message.offset(),
+            exc,
+        )
+
+
+def _metrics_exported() -> bool:
+    """True when an SDK meter provider is installed (telemetry is on, or a test installed an
+    in-memory reader). The API's default provider drops every measurement, so measuring offsets
+    then would only cost broker round trips."""
+    provider = otel_metrics.get_meter_provider()
+    return type(provider).__module__.startswith("opentelemetry.sdk")
 
 
 def dead_letter_topic(topic: str) -> str:
@@ -182,7 +207,7 @@ class OffsetMonitor:
 
     def measure_if_due(self) -> None:
         now = self._clock()
-        if now < self._due:
+        if now < self._due or not _metrics_exported():
             return
         self._due = now + self._interval
         dlq = dead_letter_topic(self._topic)

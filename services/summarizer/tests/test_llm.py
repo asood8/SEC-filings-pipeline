@@ -293,3 +293,44 @@ def test_provider_spans_carry_token_counts_and_rate_limit_wait(
     )
     assert gemini_span["gen_ai.usage.input_tokens"] == 900
     assert gemini_span["filings.rate_limit.wait_seconds"] == 0.0
+
+
+# --- Metrics -------------------------------------------------------------------------------------
+
+
+def test_breaker_reports_when_it_opens() -> None:
+    clock = Clock()
+    breaker = CircuitBreaker(threshold=2, cooldown=60, clock=clock)
+    assert [breaker.record_failure(), breaker.record_failure()] == [False, True]
+    clock.now = 60
+    assert breaker.record_failure()  # the trial call failed: it opens again
+
+
+def test_provider_calls_failovers_and_breaker_opens_are_measured(measured: Any) -> None:
+    local = FakeProvider("ollama", LlmError("down"), "not json")
+    gemini = FakeProvider("gemini", ANSWER, ANSWER, ANSWER)
+    failover = chain(local, gemini, validate=json.loads)
+    for _ in range(3):  # the third call skips ollama: its breaker is open
+        assert failover.generate_json("s", "p", SCHEMA).provider == "gemini"
+
+    def calls(provider: str, outcome: str) -> int:
+        attributes = {"gen_ai.provider.name": provider, "filings.outcome": outcome}
+        return int(measured.count("filings.llm.duration", attributes))
+
+    assert (calls("ollama", "error"), calls("ollama", "invalid"), calls("gemini", "ok")) == (
+        1,
+        1,
+        3,
+    )
+    assert measured.attribute_sets("filings.llm.failovers") == [{"gen_ai.provider.name": "gemini"}]
+    assert measured.total("filings.llm.failovers") == 3
+    assert measured.attribute_sets("filings.llm.circuit_breaker.opens") == [
+        {"gen_ai.provider.name": "ollama"}
+    ]
+    assert measured.total("filings.llm.circuit_breaker.opens") == 1
+
+
+def test_an_answer_from_the_first_provider_is_no_failover(measured: Any) -> None:
+    chain(FakeProvider("ollama", ANSWER), FakeProvider("gemini")).generate_json("s", "p", SCHEMA)
+    assert measured.count("filings.llm.duration", {"gen_ai.provider.name": "ollama"}) == 1
+    assert measured.total("filings.llm.failovers") == 0

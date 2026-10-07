@@ -1,4 +1,5 @@
-"""One trace follows a filing from discovery to its alert, through every stage's real code.
+"""One trace follows a filing from discovery to its alert, through every stage's real code, and
+each stage's metrics count it once.
 
 Discovery, the parser, the summarizer, and the notifier run their real handlers, connected by the
 real outbox relay and consume loop. Only the outside world is faked: SEC (canned responses), the
@@ -14,7 +15,8 @@ from typing import Any, Literal
 
 import httpx2
 import pytest
-from confluent_kafka import Message
+from confluent_kafka import Message, TopicPartition
+from confluent_kafka.admin import ClusterMetadata
 from opentelemetry.sdk.trace import ReadableSpan
 from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter
 from pymongo.database import Database
@@ -108,6 +110,27 @@ class InMemorySource:
     def close(self) -> None:
         pass
 
+    # No partitions, offsets, or topics to measure lag and dead letters by.
+
+    def assignment(self) -> list[TopicPartition]:
+        return []
+
+    def position(self, partitions: list[TopicPartition]) -> list[TopicPartition]:
+        return partitions
+
+    def committed(
+        self, partitions: list[TopicPartition], timeout: float = -1
+    ) -> list[TopicPartition]:
+        return partitions
+
+    def get_watermark_offsets(
+        self, partition: TopicPartition, timeout: float = -1, cached: bool = False
+    ) -> tuple[int, int]:
+        return (0, 0)
+
+    def list_topics(self, topic: str | None = None, timeout: float = -1) -> Any:
+        return ClusterMetadata()
+
 
 def relay_then_consume(
     sessions: sessionmaker[Session], topic: Topic, handler: Handler, group: str
@@ -173,6 +196,7 @@ def test_one_trace_follows_a_filing_from_discovery_to_its_alert(
     mongo_db: Database[dict[str, Any]],
     tmp_path: Path,
     spans: InMemorySpanExporter,
+    measured: Any,
 ) -> None:
     sessions = session_factory(clean_db)
     with sessions.begin() as session:
@@ -246,3 +270,19 @@ def test_one_trace_follows_a_filing_from_discovery_to_its_alert(
     for span in finished:
         assert "discord.com" not in span.to_json()
         assert "ops@example.com" not in span.to_json()
+
+    # The metrics count the filing once at each stage, by low-cardinality attributes only.
+    form4 = {"filings.form_type": "4"}
+    assert measured.total("filings.discovered", form4) == 1
+    assert measured.total("filings.parsed", form4) == 1
+    assert measured.total("filings.ready", form4) == 1
+    sent = {"filings.alert.channel": "discord", "filings.outcome": "sent"}
+    assert measured.total("filings.notifications", sent) == 1
+    assert measured.total("filings.notifications") == 1
+    assert measured.total("filings.dlq.messages") == 0
+    assert measured.total("filings.sec.responses", {"filings.status_class": "2xx"}) == 2
+    assert measured.count("filings.sec.rate_limit.wait") == 2
+    for name in measured.names():
+        for attributes in measured.attribute_sets(name):
+            assert ACCESSION not in attributes.values()
+            assert str(AMAZON) not in map(str, attributes.values())

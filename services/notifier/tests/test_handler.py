@@ -1,4 +1,5 @@
 from datetime import date
+from typing import Any
 
 import pytest
 import sqlalchemy as sa
@@ -268,3 +269,27 @@ def test_delivery_spans_name_the_channel_and_outcome_but_never_the_target(
         recorded = span.to_json()
         for private in ("discord.com", "hooks.slack.com", "@example.com", "evil.example"):
             assert private not in recorded
+
+
+def test_deliveries_are_counted_by_channel_and_outcome(
+    clean_db: Engine, world: dict[str, int], measured: Any
+) -> None:
+    fakes = senders()
+    fakes[Channel.SLACK].failures = [DeliveryError("Slack returned 503")]
+    handler = NotificationHandler(session_factory(clean_db), fakes)
+    # Every channel and outcome starts at zero, so the first of each shows as an increase.
+    assert len(measured.attribute_sets("filings.notifications")) == 9
+    with pytest.raises(PendingAlertsError):
+        handler(ready_event(world["summary_id"]))
+    handler(ready_event(world["summary_id"]))  # the retry; already settled alerts don't count
+
+    def counted(channel: str, outcome: str) -> float:
+        attributes = {"filings.alert.channel": channel, "filings.outcome": outcome}
+        return float(measured.total("filings.notifications", attributes))
+
+    assert counted("discord", "sent") == 1
+    assert counted("discord", "failed") == 1  # the invalid target
+    assert counted("slack", "retry") == 1
+    assert counted("slack", "sent") == 1
+    assert counted("email", "sent") == 1
+    assert measured.total("filings.notifications") == 5

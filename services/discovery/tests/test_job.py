@@ -165,6 +165,27 @@ def test_discovers_stores_and_announces_new_filings_exactly_once(
     assert not any("000114036126000202-index" in url for url in fake_sec.hits)  # Form 4: none
 
 
+def test_new_filings_are_counted_by_form_type_and_a_run_without_any_reports_zero(
+    clean_db: Engine,
+    fake_sec: FakeSec,
+    company_tickers: dict[str, Any],
+    tmp_path: Path,
+    measured: Any,
+) -> None:
+    seed_companies(clean_db, company_tickers)
+    store = LocalObjectStore(tmp_path)
+    run(clean_db, fake_sec, store)
+    assert measured.total("filings.discovered", {"filings.form_type": "4"}) == 1
+    assert measured.total("filings.discovered", {"filings.form_type": "8-K"}) == 1
+
+    run(clean_db, fake_sec, store)  # nothing new: zeros, for the "no filings" alert to see
+    assert measured.total("filings.discovered") == 2
+    assert measured.attribute_sets("filings.discovered") == [
+        {"filings.form_type": "4"},
+        {"filings.form_type": "8-K"},
+    ]
+
+
 def test_backfill_fetches_exhibits_for_filings_that_have_none(
     clean_db: Engine, fake_sec: FakeSec, company_tickers: dict[str, Any], tmp_path: Path
 ) -> None:

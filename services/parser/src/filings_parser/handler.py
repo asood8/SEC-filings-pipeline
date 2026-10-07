@@ -4,7 +4,7 @@ Safe to run more than once for the same filing (the consume loop delivers at lea
 - the parsed payload (MongoDB) and key fields (Postgres) are upserts keyed by accession number;
 - the status moves discovered → parsed with a conditional update, and the `filings.parsed` outbox
   event is written in that same transaction only when the update happens, so a redelivery never
-  announces the filing twice.
+  announces the filing twice. Only that first time counts in `filings.parsed`.
 """
 
 import logging
@@ -15,7 +15,7 @@ from opentelemetry import trace
 from pydantic import ValidationError
 from sqlalchemy.orm import Session, sessionmaker
 
-from filings_common import telemetry
+from filings_common import metrics, telemetry
 from filings_common.consumer import PermanentError, Received
 from filings_common.db import Filing, FilingExhibit, FilingStatus
 from filings_common.events import FilingDiscovered, FilingParsed, Topic
@@ -41,6 +41,7 @@ class FilingHandler:
         self._objects = objects
         self._parsed = parsed
         self._parsers = parsers
+        metrics.start_at_zero(metrics.FILINGS_PARSED, map(metrics.form_type, parsers))
 
     def __call__(self, received: Received) -> None:
         try:
@@ -105,6 +106,7 @@ class FilingHandler:
                     parser_version=parser.version,
                 ),
             )
+        metrics.FILINGS_PARSED.add(1, metrics.form_type(event.form_type))
         logger.info("parsed %s (form %s)", event.accession_no, event.form_type)
 
     def _exhibits(self, accession_no: str) -> list[RawExhibit]:

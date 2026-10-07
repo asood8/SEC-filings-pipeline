@@ -7,6 +7,7 @@ ignores conflicts, so no filing or event is ever duplicated.
 
 Tracing: a poll is one trace (a span per company). Each new filing starts a trace of its own,
 linked to the company poll that found it, which then follows the filing through the pipeline.
+Each recorded filing counts in `filings.discovered`, by form type.
 """
 
 import logging
@@ -19,7 +20,7 @@ from opentelemetry import trace
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.orm import Session, sessionmaker
 
-from filings_common import telemetry
+from filings_common import metrics, telemetry
 from filings_common.db import Company, Filing
 from filings_common.edgar import EdgarClient, archive_url
 from filings_common.events import FilingDiscovered, Topic
@@ -62,6 +63,8 @@ def discover(
     exhibit_form_types: Collection[str] = (),
 ) -> DiscoveryResult:
     """Poll every watchlist company. One company's failure doesn't stop the others."""
+    # A run that finds nothing still reports zero: "no new filings" is what the alert looks for.
+    metrics.start_at_zero(metrics.FILINGS_DISCOVERED, map(metrics.form_type, form_types))
     with tracer.start_as_current_span("discovery poll") as poll:
         with sessions() as session:
             ciks = session.scalars(
@@ -151,7 +154,9 @@ def _store_and_record(
     ) as span:
         recorded = _fetch_and_record(sessions, edgar, store, cik, ref, with_exhibits=with_exhibits)
         span.set_attribute("filings.recorded", recorded)
-        return recorded
+    if recorded:
+        metrics.FILINGS_DISCOVERED.add(1, metrics.form_type(ref.form_type))
+    return recorded
 
 
 def _fetch_and_record(

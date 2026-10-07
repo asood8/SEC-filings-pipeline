@@ -5,7 +5,8 @@ Safe to run more than once for the same filing:
   its own row, while a replay with a new prompt or model adds a row (the newest is current);
 - the status moves parsed → ready with a conditional update, and the `filings.ready` outbox event
   is written in that same transaction only when the update happens. Replays and redeliveries
-  therefore never announce a filing twice, which is what keeps alerts from being sent twice.
+  therefore never announce a filing twice, which is what keeps alerts from being sent twice. Only
+  that first time counts in `filings.ready`.
 """
 
 import logging
@@ -17,7 +18,7 @@ from pydantic import ValidationError
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.orm import Session, sessionmaker
 
-from filings_common import telemetry
+from filings_common import metrics, telemetry
 from filings_common.consumer import PermanentError, Received
 from filings_common.db import Company, Filing, FilingStatus, Summary
 from filings_common.embeddings import Embedder, EmbeddingError
@@ -45,6 +46,7 @@ class SummaryHandler:
         self._parsed = parsed
         self._summarizers = summarizers
         self._embedder = embedder
+        metrics.start_at_zero(metrics.FILINGS_READY, map(metrics.form_type, summarizers))
 
     def __call__(self, received: Received) -> None:
         try:
@@ -155,6 +157,7 @@ class SummaryHandler:
                     summary_id=summary_id,
                 ),
             )
+        metrics.FILINGS_READY.add(1, metrics.form_type(event.form_type))
         logger.info("summarized %s with %s/%s", event.accession_no, result.provider, result.model)
 
     def _embed(self, document: SearchDocument, accession_no: str) -> list[float] | None:

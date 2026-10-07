@@ -1,4 +1,4 @@
-"""Request tracing, as when OTEL_EXPORTER_OTLP_ENDPOINT is set."""
+"""Request tracing and metrics, as when OTEL_EXPORTER_OTLP_ENDPOINT is set."""
 
 from collections.abc import Callable
 from typing import Any
@@ -26,7 +26,7 @@ def test_each_request_is_a_server_span_named_by_its_route_except_health_checks(
     assert (span.name, span.kind) == ("GET /companies/{ticker}", SpanKind.SERVER)
     attributes = span.attributes or {}
     assert attributes["http.route"] == "/companies/{ticker}"
-    assert attributes["http.status_code"] == 200
+    assert attributes["http.response.status_code"] == 200
 
 
 def test_sign_in_spans_hold_no_id_token_cookie_or_email(
@@ -45,3 +45,32 @@ def test_sign_in_spans_hold_no_id_token_cookie_or_email(
         assert token not in recorded
         assert session not in recorded
         assert "ada@example.com" not in recorded
+
+
+def test_requests_are_measured_by_route_and_status_but_never_by_host_or_size(
+    make_client: ClientFactory, measured: Any
+) -> None:
+    client = make_client(traced=True)
+    assert client.get("/healthz").status_code == 200
+    assert client.get("/companies/aapl").status_code == 200
+    assert client.get("/companies/nope").status_code == 404
+    client.get("/companies/aapl", headers={"Host": "random-123.example"})
+
+    series = measured.attribute_sets("http.server.request.duration")
+    assert {(s.get("http.route"), s["http.response.status_code"]) for s in series} == {
+        ("/companies/{ticker}", 200),
+        ("/companies/{ticker}", 404),
+    }  # health checks aren't measured
+    assert measured.count("http.server.request.duration") == 3
+    for attributes in series:  # bounded values only: no host, path, client, or user agent
+        assert set(attributes) <= {
+            "http.request.method",
+            "http.route",
+            "http.response.status_code",
+            "url.scheme",
+            "network.protocol.version",
+            "error.type",
+        }
+    assert not {"http.server.request.body.size", "http.server.response.body.size"} & (
+        measured.names()
+    )

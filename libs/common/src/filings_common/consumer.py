@@ -12,20 +12,24 @@ Each message is handled in a CONSUMER span that continues the trace in its heade
 the handler does, its outbox writes included, belongs to the filing's trace. The span records
 failed attempts by exception type only: messages can quote private data, and the log lines (which
 carry the trace ID) have the details.
+
+Between messages, at most every `offsets_interval` seconds, the loop also measures the group's lag
+on its partitions and how many messages its dead-letter topic holds (`OffsetMonitor`).
 """
 
 import logging
 import threading
+import time
 from collections.abc import Callable, Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass
-from typing import Literal, Protocol
+from typing import Any, Literal, Protocol
 
-from confluent_kafka import Consumer, Message
+from confluent_kafka import Consumer, KafkaException, Message, TopicPartition
 from opentelemetry import trace
 from opentelemetry.trace import Span, SpanKind, StatusCode
 
-from filings_common import telemetry
+from filings_common import metrics, telemetry
 from filings_common.outbox import OutboundMessage, Publisher
 
 logger = logging.getLogger(__name__)
@@ -61,6 +65,22 @@ class MessageSource(Protocol):
 
     def close(self) -> None: ...
 
+    # For OffsetMonitor:
+
+    def assignment(self) -> list[TopicPartition]: ...
+
+    def position(self, partitions: list[TopicPartition]) -> list[TopicPartition]: ...
+
+    def committed(
+        self, partitions: list[TopicPartition], timeout: float = -1
+    ) -> list[TopicPartition]: ...
+
+    def get_watermark_offsets(
+        self, partition: TopicPartition, timeout: float = -1, cached: bool = False
+    ) -> tuple[int, int]: ...
+
+    def list_topics(self, topic: str | None = None, timeout: float = -1) -> Any: ...
+
 
 def make_consumer(
     bootstrap_servers: str, group_id: str, *, max_poll_interval_seconds: int = 300
@@ -89,14 +109,19 @@ def run_consumer(
     backoff_seconds: float = 1.0,
     poll_timeout: float = 1.0,
     consumer_group: str | None = None,
+    offsets_interval: float = 30.0,
 ) -> None:
     """Consume `topic` until `stop` is set. Closes the source on exit.
 
-    `consumer_group` only labels the spans; the source already belongs to its group.
+    `consumer_group` labels the spans and metrics (the source already belongs to its group); lag
+    is measured only when it is given.
     """
     source.subscribe([topic])
+    monitor = OffsetMonitor(source, topic, consumer_group, interval=offsets_interval)
+    metrics.DLQ_MESSAGES.add(0, metrics.topic(dead_letter_topic(topic)))
     try:
         while not stop.is_set():
+            monitor.measure_if_due()
             message = source.poll(poll_timeout)
             if message is None:
                 continue
@@ -119,7 +144,112 @@ def run_consumer(
                 if settled:
                     source.commit(message=message, asynchronous=False)
     finally:
+        monitor.close()
         source.close()
+
+
+def dead_letter_topic(topic: str) -> str:
+    return f"{topic}.dlq"
+
+
+class OffsetMonitor:
+    """Measures, at most every `interval` seconds, the consumer group's lag on the partitions
+    assigned to this consumer and the depth of the topic's dead-letter topic, for the
+    `filings.consumer.lag` and `filings.dlq.depth` gauges.
+
+    It runs between messages, so while a handler works (an LLM call, retries) the gauges keep
+    their last values. Measuring takes a few small broker requests; when they fail, the gauges
+    keep their last values too.
+    """
+
+    def __init__(
+        self,
+        source: MessageSource,
+        topic: str,
+        consumer_group: str | None,
+        *,
+        interval: float,
+        timeout: float = 5.0,
+        clock: Callable[[], float] = time.monotonic,
+    ) -> None:
+        self._source = source
+        self._topic = topic
+        self._group = consumer_group
+        self._interval = interval
+        self._timeout = timeout
+        self._clock = clock
+        self._due = clock()
+
+    def measure_if_due(self) -> None:
+        now = self._clock()
+        if now < self._due:
+            return
+        self._due = now + self._interval
+        dlq = dead_letter_topic(self._topic)
+        try:
+            lag = consumer_lag(self._source, timeout=self._timeout) if self._group else {}
+            depth = topic_depth(self._source, dlq, timeout=self._timeout)
+        except KafkaException as exc:
+            logger.warning("could not measure the offsets of %s: %s", self._topic, exc)
+            return
+        if self._group:
+            metrics.CONSUMER_LAG_VALUES.replace(
+                self,
+                [
+                    (messages, self._partition_attributes(self._group, name, partition))
+                    for (name, partition), messages in sorted(lag.items())
+                ],
+            )
+        if depth is not None:
+            metrics.DLQ_DEPTH_VALUES.replace(self, [(depth, metrics.topic(dlq))])
+
+    @staticmethod
+    def _partition_attributes(group: str, topic: str, partition: int) -> dict[str, str]:
+        return {
+            telemetry.MESSAGING_CONSUMER_GROUP: group,
+            telemetry.MESSAGING_DESTINATION: topic,
+            telemetry.MESSAGING_PARTITION: str(partition),
+        }
+
+    def close(self) -> None:
+        metrics.CONSUMER_LAG_VALUES.remove(self)
+        metrics.DLQ_DEPTH_VALUES.remove(self)
+
+
+def consumer_lag(source: MessageSource, *, timeout: float) -> dict[tuple[str, int], int]:
+    """Messages not yet consumed, per assigned (topic, partition): the high watermark minus the
+    consumer's position (the offset after the last message it received).
+
+    Partitions it hasn't received from since they were assigned count from the group's committed
+    offset, or from the oldest message when the group has never committed (it then starts there).
+    """
+    assigned = source.assignment()
+    if not assigned:
+        return {}
+    positions = source.position(assigned)
+    unknown = [tp for tp in positions if tp.offset < 0]
+    committed = {
+        (tp.topic, tp.partition): tp.offset
+        for tp in (source.committed(unknown, timeout=timeout) if unknown else [])
+    }
+    lag = {}
+    for tp in positions:
+        low, high = source.get_watermark_offsets(tp, timeout=timeout)
+        start = tp.offset if tp.offset >= 0 else committed.get((tp.topic, tp.partition), -1)
+        lag[(tp.topic, tp.partition)] = max(0, high - (start if start >= 0 else low))
+    return lag
+
+
+def topic_depth(source: MessageSource, topic: str, *, timeout: float) -> int | None:
+    """How many messages `topic` holds (over all its partitions), or None if it doesn't exist."""
+    found = source.list_topics(topic, timeout=timeout).topics.get(topic)
+    if found is None or found.error is not None:
+        return None
+    depth = 0
+    for partition in found.partitions:
+        low, high = source.get_watermark_offsets(TopicPartition(topic, partition), timeout=timeout)
+        depth += high - low
+    return depth
 
 
 def _headers(message: Message) -> tuple[tuple[str, bytes], ...]:
@@ -204,10 +334,11 @@ def _dead_letter(
         exc,
     )
     source = f"{received.topic}/{received.partition}/{received.offset}"
+    dlq = dead_letter_topic(received.topic)
     dead_letters.publish(
         [
             OutboundMessage(
-                topic=f"{received.topic}.dlq",
+                topic=dlq,
                 key=received.key or "",
                 value=received.value,
                 # The original headers come along, so the dead letter still names its trace.
@@ -220,5 +351,6 @@ def _dead_letter(
             )
         ]
     )
+    metrics.DLQ_MESSAGES.add(1, metrics.topic(dlq))
     span.set_attribute(telemetry.OUTCOME, "dead_lettered")
     span.set_status(StatusCode.ERROR, telemetry.exception_type(exc))

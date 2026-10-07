@@ -2,6 +2,7 @@
 subscriptions. Docs at /docs."""
 
 import logging
+import os
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from datetime import timedelta
@@ -56,13 +57,20 @@ def api_redis_client(url: str) -> redis.Redis:
 
 
 def instrument(app: FastAPI) -> None:
-    """Trace each request with a SERVER span, except health checks (probes would flood traces).
+    """Trace each request with a SERVER span, and measure it, except health checks (probes would
+    flood traces).
 
     The span records the method, route, URL, and status, never request headers or bodies, which
     carry the session cookie, Google ID tokens, and webhook URLs. Query strings hold only search
     terms and filters. Should header capture ever be turned on (OTEL_INSTRUMENTATION_HTTP_CAPTURE_
     HEADERS_*), cookie and authorization values are still redacted.
+
+    Metrics: `http.server.request.duration` by method, route, and status, and
+    `http.server.active_requests`. They follow the stable HTTP semantic conventions, which the
+    instrumentation only uses when asked: its older default has no route, and labels requests by
+    their Host header, which any client can set to anything.
     """
+    os.environ.setdefault("OTEL_SEMCONV_STABILITY_OPT_IN", "http")  # read when first instrumenting
     FastAPIInstrumentor.instrument_app(
         app,
         excluded_urls="/healthz",

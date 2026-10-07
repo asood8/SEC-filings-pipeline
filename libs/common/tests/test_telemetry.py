@@ -5,8 +5,10 @@ from collections.abc import Sequence
 from typing import Any, ClassVar
 
 import pytest
-from opentelemetry import trace
+from opentelemetry import metrics, trace
+from opentelemetry.exporter.otlp.proto.http import metric_exporter as otlp_metrics
 from opentelemetry.exporter.otlp.proto.http import trace_exporter as otlp
+from opentelemetry.sdk.metrics.export import MetricExporter, MetricExportResult, MetricsData
 from opentelemetry.sdk.trace import ReadableSpan
 from opentelemetry.sdk.trace.export import SpanExporter, SpanExportResult
 from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter
@@ -16,6 +18,8 @@ from filings_common.config import TelemetrySettings
 from filings_common.telemetry import (
     LOG_FORMAT,
     TraceContextFormatter,
+    build_meter_provider,
+    build_resource,
     build_tracer_provider,
     context_from_headers,
     continue_from,
@@ -37,7 +41,7 @@ WEBHOOK = "https://discord.com/api/webhooks/1/secret-token"
 
 
 class FakeExporter(SpanExporter):
-    """Stands in for the OTLP exporter: records how it was built and never sends anything."""
+    """Stands in for the OTLP span exporter: records how it was built and never sends anything."""
 
     built: ClassVar[dict[str, Any]] = {}
 
@@ -46,6 +50,30 @@ class FakeExporter(SpanExporter):
 
     def export(self, spans: Sequence[ReadableSpan]) -> SpanExportResult:
         return SpanExportResult.SUCCESS
+
+
+class FakeMetricExporter(MetricExporter):
+    """Stands in for the OTLP metric exporter: keeps what it was built with and what it got."""
+
+    built: ClassVar[dict[str, Any]] = {}
+    exported: ClassVar[list[MetricsData]] = []
+
+    def __init__(self, **kwargs: Any) -> None:
+        super().__init__()
+        FakeMetricExporter.built = kwargs
+        FakeMetricExporter.exported = []
+
+    def export(
+        self, metrics_data: MetricsData, timeout_millis: float = 10_000, **kwargs: Any
+    ) -> MetricExportResult:
+        FakeMetricExporter.exported.append(metrics_data)
+        return MetricExportResult.SUCCESS
+
+    def force_flush(self, timeout_millis: float = 10_000) -> bool:
+        return True
+
+    def shutdown(self, timeout_millis: float = 30_000, **kwargs: Any) -> None:
+        pass
 
 
 def settings(**values: Any) -> TelemetrySettings:
@@ -57,71 +85,138 @@ def only(spans: InMemorySpanExporter, name: str) -> ReadableSpan:
     return span
 
 
+@pytest.fixture
+def fake_exporters(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(otlp, "OTLPSpanExporter", FakeExporter)
+    monkeypatch.setattr(otlp_metrics, "OTLPMetricExporter", FakeMetricExporter)
+
+
+@pytest.fixture
+def installed(monkeypatch: pytest.MonkeyPatch) -> list[object]:
+    """The providers `setup_telemetry` installs (the test run's own stay in place)."""
+    providers: list[object] = []
+    monkeypatch.setattr(trace, "set_tracer_provider", providers.append)
+    monkeypatch.setattr(metrics, "set_meter_provider", providers.append)
+    return providers
+
+
 # --- Setup ---------------------------------------------------------------------------------------
 
 
-def test_tracing_is_off_without_an_endpoint(monkeypatch: pytest.MonkeyPatch) -> None:
-    def refuse(provider: object) -> None:
-        raise AssertionError("no tracer provider may be installed when tracing is off")
-
-    monkeypatch.setattr(trace, "set_tracer_provider", refuse)
+def test_telemetry_is_off_without_an_endpoint(installed: list[object]) -> None:
     off = setup_telemetry("filings-test", settings=settings())
     assert not off.enabled
+    assert installed == []  # no provider may be installed when telemetry is off
     off.shutdown()  # nothing to flush
-    assert build_tracer_provider(settings(exporter_otlp_endpoint="  "), "filings-test") is None
+    blank = settings(exporter_otlp_endpoint="  ")
+    assert not setup_telemetry("filings-test", settings=blank).enabled
 
 
-def test_tracing_off_does_not_even_load_the_exporter() -> None:
-    """Checked in a fresh interpreter: this one has already imported it."""
+def test_telemetry_off_does_not_even_load_the_sdk_or_exporters() -> None:
+    """Checked in a fresh interpreter: this one has already imported them."""
     code = (
         "import sys\n"
+        "from filings_common import metrics\n"
         "from filings_common.telemetry import setup_telemetry\n"
         "assert not setup_telemetry('filings-test').enabled\n"
-        "print(sorted(m for m in sys.modules if m.startswith('opentelemetry.exporter')))\n"
+        "metrics.FILINGS_DISCOVERED.add(1, metrics.form_type('4'))\n"
+        "loaded = ('opentelemetry.exporter', 'opentelemetry.sdk.metrics', 'google.protobuf')\n"
+        "print(sorted(m for m in sys.modules if m.startswith(loaded)))\n"
     )
     # The endpoint is blank in this process's environment (conftest.py), and so in the child's.
     child = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True, check=True)
     assert child.stdout.strip() == "[]"
 
 
-def test_sdk_disabled_turns_tracing_off_despite_an_endpoint() -> None:
+def test_sdk_disabled_turns_telemetry_off_despite_an_endpoint(installed: list[object]) -> None:
     disabled = settings(exporter_otlp_endpoint="http://collector:4318", sdk_disabled=True)
-    assert build_tracer_provider(disabled, "filings-test") is None
+    assert not setup_telemetry("filings-test", settings=disabled).enabled
+    assert installed == []
 
 
-def test_provider_exports_over_otlp_http_with_the_configured_resource(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    monkeypatch.setattr(otlp, "OTLPSpanExporter", FakeExporter)
+@pytest.mark.usefixtures("fake_exporters")
+def test_each_signal_can_be_turned_off_on_its_own(installed: list[object]) -> None:
+    endpoint = "http://collector:4318"
+    traces_only = setup_telemetry(
+        "filings-test", settings=settings(exporter_otlp_endpoint=endpoint, metrics_exporter="none")
+    )
+    metrics_only = setup_telemetry(
+        "filings-test", settings=settings(exporter_otlp_endpoint=endpoint, traces_exporter="none")
+    )
+    try:
+        assert traces_only.tracer_provider is not None
+        assert traces_only.meter_provider is None
+        assert metrics_only.tracer_provider is None
+        assert metrics_only.meter_provider is not None
+        assert installed == [traces_only.tracer_provider, metrics_only.meter_provider]
+    finally:
+        traces_only.shutdown()
+        metrics_only.shutdown()
+
+
+@pytest.mark.usefixtures("fake_exporters")
+def test_providers_export_over_otlp_http_with_the_configured_resource() -> None:
     configured = settings(
         exporter_otlp_endpoint="https://otlp-gateway.example.net/otlp/",
         exporter_otlp_headers="Authorization=Basic%20c2VjcmV0, X-Scope-OrgID=t1",
         service_name="parser-canary",
         resource_attributes="deployment.environment.name=production,service.namespace=filings",
+        metric_export_interval=15_000,
     )
-    provider = build_tracer_provider(configured, "filings-parser", "1.2.3")
-    assert provider is not None
+    resource = build_resource(configured, "filings-parser", "1.2.3")
+    tracer_provider = build_tracer_provider(configured, resource)
+    meter_provider = build_meter_provider(configured, resource)
+    assert tracer_provider is not None
+    assert meter_provider is not None
     try:
+        headers = {"Authorization": "Basic c2VjcmV0", "X-Scope-OrgID": "t1"}
         assert FakeExporter.built["endpoint"] == "https://otlp-gateway.example.net/otlp/v1/traces"
-        assert FakeExporter.built["headers"] == {
-            "Authorization": "Basic c2VjcmV0",
-            "X-Scope-OrgID": "t1",
-        }
-        attributes = provider.resource.attributes
+        assert FakeExporter.built["headers"] == headers
+        assert FakeMetricExporter.built["endpoint"] == (
+            "https://otlp-gateway.example.net/otlp/v1/metrics"
+        )
+        assert FakeMetricExporter.built["headers"] == headers
+        attributes = tracer_provider.resource.attributes
         assert attributes["service.name"] == "parser-canary"  # OTEL_SERVICE_NAME wins
         assert attributes["service.version"] == "1.2.3"
         assert attributes["deployment.environment.name"] == "production"
         assert attributes["service.namespace"] == "filings"
+        assert meter_provider._sdk_config.resource is resource  # traces and metrics: one instance
     finally:
-        provider.shutdown()
+        tracer_provider.shutdown()
+        meter_provider.shutdown()
 
 
-def test_setup_installs_the_provider_and_never_logs_the_headers(
-    monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+def test_each_process_is_its_own_service_instance() -> None:
+    """Two replicas, or two runs of a job, must never write into each other's metric series."""
+    first = build_resource(settings(), "filings-discovery").attributes["service.instance.id"]
+    second = build_resource(settings(), "filings-discovery").attributes["service.instance.id"]
+    assert first != second
+    pod = settings(resource_attributes="service.instance.id=discovery-29120-abcde")
+    assert build_resource(pod, "filings-discovery").attributes["service.instance.id"] == (
+        "discovery-29120-abcde"
+    )
+
+
+@pytest.mark.usefixtures("fake_exporters")
+def test_metrics_are_exported_on_shutdown_without_the_dropped_instruments() -> None:
+    configured = settings(exporter_otlp_endpoint="http://collector:4318")
+    provider = build_meter_provider(configured, build_resource(configured, "filings-test"))
+    assert provider is not None
+    meter = provider.get_meter("test")
+    meter.create_counter("filings.test").add(2, {"filings.form_type": "4"})
+    meter.create_histogram("http.server.request.body.size").record(512)
+    provider.shutdown()  # a job's last export
+
+    [exported] = FakeMetricExporter.exported
+    [resource_metrics] = exported.resource_metrics
+    names = [m.name for scope in resource_metrics.scope_metrics for m in scope.metrics]
+    assert names == ["filings.test"]
+
+
+def test_setup_installs_the_providers_and_never_logs_the_headers(
+    installed: list[object], caplog: pytest.LogCaptureFixture, fake_exporters: None
 ) -> None:
-    monkeypatch.setattr(otlp, "OTLPSpanExporter", FakeExporter)
-    installed: list[object] = []
-    monkeypatch.setattr(trace, "set_tracer_provider", installed.append)
     configured = settings(
         exporter_otlp_endpoint="https://otlp-gateway.example.net/otlp",
         exporter_otlp_headers="Authorization=Basic%20c2VjcmV0",
@@ -130,8 +225,8 @@ def test_setup_installs_the_provider_and_never_logs_the_headers(
         on = setup_telemetry("filings-common", settings=configured)
     try:
         assert on.enabled
-        assert installed == [on.provider]
-        assert "otlp-gateway.example.net" in caplog.text
+        assert installed == [on.tracer_provider, on.meter_provider]
+        assert "traces and metrics to otlp-gateway.example.net" in caplog.text
         assert "c2VjcmV0" not in caplog.text
         assert "c2VjcmV0" not in repr(configured)  # SecretStr keeps it out of reprs
     finally:

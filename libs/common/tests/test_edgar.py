@@ -1,4 +1,5 @@
 import random
+from typing import Any
 
 import httpx2
 import pytest
@@ -135,3 +136,28 @@ def test_a_failed_request_marks_its_span_failed(spans: InMemorySpanExporter) -> 
     [span] = spans.get_finished_spans()
     assert span.status.status_code is StatusCode.ERROR
     assert (span.attributes or {})["http.response.status_code"] == 404
+
+
+def test_each_attempt_is_measured_by_status_class_with_429s_counted_on_their_own(
+    measured: Any,
+) -> None:
+    h = Harness(
+        httpx2.Response(429),
+        httpx2.ConnectError("reset"),
+        httpx2.Response(200, text="ok"),
+        httpx2.Response(404),
+    )
+    h.limiter.wait = 0.2
+    h.client.get("https://www.sec.gov/a")
+    with pytest.raises(httpx2.HTTPStatusError):
+        h.client.get("https://www.sec.gov/missing")
+
+    def responses(status_class: str) -> float:
+        return float(
+            measured.total("filings.sec.responses", {"filings.status_class": status_class})
+        )
+
+    assert [responses(c) for c in ("2xx", "4xx", "error")] == [1, 2, 1]
+    assert measured.total("filings.sec.throttled") == 1
+    assert measured.count("filings.sec.rate_limit.wait") == 4  # every attempt waits its turn
+    assert measured.attribute_sets("filings.sec.rate_limit.wait") == [{}]

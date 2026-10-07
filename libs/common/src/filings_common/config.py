@@ -170,7 +170,8 @@ class GoogleSignInSettings(BaseSettings):
 
 
 class TelemetrySettings(BaseSettings):
-    """OpenTelemetry tracing, from the standard OTEL_* variables. Without an endpoint it is off.
+    """OpenTelemetry traces and metrics, from the standard OTEL_* variables. Without an endpoint
+    both are off.
 
     Read here rather than by the OpenTelemetry SDK itself so that, like every other setting, they
     can also come from `.env` in development.
@@ -178,8 +179,9 @@ class TelemetrySettings(BaseSettings):
 
     model_config = _config("OTEL_")
 
-    # Base URL of an OTLP/HTTP receiver; spans go to <endpoint>/v1/traces. Grafana Cloud's is
-    # https://otlp-gateway-<zone>.grafana.net/otlp. Unset means tracing is off.
+    # Base URL of an OTLP/HTTP receiver; spans go to <endpoint>/v1/traces and metrics to
+    # <endpoint>/v1/metrics. Grafana Cloud's is https://otlp-gateway-<zone>.grafana.net/otlp, the
+    # local viewer's (`make obs-up`) http://localhost:4318. Unset means telemetry is off.
     exporter_otlp_endpoint: str | None = None
     # Headers sent with every export, as comma-separated key=value pairs with URL-encoded values.
     # Grafana Cloud: Authorization=Basic%20<base64 of instance-id:token>. A secret: never logged.
@@ -190,6 +192,12 @@ class TelemetrySettings(BaseSettings):
     resource_attributes: str | None = None
     # The standard switch to turn the SDK off without removing the rest of the configuration.
     sdk_disabled: bool = False
+    # Per signal: "none" turns just that one off (e.g. metrics without traces).
+    traces_exporter: Literal["otlp", "none"] = "otlp"
+    metrics_exporter: Literal["otlp", "none"] = "otlp"
+    # Milliseconds between metric exports (the SDK's default, a minute). Each process also exports
+    # once more on the way out.
+    metric_export_interval: int = Field(default=60_000, ge=1_000)
 
     @field_validator(
         "exporter_otlp_endpoint",

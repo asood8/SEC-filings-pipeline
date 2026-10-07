@@ -12,7 +12,8 @@ error) lets the consume loop retry later; meanwhile the backlog waits in the top
 
 Each provider call is a CLIENT span with the provider, model, outcome, and token counts. Spans
 never hold prompt or answer text, and record errors by type only: their messages can quote the
-answer (a failed validation) or the provider's response.
+answer (a failed validation) or the provider's response. Metrics: each call's duration by provider
+and outcome, answers that came from a fallback provider, and circuit breakers opening.
 """
 
 import logging
@@ -26,7 +27,7 @@ import httpx2
 from opentelemetry import trace
 from opentelemetry.trace import SpanKind
 
-from filings_common import telemetry
+from filings_common import metrics, telemetry
 from filings_common.ratelimit import RateLimiter
 
 logger = logging.getLogger(__name__)
@@ -210,11 +211,14 @@ class CircuitBreaker:
         self._failures = 0
         self._open_until = None
 
-    def record_failure(self, retry_after: float | None = None) -> None:
+    def record_failure(self, retry_after: float | None = None) -> bool:
+        """Count a failure. Returns True if the breaker opened because of it."""
         self._failures += 1
         half_open = self._open_until is not None  # a trial call after the cooldown failed
         if retry_after is not None or half_open or self._failures >= self._threshold:
             self._open_until = self._clock() + max(self._cooldown, retry_after or 0)
+            return True
+        return False
 
 
 @dataclass(frozen=True)
@@ -245,7 +249,7 @@ class FailoverChain:
         failing, so the next one is tried.
         """
         failures = []
-        for provider in self._providers:
+        for position, provider in enumerate(self._providers):
             breaker = self._breakers[provider.name]
             if not breaker.allow():
                 failures.append(f"{provider.name}: circuit open")
@@ -263,25 +267,36 @@ class FailoverChain:
                     telemetry.GEN_AI_MODEL: provider.model,
                 },
             ) as span:
-                answered = False
+                answered, opened = False, False
+                started = time.monotonic()
                 try:
                     text = provider.generate_json(system, prompt, schema)
                     answered = True
                     if self._validate is not None:
                         self._validate(text)
                 except RateLimitedError as exc:
-                    breaker.record_failure(retry_after=exc.retry_after)
+                    opened = breaker.record_failure(retry_after=exc.retry_after)
                     failures.append(f"{provider.name}: {exc}")
-                    span.set_attribute(telemetry.OUTCOME, "rate_limited")
+                    outcome = "rate_limited"
                     telemetry.record_error(span, exc, redact=True)
                 except Exception as exc:  # any provider failure means: try the next provider
-                    breaker.record_failure()
+                    opened = breaker.record_failure()
                     failures.append(f"{provider.name}: {exc!r}"[:300])
-                    span.set_attribute(telemetry.OUTCOME, "invalid" if answered else "error")
+                    outcome = "invalid" if answered else "error"
                     telemetry.record_error(span, exc, redact=True)
                 else:
                     breaker.record_success()
-                    span.set_attribute(telemetry.OUTCOME, "ok")
+                    outcome = "ok"
+                span.set_attribute(telemetry.OUTCOME, outcome)
+                provider_attribute = {telemetry.GEN_AI_PROVIDER: provider.name}
+                metrics.LLM_DURATION.record(
+                    time.monotonic() - started, {**provider_attribute, telemetry.OUTCOME: outcome}
+                )
+                if opened:
+                    metrics.LLM_BREAKER_OPENS.add(1, provider_attribute)
+                if outcome == "ok":
+                    if position > 0:
+                        metrics.LLM_FAILOVERS.add(1, provider_attribute)
                     return Answer(text, provider.name, provider.model)
             logger.warning("LLM provider %s failed; trying the next one", provider.name)
         raise LlmUnavailableError("; ".join(failures))

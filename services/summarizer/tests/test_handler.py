@@ -92,12 +92,13 @@ def rows(engine: Engine) -> tuple[list[Summary], list[OutboxEvent], FilingStatus
 
 
 def test_summarizes_marks_ready_and_announces_once(
-    setup: tuple[Engine, ParsedFilingStore],
+    setup: tuple[Engine, ParsedFilingStore], measured: Any
 ) -> None:
     engine, store = setup
     handler = SummaryHandler(session_factory(engine), store, SUMMARIZERS)
     handler(parsed_event())
     handler(parsed_event())  # redelivery
+    assert measured.total("filings.ready", {"filings.form_type": "4"}) == 1  # counted once
 
     summaries, events, status = rows(engine)
     assert status is FilingStatus.READY

@@ -93,10 +93,11 @@ def discovered(**overrides: object) -> Received:
 
 
 def test_parses_stores_and_announces_once_even_if_redelivered(
-    handler: FilingHandler, clean_db: Engine, mongo_db: Database[dict[str, Any]]
+    handler: FilingHandler, clean_db: Engine, mongo_db: Database[dict[str, Any]], measured: Any
 ) -> None:
     handler(discovered())
     handler(discovered())  # redelivery
+    assert measured.total("filings.parsed", {"filings.form_type": "4"}) == 1  # counted once
 
     stored = ParsedFilingStore(mongo_db).get(ACCESSION)
     assert stored is not None

@@ -3,8 +3,8 @@
 [![CI](https://github.com/asood8/SEC-filings-pipeline/actions/workflows/ci.yml/badge.svg)](https://github.com/asood8/SEC-filings-pipeline/actions/workflows/ci.yml)
 
 > **Work in progress.** This project is under active development. Ingestion, parsing,
-> summarization, search, and the read API run end to end on real SEC data; alerts, the web
-> frontend, and the cloud deployment are still to come. See [Progress](#progress).
+> summarization, search, the read API, and alerts run end to end on real SEC data; the website
+> is being built, and sign-in and the cloud deployment are still to come. See [Progress](#progress).
 
 A pipeline that watches SEC EDGAR for new filings from a watchlist of public companies, parses
 them, summarizes them in plain English, makes them searchable by keyword and by meaning, and
@@ -51,7 +51,7 @@ Example headlines from that run (public filings):
 | 2. Summarization | 8-K items and exhibits, Form 4 template, LLM failover, replay | Done |
 | 3. Search and API | Full-text and semantic search (pgvector), caching, rate limiting | Done |
 | 4. Users and alerts | Google sign-in, subscriptions, Discord/Slack/email alerts | In progress: notifier done; sign-in and subscriptions next |
-| 5. Frontend | Next.js site on Cloudflare Pages | Planned |
+| 5. Frontend | React site (Vite + TypeScript) on Cloudflare Pages | In progress: feed, search, company and filing pages done; sign-in and subscriptions next |
 | 6. Observability | OpenTelemetry traces, metrics, Grafana dashboards and alerts | Planned |
 | 7. Production | Terraform, k3s on Oracle Cloud's free tier, Argo CD, multi-arch images | Planned |
 | 8. Hardening | Load tests, local-model benchmark, backups, runbook | Planned |
@@ -75,12 +75,12 @@ flowchart LR
   S --> T3{{filings.ready}}
   T3 --> N[notifier]
   N --> CH[Discord / Slack / email]
-  WEB[Next.js] --> API[FastAPI]
+  WEB[React site] --> API[FastAPI]
   API --> PG
 ```
 
-This is the target design. The web frontend and the cloud deployment are not built yet, and
-sign-in and the subscription API are next.
+This is the target design. The website is in progress, and the cloud deployment is not built
+yet.
 
 Each stage is a separate service connected by Redpanda (Kafka API) topics. Some design choices
 worth a look:
@@ -107,8 +107,8 @@ Every component's reason for existing is recorded in the
 
 ## Quickstart
 
-Prerequisites: Docker with Compose v2, [uv](https://docs.astral.sh/uv/), and `make`. On Windows,
-work inside WSL2.
+Prerequisites: Docker with Compose v2, [uv](https://docs.astral.sh/uv/), and `make`, plus
+[Node.js 24](https://nodejs.org/) for the website. On Windows, work inside WSL2.
 
 ```sh
 make setup   # install Python 3.12, all packages, dev tools, and git hooks
@@ -132,6 +132,7 @@ uv run filings-summarizer                  # filings.parsed -> summaries + filin
 uv run filings-notifier                    # filings.ready -> Discord / Slack / email alerts
 uv run filings-index                       # build the search index (embeddings need EMBEDDING_MODEL)
 make api                                   # http://127.0.0.1:8000, interactive docs at /docs
+make web-install && make web               # the website on http://localhost:3000
 ```
 
 The API: `GET /search?q=...` (hybrid by default; `mode=keyword|semantic`), `GET /filings`,
@@ -162,6 +163,9 @@ uv run filings-replay parsed --form-type 4 # re-summarize history (also: discove
 | `make lint` | ruff (lint + format check) and mypy |
 | `make fmt` | Auto-fix lint issues and format code |
 | `make test` | Run all tests |
+| `make web-install` / `make web` | Install the website's dependencies / run it with hot reload on :3000 |
+| `make web-check` | Lint, type-check, test, and build the website |
+| `make web-types` | Regenerate the website's API types from the API's OpenAPI schema |
 
 ## Local services
 
@@ -184,14 +188,14 @@ libs/common/          shared code (filings_common): settings, events, EDGAR clie
                       object store, database models + migrations, outbox relay, consume loop
 services/             one package per pipeline stage: discovery, parser, summarizer, notifier, api
 config/               watchlist.toml: the companies discovery follows
+web/                  the website: Vite + React + TypeScript, static files for Cloudflare Pages
 tests/fixtures/       real EDGAR documents used by the parser tests
 docs/PROJECT_BRIEF.md spec, architecture, and build plan
 docs/adr/             architecture decision records
 docker-compose.yml    local backing services
 ```
 
-`web/` (frontend), `deploy/` (Kubernetes manifests), and `infra/` (Terraform) arrive in later
-phases.
+`deploy/` (Kubernetes manifests) and `infra/` (Terraform) arrive in later phases.
 
 ## License
 

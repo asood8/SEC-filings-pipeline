@@ -1,7 +1,12 @@
 import pytest
 from pydantic import ValidationError
 
-from filings_common.config import DatabaseSettings, EdgarSettings
+from filings_common.config import (
+    ApiSettings,
+    DatabaseSettings,
+    EdgarSettings,
+    GoogleSignInSettings,
+)
 
 
 def test_user_agent_names_the_app_and_contact() -> None:
@@ -39,3 +44,34 @@ def test_database_url_is_hidden_in_repr(monkeypatch: pytest.MonkeyPatch) -> None
     settings = DatabaseSettings(_env_file=None)
     assert "hunter2" not in repr(settings)
     assert "hunter2" in settings.database_url.get_secret_value()
+
+
+def test_api_session_and_cors_defaults(monkeypatch: pytest.MonkeyPatch) -> None:
+    for name in ["API_SESSION_LIFETIME_DAYS", "API_COOKIE_SECURE", "API_CORS_ORIGINS"]:
+        monkeypatch.delenv(name, raising=False)
+    settings = ApiSettings(_env_file=None)
+    assert settings.session_lifetime_days == 7
+    assert settings.cookie_secure is True
+    assert settings.cors_origins == ["http://localhost:3000"]
+
+
+def test_cors_origins_are_read_as_a_json_list(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("API_CORS_ORIGINS", '["https://app.example.com", "http://localhost:3000"]')
+    settings = ApiSettings(_env_file=None)
+    assert settings.cors_origins == ["https://app.example.com", "http://localhost:3000"]
+
+
+@pytest.mark.parametrize(
+    "origin",
+    ["*", "https://*.example.com", "https://app.example.com/", "app.example.com", "ftp://x.y"],
+)
+def test_cors_origins_must_be_exact(origin: str) -> None:
+    with pytest.raises(ValidationError, match="exact origin"):
+        ApiSettings(_env_file=None, cors_origins=[origin])
+
+
+def test_google_client_id_env_var(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("GOOGLE_CLIENT_ID", "1234-abc.apps.googleusercontent.com")
+    assert GoogleSignInSettings(_env_file=None).client_id == "1234-abc.apps.googleusercontent.com"
+    monkeypatch.setenv("GOOGLE_CLIENT_ID", "  ")
+    assert GoogleSignInSettings(_env_file=None).client_id is None  # blank means sign-in is off

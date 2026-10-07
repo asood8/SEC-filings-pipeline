@@ -90,3 +90,9 @@ def test_limit_is_bounded(client: TestClient, ids: Any) -> None:
 
 def test_health_check(client: TestClient, ids: Any) -> None:
     assert client.get("/healthz").json() == {"status": "ok"}
+
+
+@pytest.mark.parametrize("path", ["/filings", "/search?q=cfo"])
+def test_out_of_range_ciks_are_refused_cleanly(client: TestClient, path: str) -> None:
+    separator = "&" if "?" in path else "?"
+    assert client.get(f"{path}{separator}cik=99999999999999999999").status_code == 422

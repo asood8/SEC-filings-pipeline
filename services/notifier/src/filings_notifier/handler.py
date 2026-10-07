@@ -3,6 +3,8 @@
 - A subscription matches if it follows the filing's company, or, for a Form 4, the issuer whose
   stock was traded (following Lennar catches Berkshire's Form 4 about buying Lennar), and if its
   form types include the filing's (empty means all).
+- Alerts are about new filings: a subscription only matches filings discovered after it was
+  created. Otherwise replaying the topic would send a new subscription every past filing.
 - Each alert is a `notifications` row, unique per (subscription, filing). It is delivered inside
   a transaction that locks the row, and skipped unless still pending, so redeliveries, replays,
   and concurrent notifiers never alert a subscription twice about the same filing.
@@ -17,6 +19,7 @@ idempotency keys, so that tiny window can't be closed.
 
 import logging
 from collections.abc import Mapping
+from datetime import datetime
 
 import sqlalchemy as sa
 from pydantic import ValidationError
@@ -37,13 +40,8 @@ from filings_common.db import (
 )
 from filings_common.events import FilingReady, Topic
 from filings_common.summaries import FilingSummary
-from filings_notifier.channels import (
-    Alert,
-    DeliveryError,
-    PermanentDeliveryError,
-    Sender,
-    target_is_valid,
-)
+from filings_common.targets import target_is_valid
+from filings_notifier.channels import Alert, DeliveryError, PermanentDeliveryError, Sender
 
 logger = logging.getLogger(__name__)
 
@@ -64,8 +62,10 @@ class NotificationHandler:
             raise PermanentError(f"invalid {Topic.FILINGS_READY} event: {exc}") from exc
 
         with self._sessions() as session:
-            alert = self._alert(session, event)
-            subscription_ids = self._matching_subscriptions(session, alert, event.cik)
+            alert, discovered_at = self._alert(session, event)
+            subscription_ids = self._matching_subscriptions(
+                session, alert, event.cik, discovered_at
+            )
 
         pending = [sid for sid in subscription_ids if not self._deliver(sid, alert)]
         if pending:
@@ -82,7 +82,8 @@ class NotificationHandler:
             )
         logger.info("%s: %d subscription(s) alerted", event.accession_no, len(subscription_ids))
 
-    def _alert(self, session: Session, event: FilingReady) -> Alert:
+    def _alert(self, session: Session, event: FilingReady) -> tuple[Alert, datetime]:
+        """The alert to send, and when the filing was discovered."""
         row = session.execute(
             sa.select(Filing, Company)
             .join(Company, Company.cik == Filing.cik)
@@ -93,7 +94,7 @@ class NotificationHandler:
             raise PermanentError(f"no filing or summary for {event.accession_no}")
         filing, company = row
         content = FilingSummary.model_validate(summary.summary)
-        return Alert(
+        alert = Alert(
             accession_no=filing.accession_no,
             company_name=company.name,
             ticker=company.ticker,
@@ -104,8 +105,11 @@ class NotificationHandler:
             key_points=content.key_points,
             url=filing.primary_doc_url,
         )
+        return alert, filing.created_at
 
-    def _matching_subscriptions(self, session: Session, alert: Alert, cik: int) -> list[int]:
+    def _matching_subscriptions(
+        self, session: Session, alert: Alert, cik: int, discovered_at: datetime
+    ) -> list[int]:
         ciks = {cik}
         form4 = session.get(Form4Filing, alert.accession_no)
         if form4 is not None:
@@ -114,6 +118,7 @@ class NotificationHandler:
             sa.select(Subscription.id)
             .where(
                 Subscription.cik.in_(ciks),
+                Subscription.created_at <= discovered_at,
                 # No form types means all of them; otherwise the filing's must be listed.
                 (sa.func.cardinality(Subscription.form_types) == 0)
                 | Subscription.form_types.contains([alert.form_type]),

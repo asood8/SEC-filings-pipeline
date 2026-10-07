@@ -261,11 +261,31 @@ class User(Base):
     created_at: Mapped[datetime] = mapped_column(server_default=sa.func.now())
 
 
+class UserSession(Base):
+    """A signed-in browser. The raw session token exists only in the user's cookie; this stores
+    its SHA-256 hash, so reading the table doesn't hand out working sessions."""
+
+    __tablename__ = "sessions"
+    __table_args__ = (sa.Index("ix_sessions_user_id", "user_id"),)
+
+    id: Mapped[int] = mapped_column(sa.BigInteger, sa.Identity(always=True), primary_key=True)
+    user_id: Mapped[int] = mapped_column(
+        sa.BigInteger, sa.ForeignKey("users.id", ondelete="CASCADE")
+    )
+    token_hash: Mapped[str] = mapped_column(unique=True)  # hex SHA-256 of the cookie's token
+    created_at: Mapped[datetime] = mapped_column(server_default=sa.func.now())
+    expires_at: Mapped[datetime]
+
+
 class Subscription(Base):
     """Alert `target` (a webhook URL or an email address) about a company's new filings."""
 
     __tablename__ = "subscriptions"
-    __table_args__ = (sa.Index("ix_subscriptions_cik", "cik"),)
+    __table_args__ = (
+        # Subscribing twice to the same thing would send every alert twice.
+        sa.UniqueConstraint("user_id", "cik", "channel", "target"),
+        sa.Index("ix_subscriptions_cik", "cik"),
+    )
 
     id: Mapped[int] = mapped_column(sa.BigInteger, sa.Identity(always=True), primary_key=True)
     user_id: Mapped[int] = mapped_column(
@@ -328,8 +348,11 @@ class OutboxEvent(Base):
     published_at: Mapped[datetime | None]
 
 
-def create_engine(url: str) -> sa.Engine:
-    return sa.create_engine(url, pool_pre_ping=True)
+def create_engine(url: str, *, hide_parameters: bool = False) -> sa.Engine:
+    """`hide_parameters` keeps bound values out of SQLAlchemy's error messages and logs, for
+    services whose queries carry user secrets (the API stores webhook URLs). Postgres's own error
+    details can still quote a row, e.g. the key in a unique violation."""
+    return sa.create_engine(url, pool_pre_ping=True, hide_parameters=hide_parameters)
 
 
 def session_factory(engine: sa.Engine) -> sessionmaker[Session]:

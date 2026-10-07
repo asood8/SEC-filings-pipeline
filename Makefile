@@ -1,8 +1,8 @@
 .DEFAULT_GOAL := help
-.PHONY: help setup sync up down ps logs llm-up llm-down migrate api lint fmt test
+.PHONY: help setup sync up down ps logs llm-up llm-down migrate api images lint fmt test web-install web web-types web-check
 
 help: ## List targets
-	@grep -E '^[a-z-]+:.*## ' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*## "} {printf "  %-7s %s\n", $$1, $$2}'
+	@grep -E '^[a-z-]+:.*## ' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*## "} {printf "  %-11s %s\n", $$1, $$2}'
 
 setup: sync ## First-time setup: install dependencies and git hooks
 	uv run pre-commit install
@@ -42,6 +42,13 @@ migrate: ## Apply database migrations to DATABASE_URL
 api: ## Run the API locally with auto-reload on http://127.0.0.1:8000 (docs at /docs)
 	uv run uvicorn --factory filings_api.app:create_app --reload
 
+SERVICES := api discovery parser summarizer notifier
+
+images: $(SERVICES:%=image-%) ## Build all service images for this machine as filings-<service>:dev (one: make image-api)
+
+image-%:
+	docker build -f docker/service.Dockerfile --build-arg PACKAGE=filings-$* -t filings-$*:dev .
+
 lint: ## ruff (lint + format check) and mypy
 	uv run ruff check .
 	uv run ruff format --check .
@@ -53,3 +60,20 @@ fmt: ## Auto-fix lint issues and format code (reports what it can't fix)
 
 test: ## Run all tests
 	uv run pytest
+
+web-install: ## Install the website's dependencies (Node.js 24, see web/.nvmrc)
+	npm --prefix web ci
+
+web: ## Run the website with hot reload on http://localhost:3000 (start the API with `make api`)
+	npm --prefix web run dev
+
+web-types: ## Regenerate the website's API types from the API's OpenAPI schema
+	@mkdir -p web/node_modules/.tmp
+	uv run --no-dev --package filings-api python -c 'import json; from filings_api.app import create_app; print(json.dumps(create_app().openapi()))' > web/node_modules/.tmp/openapi.json
+	npm --prefix web run gen:api
+
+web-check: ## Lint, type-check, test, and build the website
+	npm --prefix web run lint
+	npm --prefix web run typecheck
+	npm --prefix web test
+	npm --prefix web run build

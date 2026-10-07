@@ -5,7 +5,7 @@ import sqlalchemy as sa
 from fastapi import APIRouter, HTTPException, Path, Query
 
 from filings_api.pagination import decode_cursor, encode_cursor
-from filings_api.queries import SessionDep, filing_select, to_filing_out
+from filings_api.queries import CikFilter, SessionDep, filing_select, to_filing_out
 from filings_api.schemas import (
     ExhibitOut,
     FilingDetail,
@@ -26,7 +26,7 @@ ACCESSION_PATTERN = r"^\d{10}-\d{2}-\d{6}$"
 @router.get("/filings", summary="Latest filings, newest first")
 def list_filings(
     session: SessionDep,
-    cik: int | None = None,
+    cik: CikFilter = None,
     form_type: str | None = None,
     limit: Annotated[int, Query(ge=1, le=100)] = 50,
     cursor: str | None = None,

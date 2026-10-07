@@ -4,6 +4,7 @@ Each concern has its own small settings class so a service only needs (and valid
 configuration it actually uses.
 """
 
+import re
 from pathlib import Path
 from typing import Literal
 
@@ -133,6 +134,39 @@ class ApiSettings(BaseSettings):
     # Behind Cloudflare Tunnel the client address is in CF-Connecting-IP. Only trust it when the
     # API is reachable through the tunnel alone, or clients could spoof it.
     trust_proxy_headers: bool = False
+    # How long a sign-in lasts before the user has to sign in again.
+    session_lifetime_days: int = Field(default=7, ge=1, le=90)
+    # Browsers then send the session cookie over https only (and to http://localhost).
+    cookie_secure: bool = True
+    # The website's origins, allowed to call the API with the session cookie (CORS), as JSON in
+    # the environment: API_CORS_ORIGINS='["https://app.example.com"]'.
+    cors_origins: list[str] = Field(default_factory=lambda: ["http://localhost:3000"])
+
+    @field_validator("cors_origins")
+    @classmethod
+    def _require_exact_origins(cls, origins: list[str]) -> list[str]:
+        for origin in origins:
+            if not re.fullmatch(r"https?://[^/\s*]+", origin):
+                raise ValueError(
+                    f"{origin!r} is not an exact origin like https://app.example.com "
+                    "(no wildcard, path, or trailing slash)"
+                )
+        return origins
+
+
+class GoogleSignInSettings(BaseSettings):
+    """Sign in with Google. The OAuth client ID is public (the website embeds it too); the API
+    only verifies ID tokens, so it needs no client secret."""
+
+    model_config = _config("GOOGLE_")
+
+    # From the Google Cloud console. Unset means sign-in is disabled; the rest of the API works.
+    client_id: str | None = None
+
+    @field_validator("client_id", mode="before")
+    @classmethod
+    def _blank_is_unset(cls, value: object) -> object:
+        return None if isinstance(value, str) and not value.strip() else value
 
 
 class ObjectStoreSettings(BaseSettings):

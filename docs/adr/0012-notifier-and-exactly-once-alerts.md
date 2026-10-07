@@ -37,6 +37,9 @@ Sign-in and subscription management (the API side of Phase 4) are decided separa
 - **Matching:** a subscription matches the filing's company or, for a Form 4, the issuer whose
   stock was traded (following Lennar catches Berkshire's Form 4 about buying Lennar). Its
   `form_types` must include the filing's form; empty means all.
+- **Only new filings** (added 2026-10-06): a subscription matches only filings discovered after it
+  was created. Without this, replaying `filings.ready` would send a newer subscription an alert
+  for every past filing, since it has no notification rows for them yet.
 - **Target safety:**
   - Webhook URLs must match official Discord or Slack webhook patterns over https, and redirects
     are never followed. User input can't make the notifier request internal addresses, such as the

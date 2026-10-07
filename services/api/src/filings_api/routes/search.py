@@ -3,7 +3,7 @@ from typing import Annotated, Literal
 
 from fastapi import APIRouter, Query
 
-from filings_api.queries import EmbedderDep, SessionDep, filing_select, to_filing_out
+from filings_api.queries import CikFilter, EmbedderDep, SessionDep, filing_select, to_filing_out
 from filings_api.schemas import SearchResponse, SearchResultOut
 from filings_common.db import Filing
 from filings_common.embeddings import EmbeddingError
@@ -28,7 +28,7 @@ def search(
     q: Annotated[str, Query(min_length=1, max_length=200)],
     mode: Literal["hybrid", "keyword", "semantic"] = "hybrid",
     form_type: str | None = None,
-    cik: int | None = None,
+    cik: CikFilter = None,
     limit: Annotated[int, Query(ge=1, le=50)] = 20,
 ) -> SearchResponse:
     """Keyword search understands quotes, `OR`, and `-word`. Semantic search matches meaning

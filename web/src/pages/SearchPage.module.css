@@ -1,0 +1,9 @@
+.form {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.form input[type='search'] {
+  flex: 1 1 18rem;
+}

@@ -6,6 +6,7 @@ requires-python = ">=3.12"
 dependencies = [
     "fastapi>=0.120",
     "filings-common",
+    "pyjwt[crypto]>=2.15",
     "uvicorn[standard]>=0.38",
 ]
 

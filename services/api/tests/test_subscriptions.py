@@ -17,7 +17,14 @@ from filings_api.auth import current_user
 from filings_api.queries import SessionDep
 from filings_api.routes import subscriptions
 from filings_api.routes.subscriptions import MAX_SUBSCRIPTIONS, _lock_user
-from filings_common.db import Company, Notification, Subscription, User, session_factory
+from filings_common.db import (
+    Company,
+    Notification,
+    NotificationStatus,
+    Subscription,
+    User,
+    session_factory,
+)
 
 pytestmark = pytest.mark.integration
 
@@ -486,3 +493,36 @@ def test_batches_respect_the_cap_all_or_nothing(sign_in: SignIn, seeded: Engine)
 
 def test_batch_requires_sign_in(make_client: ClientFactory) -> None:
     assert batch(make_client()).status_code == 401
+
+
+def test_subscriptions_show_their_last_delivery(sign_in: SignIn, seeded: Engine, ids: Any) -> None:
+    alice = sign_in("alice")
+    apple = subscribe(alice).json()
+    quiet = subscribe(alice, ticker="BRK-B").json()
+    with session_factory(seeded).begin() as session:
+        session.add_all(
+            [
+                Notification(
+                    subscription_id=apple["id"],
+                    accession_no=ids.form4,
+                    status=NotificationStatus.SENT,
+                    attempts=1,
+                    sent_at=sa.func.now(),
+                ),
+                Notification(
+                    subscription_id=apple["id"],
+                    accession_no=ids.apple_8k,
+                    status=NotificationStatus.FAILED,
+                    attempts=1,
+                    last_error="Discord rejected the alert: 404",
+                ),
+            ]
+        )
+    listed = {s["id"]: s for s in alice.get("/subscriptions").json()}
+    last = listed[apple["id"]]["last_delivery"]
+    assert (last["status"], last["accession_no"]) == ("failed", ids.apple_8k)  # the newest
+    assert last["error"] == "Discord rejected the alert: 404"
+    assert listed[quiet["id"]]["last_delivery"] is None
+
+    patched = alice.patch(f"/subscriptions/{apple['id']}", json={"form_types": ["8-K"]}).json()
+    assert patched["last_delivery"] == last

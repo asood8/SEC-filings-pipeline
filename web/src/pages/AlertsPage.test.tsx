@@ -193,6 +193,51 @@ describe('AlertsPage', () => {
     )
   })
 
+  it("shows failed deliveries and edits an alert's forms", async () => {
+    let patched: unknown
+    subscriptions = [
+      {
+        ...APPLE_ALERT,
+        last_delivery: {
+          status: 'failed',
+          accession_no: '0000320193-26-000001',
+          at: '2026-10-07T14:00:00Z',
+          error: 'Discord rejected the alert: 404',
+        },
+      },
+    ]
+    mockApi({
+      '/me': () => USER,
+      'GET /subscriptions': () => subscriptions,
+      'PATCH /subscriptions/7': async (_url, request) => {
+        patched = await request.json()
+        subscriptions = [{ ...subscriptions[0], form_types: ['4'] }]
+        return subscriptions[0]
+      },
+      '/companies': () => WATCHLIST,
+    })
+    renderRoute('/alerts')
+
+    expect(await screen.findByText(/Last alert failed/)).toHaveTextContent(
+      'Discord rejected the alert: 404',
+    )
+    await userEvent.click(
+      screen.getByRole('button', {
+        name: 'Edit the forms for the AAPL Discord alert',
+      }),
+    )
+    const form = screen.getByRole('form', {
+      name: 'Forms for the AAPL Discord alert',
+    })
+    await userEvent.click(within(form).getByLabelText('Form 4'))
+    await userEvent.click(within(form).getByRole('button', { name: 'Save' }))
+    expect(await screen.findByText('(Form 4)')).toBeInTheDocument()
+    expect(patched).toEqual({ form_types: ['4'] })
+    expect(
+      screen.queryByRole('form', { name: 'Forms for the AAPL Discord alert' }),
+    ).not.toBeInTheDocument()
+  })
+
   it('removes an alert and signs out', async () => {
     let signedIn = true
     mockApi({

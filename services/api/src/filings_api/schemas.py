@@ -150,6 +150,17 @@ class CompanyRef(BaseModel):
     name: str
 
 
+class DeliveryOut(BaseModel):
+    status: Literal["pending", "sent", "failed"] = Field(
+        description="pending: not delivered yet and will be retried; failed: rejected for good."
+    )
+    accession_no: str = Field(description="The filing the alert was about.")
+    at: datetime = Field(description="When it was sent, or last attempted.")
+    error: str | None = Field(
+        description="Why the last attempt failed, e.g. a deleted webhook. Null once sent."
+    )
+
+
 class SubscriptionOut(BaseModel):
     id: int
     company: CompanyRef
@@ -162,6 +173,9 @@ class SubscriptionOut(BaseModel):
         )
     )
     created_at: datetime
+    last_delivery: DeliveryOut | None = Field(
+        default=None, description="The most recent alert for this subscription, if any."
+    )
 
 
 class Destination(BaseModel):

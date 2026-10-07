@@ -3,7 +3,13 @@ import {
   useMutation,
   useQueryClient,
 } from '@tanstack/react-query'
-import { api, ApiError, unwrap, type SubscriptionBatch } from './client'
+import {
+  api,
+  ApiError,
+  unwrap,
+  type SubscriptionBatch,
+  type SubscriptionUpdate,
+} from './client'
 
 /** The signed-in user, or null when signed out (the API answers 401). */
 export const meQuery = () =>
@@ -77,6 +83,21 @@ export function useCreateSubscriptions() {
   return useMutation({
     mutationFn: (body: SubscriptionBatch) =>
       unwrap(api.POST('/subscriptions/batch', { body })),
+    onSuccess: () =>
+      queryClient.invalidateQueries({ queryKey: ['subscriptions'] }),
+  })
+}
+
+export function useUpdateSubscription() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: ({ id, ...body }: { id: number } & SubscriptionUpdate) =>
+      unwrap(
+        api.PATCH('/subscriptions/{subscription_id}', {
+          params: { path: { subscription_id: id } },
+          body,
+        }),
+      ),
     onSuccess: () =>
       queryClient.invalidateQueries({ queryKey: ['subscriptions'] }),
   })

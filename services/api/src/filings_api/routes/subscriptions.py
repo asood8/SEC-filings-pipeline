@@ -15,12 +15,14 @@ from typing import Annotated
 
 import sqlalchemy as sa
 from fastapi import APIRouter, Depends, HTTPException, Path, Response
+from sqlalchemy.dialects.postgresql import distinct_on
 from sqlalchemy.orm import Session
 
 from filings_api.auth import CurrentUser
 from filings_api.queries import SessionDep, company_by_ticker
 from filings_api.schemas import (
     CompanyRef,
+    DeliveryOut,
     Destination,
     SubscriptionBatch,
     SubscriptionBatchOut,
@@ -28,7 +30,14 @@ from filings_api.schemas import (
     SubscriptionOut,
     SubscriptionUpdate,
 )
-from filings_common.db import Channel, Company, Subscription, User
+from filings_common.db import (
+    Channel,
+    Company,
+    Notification,
+    NotificationStatus,
+    Subscription,
+    User,
+)
 from filings_common.targets import masked_target, target_is_valid
 
 # Per user. Keeps the list short enough to need no pages, and bounds one account's alert fan-out.
@@ -62,7 +71,9 @@ def _duplicate(ticker: str) -> HTTPException:
     return _error(409, f"you already have a subscription to {ticker} with this channel and target")
 
 
-def _subscription_out(subscription: Subscription, company: Company) -> SubscriptionOut:
+def _subscription_out(
+    subscription: Subscription, company: Company, last: Notification | None = None
+) -> SubscriptionOut:
     return SubscriptionOut(
         id=subscription.id,
         company=CompanyRef(cik=company.cik, ticker=company.ticker, name=company.name),
@@ -70,7 +81,28 @@ def _subscription_out(subscription: Subscription, company: Company) -> Subscript
         channel=subscription.channel,
         target=masked_target(subscription.channel, subscription.target),
         created_at=subscription.created_at,
+        last_delivery=None
+        if last is None
+        else DeliveryOut(
+            status=last.status.value,
+            accession_no=last.accession_no,
+            at=last.sent_at or last.updated_at,
+            error=last.last_error if last.status is not NotificationStatus.SENT else None,
+        ),
     )
+
+
+def _last_deliveries(session: Session, subscription_ids: list[int]) -> dict[int, Notification]:
+    """Each subscription's most recent notification, in one query."""
+    if not subscription_ids:
+        return {}
+    latest = session.scalars(
+        sa.select(Notification)
+        .where(Notification.subscription_id.in_(subscription_ids))
+        .order_by(Notification.subscription_id, Notification.id.desc())
+        .ext(distinct_on(Notification.subscription_id))
+    )
+    return {notification.subscription_id: notification for notification in latest}
 
 
 def _own_subscription(
@@ -171,7 +203,8 @@ def list_subscriptions(session: SessionDep, user: CurrentUser) -> list[Subscript
         .where(Subscription.user_id == user.id)
         .order_by(Subscription.id)
     ).all()
-    return [_subscription_out(subscription, company) for subscription, company in rows]
+    last = _last_deliveries(session, [subscription.id for subscription, _ in rows])
+    return [_subscription_out(s, company, last.get(s.id)) for s, company in rows]
 
 
 @router.post(
@@ -336,7 +369,8 @@ def update_subscription(
         subscription.form_types = list(body.form_types)
     subscription.channel, subscription.target = channel, target
     _commit(session, company)
-    return _subscription_out(subscription, company)
+    last = _last_deliveries(session, [subscription.id])
+    return _subscription_out(subscription, company, last.get(subscription.id))
 
 
 @router.delete(

@@ -274,6 +274,31 @@ export interface components {
             /** Name */
             name: string;
         };
+        /** DeliveryOut */
+        DeliveryOut: {
+            /**
+             * Status
+             * @description pending: not delivered yet and will be retried; failed: rejected for good.
+             * @enum {string}
+             */
+            status: "pending" | "sent" | "failed";
+            /**
+             * Accession No
+             * @description The filing the alert was about.
+             */
+            accession_no: string;
+            /**
+             * At
+             * Format: date-time
+             * @description When it was sent, or last attempted.
+             */
+            at: string;
+            /**
+             * Error
+             * @description Why the last attempt failed, e.g. a deleted webhook. Null once sent.
+             */
+            error: string | null;
+        };
         /**
          * Destination
          * @description Where alerts go. For a webhook, give its URL as `target`, or `target_from` to reuse the
@@ -558,6 +583,8 @@ export interface components {
              * Format: date-time
              */
             created_at: string;
+            /** @description The most recent alert for this subscription, if any. */
+            last_delivery?: components["schemas"]["DeliveryOut"] | null;
         };
         /**
          * SubscriptionUpdate

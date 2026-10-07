@@ -37,7 +37,7 @@ select = [
 python_version = "3.12"
 strict = true
 plugins = ["pydantic.mypy"]
-files = ["libs", "services", "scripts", "conftest.py"]
+files = ["libs", "services", "scripts", "tests", "conftest.py"]
 # Tests dirs have no __init__.py and share file names across packages, so module
 # names are derived from paths. Each src dir is listed so package modules keep
 # their import names (e.g. filings_common) instead of path-based ones.
@@ -55,6 +55,12 @@ mypy_path = [
 # confluent_kafka.admin re-exports classes such as NewTopic without marking them public.
 module = "confluent_kafka.*"
 implicit_reexport = true
+
+[[tool.mypy.overrides]]
+# PyYAML has no type hints of its own (types-PyYAML would add them). Only tests use it, to read
+# the Grafana provisioning files.
+module = "yaml"
+ignore_missing_imports = true
 
 [tool.pytest.ini_options]
 testpaths = ["libs", "services", "tests"]

@@ -8,15 +8,21 @@
 
 Events go through the outbox, so they are published by the relay with the usual at-least-once
 guarantee. Consumers are idempotent, so replaying is always safe.
+
+Like discovery, each replayed filing starts a trace of its own (linked to the replay run's span),
+which follows it through the stages it goes through again.
 """
 
 import argparse
 import logging
 from collections.abc import Sequence
+from contextlib import AbstractContextManager
 from itertools import batched
 from typing import Any
 
 import sqlalchemy as sa
+from opentelemetry import trace
+from opentelemetry.trace import Span
 from pymongo import MongoClient
 from sqlalchemy.orm import Session, sessionmaker
 
@@ -25,8 +31,10 @@ from filings_common.db import Filing, FilingStatus, create_engine, session_facto
 from filings_common.events import FilingDiscovered, FilingParsed, Topic
 from filings_common.mongo import ParsedFilingStore
 from filings_common.outbox import enqueue
+from filings_common.telemetry import filing_trace, setup_telemetry
 
 logger = logging.getLogger(__name__)
+tracer = trace.get_tracer(__name__)
 
 BATCH_SIZE = 500
 # Statuses a filing has once it has been parsed.
@@ -42,6 +50,12 @@ def _filings(
     if statuses is not None:
         query = query.where(Filing.status.in_(statuses))
     return list(session.scalars(query))
+
+
+def _filing_trace(filing: Filing, topic: Topic) -> AbstractContextManager[Span]:
+    return filing_trace(
+        tracer, f"replay {topic}", filing.accession_no, form_type=filing.form_type, cik=filing.cik
+    )
 
 
 def replay_discovered(
@@ -63,7 +77,8 @@ def replay_discovered(
                     filed_at=filing.filed_at,
                     raw_object_key=filing.raw_object_key,
                 )
-                enqueue(session, Topic.FILINGS_DISCOVERED, event)
+                with _filing_trace(filing, Topic.FILINGS_DISCOVERED):
+                    enqueue(session, Topic.FILINGS_DISCOVERED, event)
     return len(filings)
 
 
@@ -94,7 +109,8 @@ def replay_parsed(
                     form_type=filing.form_type,
                     parser_version=version,
                 )
-                enqueue(session, Topic.FILINGS_PARSED, event)
+                with _filing_trace(filing, Topic.FILINGS_PARSED):
+                    enqueue(session, Topic.FILINGS_PARSED, event)
                 count += 1
     return count
 
@@ -110,28 +126,35 @@ def main(argv: list[str] | None = None) -> int:
         help="only filings in this status (repeatable; discovered replays only)",
     )
     args = parser.parse_args(argv)
-    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s %(message)s")
+    if args.status and args.event != "discovered":
+        parser.error("--status applies to discovered replays only")
+    telemetry = setup_telemetry("filings-replay", distribution="filings-common")
 
     engine = create_engine(DatabaseSettings().database_url.get_secret_value())
     sessions = session_factory(engine)
     try:
-        if args.event == "discovered":
-            statuses = [FilingStatus(s) for s in args.status] if args.status else None
-            count = replay_discovered(sessions, form_type=args.form_type, statuses=statuses)
-        else:
-            if args.status:
-                parser.error("--status applies to discovered replays only")
-            mongo = MongoSettings()
-            client: MongoClient[dict[str, Any]] = MongoClient(mongo.mongodb_url.get_secret_value())
-            try:
-                store = ParsedFilingStore(client[mongo.mongodb_database])
-                count = replay_parsed(sessions, store, form_type=args.form_type)
-            finally:
-                client.close()
+        with tracer.start_as_current_span(f"replay {args.event}"):
+            if args.event == "discovered":
+                statuses = [FilingStatus(s) for s in args.status] if args.status else None
+                count = replay_discovered(sessions, form_type=args.form_type, statuses=statuses)
+            else:
+                count = _replay_parsed(sessions, form_type=args.form_type)
     finally:
         engine.dispose()
+        telemetry.shutdown()
     logger.info("enqueued %d %s events; the outbox relay publishes them", count, args.event)
     return 0
+
+
+def _replay_parsed(sessions: sessionmaker[Session], *, form_type: str | None) -> int:
+    mongo = MongoSettings()
+    client: MongoClient[dict[str, Any]] = MongoClient(mongo.mongodb_url.get_secret_value())
+    try:
+        return replay_parsed(
+            sessions, ParsedFilingStore(client[mongo.mongodb_database]), form_type=form_type
+        )
+    finally:
+        client.close()
 
 
 if __name__ == "__main__":

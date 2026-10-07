@@ -9,6 +9,11 @@ Each provider returns JSON text matching a JSON schema. Providers are plain HTTP
 failing is skipped until a cooldown passes; a 429 opens the breaker for at least the provider's
 requested retry delay. When every provider is unavailable, `LlmUnavailableError` (a transient
 error) lets the consume loop retry later; meanwhile the backlog waits in the topic.
+
+Each provider call is a CLIENT span with the provider, model, outcome, and token counts. Spans
+never hold prompt or answer text, and record errors by type only: their messages can quote the
+answer (a failed validation) or the provider's response. Metrics: each call's duration by provider
+and outcome, answers that came from a fallback provider, and circuit breakers opening.
 """
 
 import logging
@@ -19,10 +24,14 @@ from dataclasses import dataclass
 from typing import Any, Protocol
 
 import httpx2
+from opentelemetry import trace
+from opentelemetry.trace import SpanKind
 
+from filings_common import metrics, telemetry
 from filings_common.ratelimit import RateLimiter
 
 logger = logging.getLogger(__name__)
+tracer = trace.get_tracer(__name__)
 
 GEMINI_API = "https://generativelanguage.googleapis.com/v1beta"
 
@@ -55,6 +64,19 @@ def _raise_for_status(response: httpx2.Response, provider: str) -> None:
         raise RateLimitedError(f"{provider} rate limited", _retry_after(response))
     if response.status_code >= 400:
         raise LlmError(f"{provider} returned {response.status_code}: {response.text[:300]}")
+
+
+def _record_token_usage(usage: object, input_key: str, output_key: str) -> None:
+    """Token counts, when the provider reports them, on the current LLM call's span."""
+    if not isinstance(usage, dict):
+        return
+    span = trace.get_current_span()
+    for attribute, key in (
+        (telemetry.GEN_AI_INPUT_TOKENS, input_key),
+        (telemetry.GEN_AI_OUTPUT_TOKENS, output_key),
+    ):
+        if isinstance(count := usage.get(key), int):
+            span.set_attribute(attribute, count)
 
 
 def _retry_after(response: httpx2.Response) -> float | None:
@@ -103,9 +125,11 @@ class OpenAICompatibleProvider:
             raise LlmError(f"{self.name} unreachable: {exc!r}") from exc
         _raise_for_status(response, self.name)
         try:
-            content: str = response.json()["choices"][0]["message"]["content"]
+            body = response.json()
+            content: str = body["choices"][0]["message"]["content"]
         except (KeyError, IndexError, TypeError, ValueError) as exc:
             raise LlmError(f"{self.name} returned an unexpected response") from exc
+        _record_token_usage(body.get("usage"), "prompt_tokens", "completion_tokens")
         return content
 
 
@@ -133,7 +157,8 @@ class GeminiProvider:
 
     def generate_json(self, system: str, prompt: str, schema: dict[str, Any]) -> str:
         if self._limiter is not None:
-            self._limiter.acquire()
+            waited = self._limiter.acquire()
+            trace.get_current_span().set_attribute(telemetry.RATE_LIMIT_WAIT, waited)
         try:
             response = self._http.post(
                 f"/models/{self.model}:generateContent",
@@ -151,6 +176,7 @@ class GeminiProvider:
             raise LlmError(f"gemini unreachable: {exc!r}") from exc
         _raise_for_status(response, "gemini")
         body = response.json()
+        _record_token_usage(body.get("usageMetadata"), "promptTokenCount", "candidatesTokenCount")
         candidates = body.get("candidates") or []
         if not candidates:
             reason = (body.get("promptFeedback") or {}).get("blockReason", "no candidates")
@@ -185,11 +211,14 @@ class CircuitBreaker:
         self._failures = 0
         self._open_until = None
 
-    def record_failure(self, retry_after: float | None = None) -> None:
+    def record_failure(self, retry_after: float | None = None) -> bool:
+        """Count a failure. Returns True if the breaker opened because of it."""
         self._failures += 1
         half_open = self._open_until is not None  # a trial call after the cooldown failed
         if retry_after is not None or half_open or self._failures >= self._threshold:
             self._open_until = self._clock() + max(self._cooldown, retry_after or 0)
+            return True
+        return False
 
 
 @dataclass(frozen=True)
@@ -220,23 +249,54 @@ class FailoverChain:
         failing, so the next one is tried.
         """
         failures = []
-        for provider in self._providers:
+        for position, provider in enumerate(self._providers):
             breaker = self._breakers[provider.name]
             if not breaker.allow():
                 failures.append(f"{provider.name}: circuit open")
+                trace.get_current_span().add_event(
+                    "LLM provider skipped: circuit open", {telemetry.GEN_AI_PROVIDER: provider.name}
+                )
                 continue
-            try:
-                text = provider.generate_json(system, prompt, schema)
-                if self._validate is not None:
-                    self._validate(text)
-            except RateLimitedError as exc:
-                breaker.record_failure(retry_after=exc.retry_after)
-                failures.append(f"{provider.name}: {exc}")
-            except Exception as exc:  # any provider failure means: try the next provider
-                breaker.record_failure()
-                failures.append(f"{provider.name}: {exc!r}"[:300])
-            else:
-                breaker.record_success()
-                return Answer(text, provider.name, provider.model)
+            with telemetry.redacted_span(
+                tracer,
+                f"chat {provider.model}",
+                kind=SpanKind.CLIENT,
+                attributes={
+                    telemetry.GEN_AI_OPERATION: "chat",
+                    telemetry.GEN_AI_PROVIDER: provider.name,
+                    telemetry.GEN_AI_MODEL: provider.model,
+                },
+            ) as span:
+                answered, opened = False, False
+                started = time.monotonic()
+                try:
+                    text = provider.generate_json(system, prompt, schema)
+                    answered = True
+                    if self._validate is not None:
+                        self._validate(text)
+                except RateLimitedError as exc:
+                    opened = breaker.record_failure(retry_after=exc.retry_after)
+                    failures.append(f"{provider.name}: {exc}")
+                    outcome = "rate_limited"
+                    telemetry.record_error(span, exc, redact=True)
+                except Exception as exc:  # any provider failure means: try the next provider
+                    opened = breaker.record_failure()
+                    failures.append(f"{provider.name}: {exc!r}"[:300])
+                    outcome = "invalid" if answered else "error"
+                    telemetry.record_error(span, exc, redact=True)
+                else:
+                    breaker.record_success()
+                    outcome = "ok"
+                span.set_attribute(telemetry.OUTCOME, outcome)
+                provider_attribute = {telemetry.GEN_AI_PROVIDER: provider.name}
+                metrics.LLM_DURATION.record(
+                    time.monotonic() - started, {**provider_attribute, telemetry.OUTCOME: outcome}
+                )
+                if opened:
+                    metrics.LLM_BREAKER_OPENS.add(1, provider_attribute)
+                if outcome == "ok":
+                    if position > 0:
+                        metrics.LLM_FAILOVERS.add(1, provider_attribute)
+                    return Answer(text, provider.name, provider.model)
             logger.warning("LLM provider %s failed; trying the next one", provider.name)
         raise LlmUnavailableError("; ".join(failures))

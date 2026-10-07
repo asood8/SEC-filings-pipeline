@@ -7,22 +7,32 @@ Delivery is at least once: if the relay crashes after publishing but before mark
 published, those rows are published again. Consumers are idempotent on the accession number, so a
 repeat is harmless. Run a single relay replica to keep publish order; `SKIP LOCKED` only guarantees
 that two relays never publish the same row concurrently.
+
+Each row also stores the trace context of the transaction that wrote it. The relay publishes the
+row under a short span that continues that trace, and sends the span's context in the message
+headers, so a filing's trace carries on through Kafka to the next stage (see `telemetry`). The
+`filings.outbox.published` metric counts relayed rows by topic.
 """
 
 import json
 import logging
 import threading
+from collections import Counter
 from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import Any, Protocol
 
 import sqlalchemy as sa
+from opentelemetry import trace
+from opentelemetry.trace import Span, SpanKind
 from sqlalchemy.orm import Session, sessionmaker
 
+from filings_common import metrics, telemetry
 from filings_common.db import OutboxEvent
-from filings_common.events import Event
+from filings_common.events import Event, Topic
 
 logger = logging.getLogger(__name__)
+tracer = trace.get_tracer(__name__)
 
 ERROR_BACKOFF_SECONDS = 5.0
 
@@ -42,8 +52,14 @@ class Publisher(Protocol):
 
 
 def enqueue(session: Session, topic: str, event: Event) -> OutboxEvent:
-    """Add an event to the outbox as part of the session's current transaction."""
-    row = OutboxEvent(topic=topic, key=event.key, payload=event.model_dump(mode="json"))
+    """Add an event to the outbox as part of the session's current transaction, with the active
+    span's trace context."""
+    row = OutboxEvent(
+        topic=topic,
+        key=event.key,
+        payload=event.model_dump(mode="json"),
+        trace_context=telemetry.current_trace_context(),
+    )
     session.add(row)
     return row
 
@@ -66,15 +82,51 @@ def relay_batch(
         ).all()
         if not rows:
             return 0
-        publisher.publish(
-            [OutboundMessage(r.topic, r.key, encode_payload(r.payload)) for r in rows]
-        )
+        spans = [_publish_span(row, len(rows)) for row in rows]
+        messages = [
+            OutboundMessage(r.topic, r.key, encode_payload(r.payload), telemetry.kafka_headers(s))
+            for r, s in zip(rows, spans, strict=True)
+        ]
+        try:
+            publisher.publish(messages)
+        except Exception as exc:
+            for span in spans:
+                telemetry.record_error(span, exc)
+            raise
+        finally:
+            for span in spans:
+                span.end()
         session.execute(
             sa.update(OutboxEvent)
             .where(OutboxEvent.id.in_([r.id for r in rows]))
             .values(published_at=sa.func.now())
         )
+        by_topic = Counter(r.topic for r in rows)
+    for topic, count in by_topic.items():  # counted once marked published (committed)
+        metrics.OUTBOX_PUBLISHED.add(count, metrics.topic(topic))
     return len(rows)
+
+
+def _publish_span(row: OutboxEvent, batch_size: int) -> Span:
+    """A span for publishing one row, from the publish call until the broker acknowledges it.
+
+    It is a child of the span that wrote the row (not merely linked to it), so the trace of a
+    filing stays one trace across the outbox and Kafka. Rows written outside any trace (such as
+    replays) start a new trace here.
+    """
+    return tracer.start_span(
+        f"send {row.topic}",
+        context=telemetry.continue_from(row.trace_context),
+        kind=SpanKind.PRODUCER,
+        attributes={
+            telemetry.MESSAGING_SYSTEM: "kafka",
+            telemetry.MESSAGING_OPERATION: "send",
+            telemetry.MESSAGING_DESTINATION: row.topic,
+            telemetry.MESSAGING_KEY: row.key,
+            telemetry.MESSAGING_BATCH_SIZE: batch_size,
+            "filings.outbox.id": row.id,
+        },
+    )
 
 
 def run_relay(
@@ -86,6 +138,7 @@ def run_relay(
     idle_seconds: float = 1.0,
 ) -> None:
     """Relay until `stop` is set. Failed batches stay unpublished and are retried after a pause."""
+    metrics.start_at_zero(metrics.OUTBOX_PUBLISHED, (metrics.topic(t.value) for t in Topic))
     while not stop.is_set():
         try:
             published = relay_batch(sessions, publisher, batch_size)

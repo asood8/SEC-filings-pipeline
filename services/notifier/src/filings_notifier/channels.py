@@ -169,7 +169,9 @@ class SmtpEmailSender:
                 smtp.login(self._username, self._password)
                 smtp.send_message(_email_message(target, alert, self._sender))
         except smtplib.SMTPRecipientsRefused as exc:
-            raise PermanentDeliveryError(f"recipient refused: {exc.recipients}") from exc
+            # The codes only: the refusal is keyed by the recipient's (personal) address.
+            codes = ", ".join(str(code) for code, _ in exc.recipients.values())
+            raise PermanentDeliveryError(f"recipient refused (SMTP {codes})") from exc
         except smtplib.SMTPResponseException as exc:
             if 500 <= exc.smtp_code < 600:
                 raise PermanentDeliveryError(f"SMTP {exc.smtp_code}") from exc

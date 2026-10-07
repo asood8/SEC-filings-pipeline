@@ -5,6 +5,7 @@ import logging
 from datetime import UTC, datetime, timedelta
 
 import redis
+from opentelemetry import trace
 
 from filings_common.config import (
     DatabaseSettings,
@@ -15,6 +16,7 @@ from filings_common.config import (
 from filings_common.db import create_engine, session_factory
 from filings_common.edgar import EdgarClient
 from filings_common.storage import object_store_from_settings
+from filings_common.telemetry import setup_telemetry
 from filings_discovery.companies import (
     UnknownTickersError,
     parse_company_tickers_exchange,
@@ -26,6 +28,7 @@ from filings_discovery.job import backfill_exhibits, discover
 from filings_discovery.watchlist import WatchlistError, load_watchlist
 
 logger = logging.getLogger("filings_discovery")
+tracer = trace.get_tracer(__name__)
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -37,9 +40,15 @@ def main(argv: list[str] | None = None) -> int:
         "fetch-exhibits", help="download EX-99 exhibits for known filings that have none"
     )
     args = parser.parse_args(argv)
-    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s %(message)s")
+    telemetry = setup_telemetry("filings-discovery")
     logging.getLogger("httpx2").setLevel(logging.WARNING)  # one line per request is too noisy
+    try:
+        return _run(args.command)
+    finally:
+        telemetry.shutdown()  # a job exits right after: export its spans first
 
+
+def _run(command: str) -> int:
     settings = DiscoverySettings()
     try:
         tickers = load_watchlist(settings.watchlist_path)
@@ -52,23 +61,25 @@ def main(argv: list[str] | None = None) -> int:
     redis_client = redis.Redis.from_url(RedisSettings().redis_url)
     try:
         with EdgarClient.from_settings(EdgarSettings(), redis_client) as edgar:
-            if args.command == "load-companies":
-                records = parse_company_tickers_exchange(edgar.company_tickers_exchange())
-                try:
-                    ciks = resolve_watchlist(records, tickers)
-                except UnknownTickersError as exc:
-                    logger.error("%s", exc)
-                    return 2
-                with sessions.begin() as session:
-                    count = sync_companies(session, records, ciks)
+            if command == "load-companies":
+                with tracer.start_as_current_span("load companies"):
+                    records = parse_company_tickers_exchange(edgar.company_tickers_exchange())
+                    try:
+                        ciks = resolve_watchlist(records, tickers)
+                    except UnknownTickersError as exc:
+                        logger.error("%s", exc)
+                        return 2
+                    with sessions.begin() as session:
+                        count = sync_companies(session, records, ciks)
                 logger.info("loaded %d companies, %d on the watchlist", count, len(ciks))
                 return 0
 
             store = object_store_from_settings(ObjectStoreSettings())
-            if args.command == "fetch-exhibits":
-                checked, stored = backfill_exhibits(
-                    sessions, edgar, store, form_types=settings.exhibit_form_types
-                )
+            if command == "fetch-exhibits":
+                with tracer.start_as_current_span("fetch exhibits"):
+                    checked, stored = backfill_exhibits(
+                        sessions, edgar, store, form_types=settings.exhibit_form_types
+                    )
                 logger.info("checked %d filings, stored %d exhibits", checked, stored)
                 return 0
 

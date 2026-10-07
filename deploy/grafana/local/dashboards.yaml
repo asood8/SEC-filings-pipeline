@@ -1,0 +1,16 @@
+# Local viewer only (`make obs-up`): Grafana loads the dashboards in deploy/grafana/dashboards,
+# which docker-compose.yml mounts at /otel-lgtm/filings-dashboards, and reloads them when they
+# change. Grafana Cloud gets the same JSON files from Terraform. See docs/adr/0016-observability.md.
+apiVersion: 1
+
+providers:
+  - name: SEC Filings
+    type: file
+    folder: SEC Filings
+    folderUid: sec-filings
+    # Edits made in Grafana can't be saved over these files: change the JSON instead (or export
+    # an edited copy from Grafana into it).
+    allowUiUpdates: false
+    updateIntervalSeconds: 10
+    options:
+      path: /otel-lgtm/filings-dashboards

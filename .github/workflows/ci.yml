@@ -79,3 +79,29 @@ jobs:
 
       - name: Lint, type-check, test, build
         run: make web-check
+
+  terraform:
+    name: Terraform
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+
+      # The same Terraform release as development (ADR-0018). No credentials and no accounts:
+      # the tests run against mock providers, and nothing is planned against a real one.
+      - uses: hashicorp/setup-terraform@v4
+        with:
+          terraform_version: 1.16.5
+          terraform_wrapper: false
+
+      # The providers the lock file names (make tf-check keeps them in this directory).
+      - name: Cache Terraform providers
+        uses: actions/cache@v6
+        with:
+          path: ~/.terraform.d/plugin-cache
+          key: terraform-providers-${{ hashFiles('infra/terraform/envs/production/.terraform.lock.hcl') }}
+
+      # Format check, `init -backend=false` with the committed lock file, validate, the tests,
+      # and the free-tier resource allowlist.
+      - name: Format, validate, test, free-tier allowlist
+        run: make tf-check

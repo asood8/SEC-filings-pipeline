@@ -3,12 +3,12 @@
 [![CI](https://github.com/asood8/SEC-filings-pipeline/actions/workflows/ci.yml/badge.svg)](https://github.com/asood8/SEC-filings-pipeline/actions/workflows/ci.yml)
 
 > **Work in progress.** This project is under active development. Ingestion, parsing,
-> summarization, search, the read API, and alerts run end to end on real SEC data; the website
-> is being built, and sign-in and the cloud deployment are still to come. See [Progress](#progress).
+> summarization, search, the API, Google sign-in, alerts, and the website run end to end locally
+> on real SEC data; the cloud deployment is still to come. See [Progress](#progress).
 
 A pipeline that watches SEC EDGAR for new filings from a watchlist of public companies, parses
 them, summarizes them in plain English, makes them searchable by keyword and by meaning, and
-(when finished) alerts subscribed users. It is designed to run indefinitely on free tiers at $0/month, on a single arm64
+alerts subscribed users on Discord, Slack, or email. It is designed to run indefinitely on free tiers at $0/month, on a single arm64
 VM, and it's built with production practices: event-driven services, infrastructure as code,
 CI, tests against real filings, and architecture decision records.
 
@@ -50,10 +50,10 @@ Example headlines from that run (public filings):
 | 1. Thin vertical slice | EDGAR client, discovery, outbox relay, Form 4 parser, `GET /filings` | Done |
 | 2. Summarization | 8-K items and exhibits, Form 4 template, LLM failover, replay | Done |
 | 3. Search and API | Full-text and semantic search (pgvector), caching, rate limiting | Done |
-| 4. Users and alerts | Google sign-in, subscriptions, Discord/Slack/email alerts | In progress: notifier done; sign-in and subscriptions next |
-| 5. Frontend | React site (Vite + TypeScript) on Cloudflare Pages | In progress: feed, search, company and filing pages done; sign-in and subscriptions next |
+| 4. Users and alerts | Google sign-in, subscriptions, Discord/Slack/email alerts | In progress: all built; waiting for a real new filing to reach Discord |
+| 5. Frontend | React site (Vite + TypeScript) on Cloudflare Pages | In progress: every page built and working against the local API |
 | 6. Observability | OpenTelemetry traces, metrics, Grafana dashboards and alerts | Planned |
-| 7. Production | Terraform, k3s on Oracle Cloud's free tier, Argo CD, multi-arch images | Planned |
+| 7. Production | Terraform, k3s on Oracle Cloud's free tier, Argo CD, multi-arch images | Started: service images build (amd64; arm64-ready) |
 | 8. Hardening | Load tests, local-model benchmark, backups, runbook | Planned |
 
 The full plan is in the [project brief](docs/PROJECT_BRIEF.md#8-build-plan).
@@ -79,8 +79,7 @@ flowchart LR
   API --> PG
 ```
 
-This is the target design. The website is in progress, and the cloud deployment is not built
-yet.
+This is the target design. Everything except the cloud deployment runs locally today.
 
 Each stage is a separate service connected by Redpanda (Kafka API) topics. Some design choices
 worth a look:
@@ -98,6 +97,9 @@ worth a look:
 - **Exactly-once alerts**: one notification row per (subscription, filing), delivered under a
   row lock, so redeliveries and full replays never alert twice; webhook targets are restricted
   to official Discord and Slack URLs. ([ADR-0012](docs/adr/0012-notifier-and-exactly-once-alerts.md))
+- **Sign-in without handling passwords**: Google's ID token is verified against Google's
+  published keys, then exchanged for the API's own HttpOnly session cookie; only a hash of each
+  session token is stored. ([ADR-0013](docs/adr/0013-sign-in-and-sessions.md))
 - **Hybrid search in Postgres**: full-text and vector results merged with reciprocal rank
   fusion, degrading to keywords when the embedding model is down.
   ([ADR-0011](docs/adr/0011-search-and-public-api.md))
@@ -135,9 +137,18 @@ make api                                   # http://127.0.0.1:8000, interactive 
 make web-install && make web               # the website on http://localhost:3000
 ```
 
+Or run every stage at once, with discovery every 10 minutes: `make pipeline` (Ctrl+C stops it).
+
+Sign-in needs a Google OAuth client ID (Google Cloud console, APIs & Services, Credentials: a
+"Web application" client with `http://localhost` and `http://localhost:3000` as authorized
+JavaScript origins; no secret needed) in `.env` as `GOOGLE_CLIENT_ID`. Open the website as
+`localhost`, not `127.0.0.1`, so the session cookie is shared with the API.
+
 The API: `GET /search?q=...` (hybrid by default; `mode=keyword|semantic`), `GET /filings`,
 `GET /filings/{accession_no}`, `GET /companies`, and `GET /companies/{ticker}`. Lists use cursor
-pagination, and responses are cached briefly and rate-limited per client through Redis.
+pagination, and responses are cached briefly and rate-limited per client through Redis. Signed in:
+`POST /auth/google`, `POST /auth/logout`, `GET`/`DELETE /me`, and alert subscriptions at
+`/subscriptions` (`POST /subscriptions/batch` adds several companies and destinations at once).
 
 8-K summaries need an LLM: set `GEMINI_API_KEY` (free from Google AI Studio, no billing needed)
 and/or a local model. `make llm-up` runs Ollama in Docker and pulls `llama3.2:3b` and the
@@ -160,6 +171,8 @@ uv run filings-replay parsed --form-type 4 # re-summarize history (also: discove
 | `make llm-up` / `make llm-down` | Start (and pull the default model) / stop the optional local LLM |
 | `make migrate` | Apply database migrations (`uv run alembic revision --autogenerate -m "..."` creates one) |
 | `make api` | Run the API locally with auto-reload |
+| `make pipeline` | Run every pipeline stage locally, with discovery every 10 minutes |
+| `make images` | Build the service container images (`make image-api` builds one) |
 | `make lint` | ruff (lint + format check) and mypy |
 | `make fmt` | Auto-fix lint issues and format code |
 | `make test` | Run all tests |
@@ -192,6 +205,8 @@ web/                  the website: Vite + React + TypeScript, static files for C
 tests/fixtures/       real EDGAR documents used by the parser tests
 docs/PROJECT_BRIEF.md spec, architecture, and build plan
 docs/adr/             architecture decision records
+docker/               the Dockerfile for the service images
+scripts/              development helpers (`make pipeline`)
 docker-compose.yml    local backing services
 ```
 

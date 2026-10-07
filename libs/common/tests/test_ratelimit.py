@@ -6,7 +6,7 @@ from concurrent.futures import ThreadPoolExecutor
 import pytest
 import redis
 
-from filings_common.ratelimit import RedisTokenBucket
+from filings_common.ratelimit import RedisRateLimit, RedisTokenBucket
 
 pytestmark = pytest.mark.integration
 
@@ -58,3 +58,13 @@ def test_bucket_refills_while_idle_and_then_expires(redis_client: redis.Redis) -
 def test_rejects_nonsense_configuration(redis_client: redis.Redis) -> None:
     with pytest.raises(ValueError, match="rate_per_second"):
         RedisTokenBucket(redis_client, new_key(), rate_per_second=0)
+
+
+def test_admission_allows_the_burst_then_rejects_with_retry_time(redis_client: redis.Redis) -> None:
+    limit = RedisRateLimit(redis_client, new_key(), rate_per_second=10, burst=3)
+    assert [limit.check("client-a") for _ in range(3)] == [0, 0, 0]
+    retry = limit.check("client-a")
+    assert 0 < retry <= 0.1
+    assert limit.check("client-b") == 0  # each client has its own bucket
+    time.sleep(retry + 0.02)
+    assert limit.check("client-a") == 0

@@ -98,7 +98,8 @@ services:
     environment:
       # Prompts are up to ~6k tokens; Ollama's default context would silently cut them.
       OLLAMA_CONTEXT_LENGTH: "8192"
-      OLLAMA_MAX_LOADED_MODELS: "1"
+      # The summarizer uses an LLM and an embedding model per filing; keep both loaded.
+      OLLAMA_MAX_LOADED_MODELS: "2"
       OLLAMA_NUM_PARALLEL: "1"
       OLLAMA_KEEP_ALIVE: "30m"
     ports:

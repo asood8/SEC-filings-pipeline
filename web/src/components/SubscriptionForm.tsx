@@ -1,74 +1,147 @@
 import { useQuery } from '@tanstack/react-query'
 import { type FormEvent, useState } from 'react'
-import { useCreateSubscription } from '../api/account'
-import type { Channel, NewSubscription, User } from '../api/client'
+import { useCreateSubscriptions } from '../api/account'
+import type { Destination, Subscription, User } from '../api/client'
 import { watchlistQuery } from '../api/queries'
 import { ErrorMessage } from './QueryStatus'
 import styles from './Subscriptions.module.css'
 
-const CHANNELS: { value: Channel; label: string; placeholder?: string }[] = [
+type Webhook = 'discord' | 'slack'
+
+const WEBHOOKS: { channel: Webhook; label: string; placeholder: string }[] = [
   {
-    value: 'discord',
+    channel: 'discord',
     label: 'Discord',
     placeholder: 'https://discord.com/api/webhooks/…',
   },
   {
-    value: 'slack',
+    channel: 'slack',
     label: 'Slack',
     placeholder: 'https://hooks.slack.com/services/…',
   },
-  { value: 'email', label: 'Email' },
 ]
 
-type Props = { user: User; initialTicker?: string }
+const NEW_WEBHOOK = 'new'
 
-export function SubscriptionForm({ user, initialTicker = '' }: Props) {
+/** One entry per webhook already in use: its masked URL and a subscription to copy it from. */
+function savedWebhooks(subscriptions: Subscription[], channel: Webhook) {
+  const byTarget = new Map<string, number>()
+  for (const s of subscriptions) {
+    if (s.channel === channel && !byTarget.has(s.target))
+      byTarget.set(s.target, s.id)
+  }
+  return [...byTarget].map(([target, id]) => ({ target, id }))
+}
+
+type Props = {
+  user: User
+  subscriptions: Subscription[]
+  initialTicker?: string
+}
+
+export function SubscriptionForm({
+  user,
+  subscriptions,
+  initialTicker,
+}: Props) {
   const companies = useQuery(watchlistQuery())
-  const create = useCreateSubscription()
-  // Controlled: the companies load after the form renders, so a default value would be lost.
-  const [ticker, setTicker] = useState(initialTicker.toUpperCase())
-  const [channel, setChannel] = useState<Channel>('discord')
-  const webhook = CHANNELS.find((c) => c.value === channel)?.placeholder
+  const create = useCreateSubscriptions()
+  const [tickers, setTickers] = useState<string[]>(
+    initialTicker ? [initialTicker.toUpperCase()] : [],
+  )
+  const [filter, setFilter] = useState('')
+  const [channels, setChannels] = useState({
+    discord: false,
+    slack: false,
+    email: false,
+  })
+  const [result, setResult] = useState<string>()
+
+  const needle = filter.trim().toLowerCase()
+  const shown = (companies.data?.items ?? []).filter(
+    (c) =>
+      tickers.includes(c.ticker) ||
+      c.ticker.toLowerCase().includes(needle) ||
+      c.name.toLowerCase().includes(needle),
+  )
+  const destinations = Object.values(channels).filter(Boolean).length
+  const total = tickers.length * destinations
+
+  function toggleTicker(ticker: string) {
+    setTickers((current) =>
+      current.includes(ticker)
+        ? current.filter((t) => t !== ticker)
+        : [...current, ticker],
+    )
+  }
 
   function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
     const form = event.currentTarget
     const data = new FormData(form)
-    const body: NewSubscription = {
-      ticker,
-      channel,
-      form_types: data.getAll('form') as NewSubscription['form_types'],
-      target: webhook ? String(data.get('target')).trim() : null,
+    const chosen: Destination[] = []
+    for (const { channel } of WEBHOOKS) {
+      if (!channels[channel]) continue
+      const saved = data.get(`${channel}-saved`)?.toString()
+      chosen.push(
+        saved && saved !== NEW_WEBHOOK
+          ? { channel, target_from: Number(saved) }
+          : { channel, target: String(data.get(`${channel}-url`)).trim() },
+      )
     }
-    create.mutate(body, {
-      onSuccess: () => {
-        form.reset()
-        setTicker('')
+    if (channels.email) chosen.push({ channel: 'email' })
+    setResult(undefined)
+    create.mutate(
+      {
+        tickers,
+        form_types: data.getAll('form') as SubscriptionBatchForms,
+        destinations: chosen,
       },
-    })
+      {
+        onSuccess: ({ created, existing }) => {
+          const added = `Added ${created.length} alert${created.length === 1 ? '' : 's'}.`
+          setResult(
+            existing.length
+              ? `${added} ${existing.length} already existed.`
+              : added,
+          )
+          form.reset()
+          setTickers([])
+          setChannels({ discord: false, slack: false, email: false })
+        },
+      },
+    )
   }
 
   return (
     <form className={styles.form} onSubmit={submit}>
-      <h2>Add an alert</h2>
-      <label>
-        Company
-        <select
-          name="ticker"
-          value={ticker}
-          onChange={(event) => setTicker(event.target.value)}
-          required
-        >
-          <option value="" disabled>
-            Choose a company
-          </option>
-          {companies.data?.items.map((company) => (
-            <option key={company.cik} value={company.ticker}>
-              {company.ticker}: {company.name}
-            </option>
+      <h2>Add alerts</h2>
+      <fieldset>
+        <legend>
+          Companies <span className="muted">({tickers.length} selected)</span>
+        </legend>
+        <input
+          type="search"
+          placeholder="Filter by name or ticker"
+          aria-label="Filter companies"
+          value={filter}
+          onChange={(event) => setFilter(event.target.value)}
+        />
+        <div className={styles.companies}>
+          {shown.map((company) => (
+            <label key={company.cik} className={styles.chip}>
+              <input
+                type="checkbox"
+                checked={tickers.includes(company.ticker)}
+                onChange={() => toggleTicker(company.ticker)}
+              />
+              <span className={styles.ticker}>{company.ticker}</span>
+              <span className="muted">{company.name}</span>
+            </label>
           ))}
-        </select>
-      </label>
+        </div>
+      </fieldset>
+
       <fieldset>
         <legend>Forms (none checked means all)</legend>
         <label className={styles.inline}>
@@ -80,46 +153,115 @@ export function SubscriptionForm({ user, initialTicker = '' }: Props) {
           (8-K)
         </label>
       </fieldset>
-      <label>
-        Send to
-        <select
-          name="channel"
-          value={channel}
-          onChange={(event) => setChannel(event.target.value as Channel)}
-        >
-          {CHANNELS.map((c) => (
-            <option key={c.value} value={c.value}>
-              {c.label}
-            </option>
-          ))}
-        </select>
-      </label>
-      {webhook ? (
-        <label>
-          Webhook URL
-          <input
-            name="target"
-            type="url"
-            required
-            placeholder={webhook}
-            autoComplete="off"
+
+      <fieldset>
+        <legend>Send to (one or more)</legend>
+        {WEBHOOKS.map(({ channel, label, placeholder }) => (
+          <WebhookDestination
+            key={channel}
+            channel={channel}
+            label={label}
+            placeholder={placeholder}
+            checked={channels[channel]}
+            onToggle={(on) => setChannels((c) => ({ ...c, [channel]: on }))}
+            saved={savedWebhooks(subscriptions, channel)}
           />
-          <span className="muted">
-            Anyone with this URL can post to the channel, so keep it private.
-            After saving, only its last 4 characters are shown.
-          </span>
+        ))}
+        <label className={styles.inline}>
+          <input
+            type="checkbox"
+            checked={channels.email}
+            onChange={(event) =>
+              setChannels((c) => ({ ...c, email: event.target.checked }))
+            }
+          />
+          Email to {user.email}
         </label>
-      ) : (
-        <p className="muted">
-          Email alerts go to your account's address, {user.email}.
+      </fieldset>
+
+      {create.isError && <ErrorMessage error={create.error} />}
+      {result && (
+        <p className="muted" role="status">
+          {result}
         </p>
       )}
-      {create.isError && <ErrorMessage error={create.error} />}
       <p>
-        <button type="submit" disabled={create.isPending}>
-          {create.isPending ? 'Saving…' : 'Add alert'}
+        <button type="submit" disabled={total === 0 || create.isPending}>
+          {create.isPending
+            ? 'Saving…'
+            : total === 0
+              ? 'Choose companies and where to send'
+              : `Add ${total} alert${total === 1 ? '' : 's'}`}
         </button>
       </p>
     </form>
+  )
+}
+
+type SubscriptionBatchForms = ('4' | '8-K')[]
+
+type WebhookProps = {
+  channel: Webhook
+  label: string
+  placeholder: string
+  checked: boolean
+  onToggle: (checked: boolean) => void
+  saved: { target: string; id: number }[]
+}
+
+function WebhookDestination({
+  channel,
+  label,
+  placeholder,
+  checked,
+  onToggle,
+  saved,
+}: WebhookProps) {
+  const [choice, setChoice] = useState(saved[0]?.id.toString() ?? NEW_WEBHOOK)
+  const pasting = saved.length === 0 || choice === NEW_WEBHOOK
+  return (
+    <div className={styles.destination}>
+      <label className={styles.inline}>
+        <input
+          type="checkbox"
+          checked={checked}
+          onChange={(event) => onToggle(event.target.checked)}
+        />
+        {label}
+      </label>
+      {checked && (
+        <div className={styles.webhook}>
+          {saved.length > 0 && (
+            <label>
+              <span className="visually-hidden">{label} webhook</span>
+              <select
+                name={`${channel}-saved`}
+                value={choice}
+                onChange={(event) => setChoice(event.target.value)}
+              >
+                {saved.map(({ target, id }) => (
+                  <option key={id} value={id}>
+                    Same webhook as before ({target.slice(-5)})
+                  </option>
+                ))}
+                <option value={NEW_WEBHOOK}>A new webhook URL…</option>
+              </select>
+            </label>
+          )}
+          {pasting && (
+            <label>
+              <span className="visually-hidden">{label} webhook URL</span>
+              <input
+                name={`${channel}-url`}
+                type="url"
+                required
+                placeholder={placeholder}
+                autoComplete="off"
+              />
+            </label>
+          )}
+        </div>
+      )}
+    </div>
   )
 }

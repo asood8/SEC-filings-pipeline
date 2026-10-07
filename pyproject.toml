@@ -36,7 +36,7 @@ select = [
 python_version = "3.12"
 strict = true
 plugins = ["pydantic.mypy"]
-files = ["libs", "services", "conftest.py"]
+files = ["libs", "services", "scripts", "conftest.py"]
 # Tests dirs have no __init__.py and share file names across packages, so module
 # names are derived from paths. Each src dir is listed so package modules keep
 # their import names (e.g. filings_common) instead of path-based ones.

@@ -19,7 +19,15 @@ from sqlalchemy.orm import Session
 
 from filings_api.auth import CurrentUser
 from filings_api.queries import SessionDep, company_by_ticker
-from filings_api.schemas import CompanyRef, SubscriptionCreate, SubscriptionOut, SubscriptionUpdate
+from filings_api.schemas import (
+    CompanyRef,
+    Destination,
+    SubscriptionBatch,
+    SubscriptionBatchOut,
+    SubscriptionCreate,
+    SubscriptionOut,
+    SubscriptionUpdate,
+)
 from filings_common.db import Channel, Company, Subscription, User
 from filings_common.targets import masked_target, target_is_valid
 
@@ -131,7 +139,7 @@ def _check_not_duplicate(
         raise _duplicate(company.ticker)
 
 
-def _commit(session: Session, company: Company) -> None:
+def _commit(session: Session, company: Company | None) -> None:
     """Commit. The unique constraint on (user_id, cik, channel, target) backs up the duplicate
     check, e.g. against rows written outside the API: a violation is a 409 too."""
     try:
@@ -139,8 +147,16 @@ def _commit(session: Session, company: Company) -> None:
     except sa.exc.IntegrityError as exc:
         session.rollback()
         if getattr(exc.orig, "sqlstate", None) == UNIQUE_VIOLATION:
+            if company is None:
+                raise _error(409, "a subscription was added at the same time; try again") from None
             raise _duplicate(company.ticker) from None
         raise
+
+
+def _count(session: Session, user: User) -> int:
+    return session.execute(
+        sa.select(sa.func.count()).select_from(Subscription).where(Subscription.user_id == user.id)
+    ).scalar_one()
 
 
 @router.get(
@@ -181,10 +197,7 @@ def create_subscription(
         )
     user = _lock_user(session, user)
     target = _checked_target(user, body.channel, body.target)
-    count = session.execute(
-        sa.select(sa.func.count()).select_from(Subscription).where(Subscription.user_id == user.id)
-    ).scalar_one()
-    if count >= MAX_SUBSCRIPTIONS:
+    if _count(session, user) >= MAX_SUBSCRIPTIONS:
         raise _error(
             409, f"you have the maximum of {MAX_SUBSCRIPTIONS} subscriptions; delete one first"
         )
@@ -199,6 +212,100 @@ def create_subscription(
     session.add(subscription)
     _commit(session, company)
     return _subscription_out(subscription, company)
+
+
+def _batch_target(session: Session, user: User, destination: Destination) -> str:
+    """The target to store for one destination of a batch, or 422."""
+    if destination.target_from is None or destination.channel is Channel.EMAIL:
+        return _checked_target(user, destination.channel, destination.target)
+    if destination.target is not None:
+        raise _error(422, "give either target or target_from, not both")
+    source = session.scalars(
+        sa.select(Subscription).where(
+            Subscription.id == destination.target_from, Subscription.user_id == user.id
+        )
+    ).one_or_none()
+    if source is None or source.channel is not destination.channel:
+        raise _error(
+            422, f"target_from must be one of your {destination.channel.value} subscriptions"
+        )
+    return source.target
+
+
+@router.post(
+    "/subscriptions/batch",
+    status_code=201,
+    summary="Subscribe to several companies and destinations at once",
+    description=(
+        "Creates every combination of `tickers` and `destinations`, all or nothing. Combinations "
+        "you already have are left unchanged and listed in `existing`. A webhook can be reused "
+        "from an existing subscription with `target_from`. The "
+        f"{MAX_SUBSCRIPTIONS}-subscription limit applies to the total."
+    ),
+)
+def create_subscriptions(
+    session: SessionDep, user: CurrentUser, body: SubscriptionBatch
+) -> SubscriptionBatchOut:
+    companies: dict[int, Company] = {}
+    unknown, unwatched = [], []
+    for ticker in body.tickers:
+        company = company_by_ticker(session, ticker)
+        if company is None:
+            unknown.append(ticker.strip())
+        elif not company.on_watchlist:
+            unwatched.append(company.ticker)
+        else:
+            companies.setdefault(company.cik, company)
+    if unknown:
+        raise _error(422, f"unknown ticker(s): {', '.join(unknown)}")
+    if unwatched:
+        raise _error(
+            422,
+            f"not on the watchlist (filings, and so alerts, are only collected for watchlist "
+            f"companies): {', '.join(unwatched)}",
+        )
+
+    user = _lock_user(session, user)
+    targets = list(
+        dict.fromkeys((d.channel, _batch_target(session, user, d)) for d in body.destinations)
+    )
+    existing = {
+        (subscription.cik, subscription.channel, subscription.target): subscription
+        for subscription in session.scalars(
+            sa.select(Subscription).where(
+                Subscription.user_id == user.id, Subscription.cik.in_(companies)
+            )
+        )
+    }
+    created: list[Subscription] = []
+    already: list[Subscription] = []
+    for company in companies.values():
+        for channel, target in targets:
+            if match := existing.get((company.cik, channel, target)):
+                already.append(match)
+            else:
+                created.append(
+                    Subscription(
+                        user_id=user.id,
+                        cik=company.cik,
+                        form_types=list(body.form_types),
+                        channel=channel,
+                        target=target,
+                    )
+                )
+    total = _count(session, user) + len(created)
+    if total > MAX_SUBSCRIPTIONS:
+        raise _error(
+            409,
+            f"that would make {total} subscriptions, over the maximum of {MAX_SUBSCRIPTIONS}; "
+            "choose fewer or delete some first",
+        )
+    session.add_all(created)
+    _commit(session, None)
+    return SubscriptionBatchOut(
+        created=[_subscription_out(s, companies[s.cik]) for s in created],
+        existing=[_subscription_out(s, companies[s.cik]) for s in already],
+    )
 
 
 @router.patch(

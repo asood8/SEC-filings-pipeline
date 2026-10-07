@@ -1,5 +1,5 @@
 .DEFAULT_GOAL := help
-.PHONY: help setup sync up down ps logs llm-up llm-down migrate api images lint fmt test web-install web web-types web-check
+.PHONY: help setup sync up down ps logs llm-up llm-down migrate api pipeline images lint fmt test web-install web web-types web-check
 
 help: ## List targets
 	@grep -E '^[a-z-]+:.*## ' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*## "} {printf "  %-11s %s\n", $$1, $$2}'
@@ -41,6 +41,11 @@ migrate: ## Apply database migrations to DATABASE_URL
 
 api: ## Run the API locally with auto-reload on http://127.0.0.1:8000 (docs at /docs)
 	uv run uvicorn --factory filings_api.app:create_app --reload
+
+EVERY ?= 10
+
+pipeline: ## Run every pipeline stage locally until Ctrl+C, with discovery every 10 minutes (EVERY=n)
+	uv run python scripts/dev_pipeline.py --every $(EVERY)
 
 SERVICES := api discovery parser summarizer notifier
 

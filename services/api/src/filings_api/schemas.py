@@ -162,3 +162,38 @@ class SubscriptionOut(BaseModel):
         )
     )
     created_at: datetime
+
+
+class Destination(BaseModel):
+    """Where alerts go. For a webhook, give its URL as `target`, or `target_from` to reuse the
+    webhook of one of your existing subscriptions without pasting it again."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    channel: Channel
+    target: str | None = Field(default=None, max_length=500, description=_TARGET_HELP)
+    target_from: int | None = Field(
+        default=None,
+        ge=1,
+        le=2**63 - 1,
+        description="The id of one of your subscriptions on the same channel, to copy its target.",
+    )
+
+
+class SubscriptionBatch(BaseModel):
+    """Every combination of `tickers` and `destinations`, with the same form types."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    tickers: list[Annotated[str, Field(min_length=1, max_length=20)]] = Field(
+        min_length=1, max_length=25, examples=[["AAPL", "MSFT"]]
+    )
+    form_types: FormTypes = Field(default_factory=list, description=_FORM_TYPES_HELP)
+    destinations: list[Destination] = Field(min_length=1, max_length=5)
+
+
+class SubscriptionBatchOut(BaseModel):
+    created: list[SubscriptionOut]
+    existing: list[SubscriptionOut] = Field(
+        description="Combinations you were already subscribed to, left unchanged."
+    )

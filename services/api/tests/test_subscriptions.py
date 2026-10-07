@@ -375,3 +375,114 @@ def test_signed_in_with_google_and_the_real_cookie(make_client: ClientFactory, g
 
     assert client.post("/auth/logout").status_code == 204
     assert client.get("/subscriptions").status_code == 401
+
+
+def batch(client: TestClient, **fields: Any) -> httpx2.Response:
+    body = {"tickers": ["AAPL"], "destinations": [{"channel": "discord", "target": DISCORD}]}
+    return client.post("/subscriptions/batch", json=body | fields)
+
+
+def test_batch_creates_every_combination(sign_in: SignIn) -> None:
+    alice = sign_in("alice")
+    response = batch(
+        alice,
+        tickers=["AAPL", "brk.b", "AAPL"],  # duplicates collapse
+        form_types=["8-K"],
+        destinations=[
+            {"channel": "discord", "target": DISCORD},
+            {"channel": "slack", "target": SLACK},
+            {"channel": "email"},
+        ],
+    )
+    assert response.status_code == 201, response.text
+    created = response.json()["created"]
+    combos = {(s["company"]["ticker"], s["channel"], s["target"]) for s in created}
+    assert combos == {
+        (ticker, channel, target)
+        for ticker in ["AAPL", "BRK-B"]
+        for channel, target in [
+            ("discord", DISCORD_MASKED),
+            ("slack", SLACK_MASKED),
+            ("email", ALICE_EMAIL),
+        ]
+    }
+    assert all(s["form_types"] == ["8-K"] for s in created)
+    assert response.json()["existing"] == []
+    assert len(alice.get("/subscriptions").json()) == 6
+
+
+def test_batch_leaves_existing_subscriptions_alone(sign_in: SignIn) -> None:
+    alice = sign_in("alice")
+    first = subscribe(alice, form_types=["4"]).json()
+    response = batch(alice, tickers=["AAPL", "BRK-B"], form_types=["8-K"])
+    assert response.status_code == 201
+    assert response.json()["existing"] == [first]  # unchanged: still Form 4 only
+    assert [s["company"]["ticker"] for s in response.json()["created"]] == ["BRK-B"]
+    assert batch(alice, tickers=["AAPL", "BRK-B"]).json()["created"] == []  # safe to repeat
+
+
+def test_batch_reuses_a_webhook_from_an_existing_subscription(
+    sign_in: SignIn, seeded: Engine
+) -> None:
+    alice, bob = sign_in("alice"), sign_in("bob")
+    source = subscribe(alice).json()
+    copied = batch(
+        alice, tickers=["BRK-B"], destinations=[{"channel": "discord", "target_from": source["id"]}]
+    )
+    assert copied.status_code == 201
+    with session_factory(seeded)() as session:
+        stored = session.scalars(sa.select(Subscription).where(Subscription.cik == 1067983)).one()
+        assert stored.target == DISCORD  # the full URL, copied server-side
+
+    others = batch(bob, destinations=[{"channel": "discord", "target_from": source["id"]}])
+    assert others.status_code == 422  # not Bob's to copy
+    wrong_channel = batch(alice, destinations=[{"channel": "slack", "target_from": source["id"]}])
+    assert wrong_channel.status_code == 422
+    both = batch(
+        alice,
+        tickers=["MSFT"],
+        destinations=[{"channel": "discord", "target": DISCORD, "target_from": source["id"]}],
+    )
+    assert both.status_code == 422
+
+
+@pytest.mark.parametrize(
+    ("fields", "message"),
+    [
+        ({"tickers": ["AAPL", "NOPE", "ZZZZ"]}, "unknown ticker(s): NOPE"),
+        ({"tickers": ["AAPL", "ZZZZ"]}, "not on the watchlist"),
+        (
+            {"destinations": [{"channel": "discord", "target": "https://evil.example/hook"}]},
+            "Discord webhook URL",
+        ),
+        ({"destinations": [{"channel": "email", "target": "bob@example.com"}]}, "your account"),
+    ],
+)
+def test_invalid_batches_create_nothing(
+    sign_in: SignIn, fields: dict[str, Any], message: str
+) -> None:
+    alice = sign_in("alice")
+    response = batch(alice, **fields)
+    assert response.status_code == 422
+    assert message in response.json()["detail"]
+    assert alice.get("/subscriptions").json() == []
+
+
+def test_batches_respect_the_cap_all_or_nothing(sign_in: SignIn, seeded: Engine) -> None:
+    alice = sign_in("alice")
+    with session_factory(seeded).begin() as session:
+        tickers = [f"T{i:02d}" for i in range(MAX_SUBSCRIPTIONS)]
+        session.add_all(
+            Company(cik=9_000_000 + i, ticker=t, name=f"Test {t}", on_watchlist=True)
+            for i, t in enumerate(tickers)
+        )
+    assert batch(alice, tickers=tickers[: MAX_SUBSCRIPTIONS - 1]).status_code == 201
+    # The second-to-last already exists, so only the last is new: exactly the maximum.
+    assert batch(alice, tickers=tickers[-2:]).status_code == 201
+    too_many = batch(alice, tickers=["AAPL"])  # one more
+    assert too_many.status_code == 409
+    assert len(alice.get("/subscriptions").json()) == MAX_SUBSCRIPTIONS
+
+
+def test_batch_requires_sign_in(make_client: ClientFactory) -> None:
+    assert batch(make_client()).status_code == 401

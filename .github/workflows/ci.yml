@@ -50,3 +50,32 @@ jobs:
         run: |
           docker compose up -d --wait postgres valkey redpanda mongodb
           make test
+
+  web:
+    name: Website
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: web/.nvmrc
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+
+      # The API's OpenAPI schema is generated from Python, for the types check below.
+      - uses: astral-sh/setup-uv@v10
+        with:
+          enable-cache: true
+
+      - name: Install dependencies
+        run: make web-install
+
+      - name: API types match the API
+        run: |
+          make web-types
+          git diff --exit-code web/src/api/schema.d.ts
+
+      - name: Lint, type-check, test, build
+        run: make web-check

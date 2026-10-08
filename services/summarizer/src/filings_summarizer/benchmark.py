@@ -261,32 +261,54 @@ def load_cases(limit: int | None, accessions: Sequence[str] = ()) -> list[Case]:
     return cases
 
 
-def main(argv: Sequence[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
-    parser.add_argument(
-        "--model",
-        action="append",
-        default=[],
-        help="a model served at LLM_BASE_URL (repeat to compare several)",
-    )
-    parser.add_argument("--gemini", action="store_true", help="also run Gemini (GEMINI_API_KEY)")
-    parser.add_argument("--limit", type=int, default=None, help="at most this many 8-Ks")
-    parser.add_argument(
-        "--accession", action="append", default=[], help="only this 8-K (repeat for several)"
-    )
-    parser.add_argument(
-        "--labels",
-        type=Path,
-        default=None,
-        help=f"facts and forbidden claims to score summaries against (default: {DEFAULT_LABELS},"
-        " skipped if it isn't there)",
-    )
-    parser.add_argument("--runs", type=int, default=1, help="summaries per 8-K and model")
-    parser.add_argument("--out", type=Path, default=None, help="write every summary to this JSON")
-    args = parser.parse_args(argv)
-    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
-    logging.getLogger("httpx2").setLevel(logging.WARNING)
+def rescore(saved: dict[str, Any], labels: Mapping[str, FilingLabels]) -> list[ModelResult]:
+    """Results saved with --out, scored again against `labels` without calling any model, so a
+    change to the labels doesn't mean summarizing everything again. Timing, failures, and
+    grounding are kept as saved."""
+    results = []
+    for saved_result in saved["results"]:
+        result = ModelResult(saved_result["provider"], saved_result["model"])
+        for a in saved_result["attempts"]:
+            filing_labels = labels.get(a["accession_no"])
+            quality = None
+            if a["summary"] is not None and filing_labels is not None:
+                quality = score_summary(FilingSummary.model_validate(a["summary"]), filing_labels)
+            result.attempts.append(
+                Attempt(
+                    a["accession_no"],
+                    a["seconds"],
+                    error=a["error"],
+                    summary=a["summary"],
+                    ungrounded=a["ungrounded"],
+                    quality=quality,
+                )
+            )
+        results.append(result)
+    return results
 
+
+def write_results(
+    path: Path, prompt_version: object, labels_path: Path | None, results: Sequence[ModelResult]
+) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    document = {
+        "prompt_version": prompt_version,
+        "labels": None if labels_path is None else str(labels_path),
+        "results": [
+            {
+                "provider": r.provider,
+                "model": r.model,
+                "stats": r.stats() | r.quality_stats(),
+                "attempts": [asdict(a) for a in r.attempts],
+            }
+            for r in results
+        ],
+    }
+    path.write_text(json.dumps(document, indent=2, default=str))
+    logger.info("wrote %s", path)
+
+
+def _providers(parser: argparse.ArgumentParser, args: argparse.Namespace) -> list[LlmProvider]:
     llm = LlmSettings()
     providers: list[LlmProvider] = [
         OpenAICompatibleProvider(
@@ -313,6 +335,43 @@ def main(argv: Sequence[str] | None = None) -> int:
         )
     if not providers:
         parser.error("give at least one --model, or --gemini")
+    return providers
+
+
+def main(argv: Sequence[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
+    parser.add_argument(
+        "--model",
+        action="append",
+        default=[],
+        help="a model served at LLM_BASE_URL (repeat to compare several)",
+    )
+    parser.add_argument("--gemini", action="store_true", help="also run Gemini (GEMINI_API_KEY)")
+    parser.add_argument("--limit", type=int, default=None, help="at most this many 8-Ks")
+    parser.add_argument(
+        "--accession", action="append", default=[], help="only this 8-K (repeat for several)"
+    )
+    parser.add_argument(
+        "--labels",
+        type=Path,
+        default=None,
+        help=f"facts and forbidden claims to score summaries against (default: {DEFAULT_LABELS},"
+        " skipped if it isn't there)",
+    )
+    parser.add_argument("--runs", type=int, default=1, help="summaries per 8-K and model")
+    parser.add_argument("--out", type=Path, default=None, help="write every summary to this JSON")
+    parser.add_argument(
+        "--rescore",
+        type=Path,
+        default=None,
+        metavar="RESULTS",
+        help="score the summaries in a JSON written by --out again (after the labels change),"
+        " without calling any model",
+    )
+    args = parser.parse_args(argv)
+    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
+    logging.getLogger("httpx2").setLevel(logging.WARNING)
+
     labels_path: Path | None = args.labels or DEFAULT_LABELS
     try:
         labels = load_labels(labels_path) if labels_path is not None else {}
@@ -322,38 +381,28 @@ def main(argv: Sequence[str] | None = None) -> int:
         logger.warning("no quality score: %s", exc)
         labels, labels_path = {}, None
 
-    cases = load_cases(args.limit, args.accession)
-    if not cases:
-        print("no parsed 8-Ks found; run the pipeline first", file=sys.stderr)
-        return 1
-    unlabeled = sum(c.context.accession_no not in labels for c in cases)
-    if labels and unlabeled:
-        logger.warning("%d 8-K(s) have no labels, so no quality score", unlabeled)
-    logger.info("benchmarking %d model(s) on %d 8-K(s)", len(providers), len(cases))
-    results = run_benchmark(providers, cases, runs=args.runs, labels=labels)
+    prompt_version: object = form8k_prompt.PROMPT_VERSION
+    if args.rescore is not None:
+        try:
+            saved = json.loads(args.rescore.read_text(encoding="utf-8"))
+            results = rescore(saved, labels)
+        except (OSError, ValueError, KeyError, TypeError) as exc:
+            parser.error(f"{args.rescore} is not a benchmark result: {exc!r}")
+        prompt_version = saved.get("prompt_version")
+    else:
+        providers = _providers(parser, args)
+        cases = load_cases(args.limit, args.accession)
+        if not cases:
+            print("no parsed 8-Ks found; run the pipeline first", file=sys.stderr)
+            return 1
+        unlabeled = sum(c.context.accession_no not in labels for c in cases)
+        if labels and unlabeled:
+            logger.warning("%d 8-K(s) have no labels, so no quality score", unlabeled)
+        logger.info("benchmarking %d model(s) on %d 8-K(s)", len(providers), len(cases))
+        results = run_benchmark(providers, cases, runs=args.runs, labels=labels)
     print(render_table(results))
     if args.out is not None:
-        args.out.parent.mkdir(parents=True, exist_ok=True)
-        args.out.write_text(
-            json.dumps(
-                {
-                    "prompt_version": form8k_prompt.PROMPT_VERSION,
-                    "labels": None if labels_path is None else str(labels_path),
-                    "results": [
-                        {
-                            "provider": r.provider,
-                            "model": r.model,
-                            "stats": r.stats() | r.quality_stats(),
-                            "attempts": [asdict(a) for a in r.attempts],
-                        }
-                        for r in results
-                    ],
-                },
-                indent=2,
-                default=str,
-            )
-        )
-        logger.info("wrote %s", args.out)
+        write_results(args.out, prompt_version, labels_path, results)
     return 0
 
 

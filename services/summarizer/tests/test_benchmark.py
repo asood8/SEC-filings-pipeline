@@ -6,7 +6,15 @@ from pathlib import Path
 from typing import Any
 
 from filings_parser.form8k import parse_form8k
-from filings_summarizer.benchmark import Case, _percentile, render_table, run_benchmark
+from filings_summarizer.benchmark import (
+    Case,
+    _percentile,
+    main,
+    render_table,
+    rescore,
+    run_benchmark,
+    write_results,
+)
 from filings_summarizer.form8k_prompt import FilingContext
 from filings_summarizer.llm import LlmError
 from filings_summarizer.quality import FilingLabels
@@ -133,6 +141,43 @@ def test_filings_without_labels_are_not_scored() -> None:
     [result] = run_benchmark([model], [ADOBE], labels={})
     assert result.attempts[0].quality is None
     assert result.quality_stats()["scored"] == 0
+
+
+LOWERED = {
+    "accession_no": ADOBE.context.accession_no,
+    "company": "Adobe",
+    "facts": [{"fact": "third-quarter results", "patterns": ["third[- ]quarter"]}],
+    "forbidden": [{"claim": "targets lowered", "patterns": ["lowered"]}],
+}
+
+
+def test_rescore_scores_saved_summaries_against_new_labels(tmp_path: Path) -> None:
+    model = FakeModel("m", summary("warmup"), summary("Adobe lowered its targets."), "not json")
+    results = run_benchmark([model], [ADOBE], runs=2)  # saved before the labels existed
+    path = tmp_path / "bench.json"
+    write_results(path, 1, None, results)
+
+    labels = {ADOBE.context.accession_no: FilingLabels.model_validate(LOWERED)}
+    [rescored] = rescore(json.loads(path.read_text()), labels)
+
+    assert rescored.stats() == results[0].stats()  # timing, failures, grounding as saved
+    assert rescored.attempts[0].quality is not None
+    assert rescored.attempts[0].quality.forbidden == ["targets lowered"]
+    assert rescored.attempts[1].quality is None  # the failed attempt stays failed
+    assert rescored.quality_stats()["forbidden_share"] == 1.0
+
+
+def test_rescore_from_the_command_line(tmp_path: Path) -> None:
+    model = FakeModel("m", summary("warmup"), summary("Adobe's third-quarter results."))
+    saved, labels, out = tmp_path / "bench.json", tmp_path / "labels.json", tmp_path / "out.json"
+    write_results(saved, 7, None, run_benchmark([model], [ADOBE]))
+    labels.write_text(json.dumps({"filings": [LOWERED]}))
+
+    assert main(["--rescore", str(saved), "--labels", str(labels), "--out", str(out)]) == 0
+
+    document = json.loads(out.read_text())
+    assert (document["prompt_version"], document["labels"]) == (7, str(labels))
+    assert document["results"][0]["stats"]["fact_recall"] == 1.0
 
 
 def test_percentile_uses_the_nearest_rank() -> None:

@@ -142,6 +142,13 @@ the line table was waiting for.
   filings), all 21 company totals agree to the cent.
 - **Ranking:** by value, largest first. A filing with no price for any line comes last, since
   its value isn't known, and equal values put the latest trade first.
+- **Bounded by filing date.** A trade is reported after it happens, so the query also asks for
+  filings filed within the window (`filings.filed_at`, which the feed's index covers) and reads
+  only their lines, through the partial index on the lines it totals. The work then follows
+  `days`, not the whole history. `period_of_report` can't bound it: it is the earliest trade,
+  and a late Form 4 can report old lines next to new ones (0002032089-26-000004, filed
+  2026-09-11, reports gifts from 2025-09-22 to 2026-09-09). No live trade is dated after its
+  filing.
 - **The issuer's ticker comes from the companies table** (SEC's ticker list), not from the Form
   4. The filer types its own, which can be "BRK.A" or "LEN, LEN.B"; the companies table's is the
   one the company pages take. An issuer missing from that table gets no ticker, so no link.

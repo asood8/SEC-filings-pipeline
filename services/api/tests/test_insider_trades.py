@@ -37,7 +37,7 @@ JOINT = "0000320193-26-000302"  # Berkshire and Buffett buying Lennar
 NEWER = "0000789019-26-000303"  # $20,000 of purchases, 1 day ago
 OLDER = "0000789019-26-000305"  # $20,000 too, 4 days ago
 UNPRICED = "0000789019-26-000304"  # a purchase priced only in a footnote
-STRADDLES = "0000789019-26-000306"  # purchases 10 and 60 days ago
+STRADDLES = "0000789019-26-000306"  # filed late: purchases 10 and 60 days ago, filed 9 days ago
 
 
 def days_ago(days: int) -> str:
@@ -105,11 +105,16 @@ def add_form4(
 def insider_trades(seeded: Engine, ids: Any) -> None:
     with session_factory(seeded).begin() as session:
         # The seeded Apple sale (Tim Cook: 30,000 shares at $254.50 and 20,000 priced only in a
-        # footnote, under a 10b5-1 plan), moved to a date the windows below always include.
+        # footnote, under a 10b5-1 plan), moved to dates the windows below always include.
         session.execute(
             sa.update(Form4Transaction)
             .where(Form4Transaction.accession_no == ids.form4)
             .values(transaction_date=TODAY - timedelta(days=20))
+        )
+        session.execute(
+            sa.update(Filing)
+            .where(Filing.accession_no == ids.form4)
+            .values(filed_at=TODAY - timedelta(days=19))
         )
         add_form4(
             session,

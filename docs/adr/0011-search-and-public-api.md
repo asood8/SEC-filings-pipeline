@@ -235,6 +235,16 @@ data: 500 companies, 10 years, 452,000 filings; runbook, "Capacity planning", ha
   probes the issuer's filings' lines instead of hash-joining all of them: 87 → 36 ms for an
   issuer with 8,400 Form 4s. Its condition must change with the query's. The work still grows
   with the issuer's whole history, not with `days`.
+- **Insider trades across companies** (`GET /insider-trades`, added 2026-10-08) use the same
+  partial index. Their condition is the index's, written with literal codes so that a prepared
+  statement's generic plan can use it too. They also ask for filings filed within the window,
+  which the feed's index finds: a trade is reported after it happens, so this changes no result,
+  and the work follows `days` (ADR-0006). At volume: 49–57 ms of SQL for 30 days, 60–116 ms for
+  90, 100–250 ms for 365; without the filing-date condition, 130–185 ms for 30 days (up to 2 s
+  with a cold cache). The planner still reads `form4_filings` whole (420,000 rows, about 10 ms
+  per worker) rather than probe it 3,400 times at the default `random_page_cost` of 4; at 1.1
+  it probes, and 30 days take 25–44 ms. The same filing-date condition would bound insider
+  activity; `period_of_report` wouldn't, since it is a filing's earliest trade.
 - **Semantic search scans the HNSW index iteratively** (`hnsw.iterative_scan = strict_order`, set
   for the transaction). An HNSW scan returns its `hnsw.ef_search` (40) nearest vectors and filters
   apply afterwards, so at volume an 8-K filter returned nothing once Form 4s filled those 40, and

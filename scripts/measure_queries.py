@@ -369,6 +369,9 @@ def api_scenarios(engine: sa.Engine, client: TestClient, model: str) -> list[Sce
             f"insider activity ({big}), 365 days",
             get(f"/companies/{big}/insider-activity", days=365),
         ),
+        Scenario("insider trades, purchases, 30 days", get("/insider-trades")),
+        Scenario("insider trades, sales, 90 days", get("/insider-trades", side="sell", days=90)),
+        Scenario("insider trades, sales, 365 days", get("/insider-trades", side="sell", days=365)),
     ]
     searches = [
         ("keyword 'sold'", {"q": "sold", "mode": "keyword"}),

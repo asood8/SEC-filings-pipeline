@@ -22,6 +22,17 @@ SIDE_CODES: dict[TradeSide, str] = {
 }
 
 
+def trade_lines() -> list[sa.ColumnElement[bool]]:
+    """Open-market stock trades: exactly the condition of the partial index
+    ix_form4_transactions_trades, `code IN ('P', 'S') AND is_derivative IS false`. The codes are
+    sent as literals, not bound parameters, so the index stays usable in a prepared statement's
+    generic plan too (psycopg prepares a query after five runs on a connection)."""
+    codes: sa.BindParameter[list[str]] = sa.bindparam(
+        "trade_codes", sorted(INSIDER_TRADE_CODES.values()), expanding=True, literal_execute=True
+    )
+    return [Form4Transaction.code.in_(codes), Form4Transaction.is_derivative.is_(False)]
+
+
 @router.get("/insider-trades", summary="The largest recent insider purchases or sales")
 def list_insider_trades(
     session: SessionDep,
@@ -70,9 +81,15 @@ def list_insider_trades(
         # The ticker the company pages use. A Form 4's own can be "BRK.A" or "LEN, LEN.B".
         .outerjoin(Company, Company.cik == form.issuer_cik)
         .where(
+            *trade_lines(),
             line.code == SIDE_CODES[side],
-            line.is_derivative.is_(False),
             traded_on >= since,
+            # A trade is reported after it happens, so only filings filed in the window can
+            # have trades in it. The feed's index on `filed_at` finds those, which keeps the
+            # work in proportion to `days` rather than to the whole history. (Not
+            # `period_of_report`: that is the earliest trade, and a late Form 4 can report
+            # year-old lines next to last week's.)
+            Filing.filed_at >= since,
         )
         .group_by(form.accession_no, Filing.accession_no, Company.cik)
         .order_by(

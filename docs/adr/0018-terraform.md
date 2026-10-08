@@ -115,7 +115,9 @@ the first boot, and a bootstrap script (`modules/oci/bootstrap.sh`) that it inst
 4. **Argo CD**, from the repository at `git_revision`: `kubectl apply --server-side -k
    deploy/argocd/install` (Argo CD's own install, which pins its version and trims it for this
    node), then `kubectl apply -k deploy/argocd` (the project and the Applications). From then on
-   Argo CD syncs everything else from git, including the Sealed Secrets controller.
+   Argo CD syncs everything else from git: the Sealed Secrets controller from `main`, and the
+   application from the `production` branch that the image workflow writes (ADR-0019, since
+   2026-10-08), so `git_revision` stays `main`.
 
 Each step is idempotent, so the script can be re-run by hand after a failure. The repository is
 public, so neither cloud-init nor Argo CD needs a credential to clone it. If it ever became

@@ -137,7 +137,8 @@ Critical, fires at once. A long-running service (`filings-outbox-relay`, `-parse
   - `OOMKilled`: it outgrew its memory limit. The limits add up to the 9 GiB budget
     (ADR-0017, enforced by `tests/test_k8s_manifests.py`), so raising one means lowering another.
   - `ImagePullBackOff`: the tag in `deploy/k8s/overlays/production/images/kustomization.yaml`
-    (as deployed) doesn't exist in GHCR, or the GHCR package isn't public.
+    on the `production` branch doesn't exist in GHCR (or is `main`'s placeholder, after a plain
+    commit was pushed there by hand), or the GHCR package isn't public.
   - `CrashLoopBackOff` right after start: usually a missing Secret or setting; the log says which.
 - **Stopped on purpose:** it fires for up to a day. Silence it.
 
@@ -204,38 +205,74 @@ Critical, fires at once. A long-running service (`filings-outbox-relay`, `-parse
 
 ## Deploys and rollbacks
 
-Argo CD keeps the cluster equal to `deploy/k8s/overlays/production` on `main`, polling every
-3 minutes. A deploy is a commit: a manifest change, or new image tags in the overlay's
-`kustomization.yaml`. Each sync runs the migrations Job first (wave -1), then rolls out the rest.
+Argo CD keeps the cluster equal to `deploy/k8s/overlays/production` on the **`production`
+branch**, polling every 3 minutes. Only the image workflow (`.github/workflows/images.yml`,
+ADR-0019) moves that branch: for each push to `main` that changes the code or anything under
+`deploy/`, once that commit's images are in GHCR and CI has passed on it, it pushes a **deploy
+commit** (that commit of `main` with the image tags set) to `production`. A push to `main`
+therefore goes live 5 to 20 minutes later, never before its images. Each sync runs the migrations
+Job first (wave -1), then rolls out the rest.
 
 ```
 kubectl -n argocd get application filings -w                                      # SYNC STATUS, HEALTH
-kubectl -n argocd get application filings -o jsonpath='{.status.sync.revision}{"\n"}'   # deployed commit
+kubectl -n argocd get application filings -o jsonpath='{.status.sync.revision}{"\n"}'   # the deploy commit it runs
 kubectl -n argocd get application filings -o jsonpath='{.status.operationState.message}{"\n"}'
 kubectl -n filings logs job/migrate                                               # last migration run
 kubectl -n argocd annotate application filings argocd.argoproj.io/refresh=normal --overwrite   # check git now
+git fetch origin && git log -1 origin/production   # "Source commit <SHA>": the commit of main it runs
 ```
 
 The web UI shows the same with more detail: `kubectl -n argocd port-forward svc/argocd-server
 8080:443` (deploy/k8s/README.md has the sign-in).
 
-**Roll back by reverting the commit** and pushing (through a pull request if `main` is
-protected). Argo CD deploys the revert like any other change:
+**A push that didn't deploy:** open its run under **Actions → Images**. CI failed or was cancelled
+on that commit (the deploy job says so: re-run CI, then the deploy job); "Production already
+deploys ..." (a newer commit is already out); or no run at all (the push changed nothing the
+workflow watches, such as docs only). If the application reports that it can't find the
+`production` branch, no deploy has run yet (a new repository or fork): run the workflow by hand
+(**Actions → Images → Run workflow** on `main`), which creates it; don't push `main` there, since
+its image tags are a placeholder.
 
-```
-git revert <commit>        # several: git revert <oldest>^..<newest>
-git push
-```
+**Roll back** one of two ways, then fix `main`:
+
+1. **Deploy an older commit** (the usual way). **Actions → Images → Run workflow**, branch
+   `main`, with `commit` set to the commit of `main` to go back to (a `Source commit` from an
+   earlier deploy, or one from `git log`) and **rollback** ticked; or, with the GitHub CLI,
+   `gh workflow run images.yml --ref main -f commit=<SHA> -f rollback=true`. Its images are
+   normally still in GHCR, so nothing is built: the run checks CI's result on that commit (it must
+   have passed) and pushes the deploy commit, in a few minutes. Let a queued Images run finish
+   first: a run started by hand and a push's waiting run replace each other.
+2. **Push an earlier deploy commit back** (no Actions involved; Argo CD picks it up within
+   3 minutes):
+
+   ```
+   git fetch origin
+   git reflog show origin/production    # deploy commits this clone has fetched, newest first
+   git push --force origin <deploy commit>:refs/heads/production
+   ```
+
+   A deploy commit's SHA is also in the Images run that made it (its last notice, "deploy commit
+   <SHA>"), and in Argo CD's history:
+   `kubectl -n argocd get application filings -o jsonpath='{range .status.history[*]}{.revision}{"  "}{.deployedAt}{"\n"}{end}'`.
+   If your clone doesn't have it, `git fetch origin <full SHA>` gets it while GitHub still keeps
+   it. Push only deploy commits (their subject starts with "Deploy"): a plain commit of `main` has
+   placeholder image tags, and nothing could start.
+
+**Then fix `main`:** revert the change (`git revert <commit>`, several:
+`git revert <oldest>^..<newest>`; `git push`) or fix it forward. Until then, the next push that
+the workflow deploys brings the bad change back with it, and so does re-running the bad commit's
+Images run. A revert on its own also rolls back, but if it changes code it waits for a full image
+build (10 to 20 minutes).
 
 Not `kubectl rollout undo`, `kubectl edit`, or `kubectl set image`: self-heal undoes them within
 minutes. Argo CD's own History and Rollback refuses to run while automated sync is on, and would
 leave git and the cluster disagreeing anyway.
 
-**When the commit added a migration,** the older code doesn't know the database's revision, so
-after the revert the migrations Job fails ("Can't locate revision") and blocks the sync. Fix
-forward instead, or downgrade the schema first, while the new image still runs, then push the
-revert. A downgrade can drop data (a removed column), so [run a backup](#backups-and-restores)
-first:
+**When the commit you roll back from added a migration,** the older code doesn't know the
+database's revision, so after the rollback the migrations Job fails ("Can't locate revision") and
+blocks the sync. Fix forward instead, or downgrade the schema first, while the new image still
+runs, then roll back. A downgrade can drop data (a removed column), so
+[run a backup](#backups-and-restores) first:
 
 ```
 kubectl -n filings exec deploy/summarizer -- python -c \
@@ -289,9 +326,10 @@ The general procedure, for any Secret:
    unset VALUE
    ```
 
-3. **`make k8s-check`, commit, push.** Argo CD applies the SealedSecret; the controller updates the
-   Secret.
-4. **Restart what reads it:** pods read Secrets at startup.
+3. **`make k8s-check`, commit, push.** Once CI passes on it, the image workflow deploys it to
+   `production` ([Deploys](#deploys-and-rollbacks)), Argo CD applies the SealedSecret, and the
+   controller updates the Secret.
+4. **Restart what reads it,** once Argo CD has synced that deploy: pods read Secrets at startup.
    `kubectl -n filings rollout restart deployment/<name>`. CronJobs use the new value on their
    next run.
 5. **Check it works, then revoke the old credential.**

@@ -12,7 +12,8 @@ The second half runs the plan and deploy jobs' shell steps, exactly as the workf
 under bash with the runner's options, against a throwaway git repository (an "origin" and a
 developer's clone, in a temporary directory deleted after each test), with stubs for gh, docker,
 and kustomize: a first deploy, a manifest-only push, a code push, an older run re-run, a rollback
-started by hand, a failed CI run, and a production branch moved by hand.
+started by hand, a rollback by pushing an earlier deploy commit back, a failed CI run, and a
+production branch moved by hand.
 """
 
 import os

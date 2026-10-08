@@ -98,10 +98,15 @@ Collector (metrics, logs, and traces write).
 ### The repository
 
 cloud-init clones this public repository at `git_revision` (default `main`) and applies
-`deploy/argocd/install` and `deploy/argocd`, so the Kubernetes manifests must be on that branch
-first. No credential is needed while the repository is public. If it ever becomes private,
-Argo CD needs a read-only deploy key (a repository Secret, sealed) and the bootstrap's clone
-needs one too.
+`deploy/argocd/install` and `deploy/argocd`, so the Argo CD manifests must be on that branch
+first. Leave it at `main`, where they are edited. From then on Argo CD deploys the Sealed Secrets
+controller from `main` and the application from the `production` branch, which the image
+workflow's deploy job creates on its first run and moves on every deploy
+([deploy/k8s/README.md](../../deploy/k8s/README.md#deploying)). If the branch doesn't exist yet
+when the VM boots, run that workflow by hand (**Actions → Images → Run workflow**); the
+application finds the branch on a later refresh. No credential is needed while the repository is
+public. If it ever becomes private, Argo CD needs a read-only deploy key (a repository Secret,
+sealed) and the bootstrap's clone needs one too.
 
 ## First apply
 
@@ -122,7 +127,8 @@ Grafana folder, dashboards, and rule groups. Nothing else.
   a configuration error. Everything else is already created; run `terraform apply` again later,
   or try another `oci_availability_domain_number` in regions that have several.
 - **The VM bootstraps itself** in roughly 10 minutes: it mounts the block volume, installs k3s
-  and Argo CD, and Argo CD starts syncing. Its log is `/var/log/cloud-init-output.log`, readable
+  and Argo CD, and Argo CD starts syncing (the application from the `production` branch; see
+  [The repository](#the-repository)). Its log is `/var/log/cloud-init-output.log`, readable
   through the OCI console's serial console or over SSH.
 - **Idle reclamation:** Oracle may reclaim an Always Free VM whose CPU, network, and memory use
   all stay under 20% for 7 days. The running stack holds most of the memory, but a stopped VM
@@ -175,7 +181,8 @@ terraform output -raw mongodb_url \
 Then the non-secret settings in `deploy/k8s/overlays/production/config.env`: `API_CORS_ORIGINS`
 is `terraform output -raw api_cors_origins`, and `GOOGLE_CLIENT_ID` is the same public ID as the
 `google_client_id` variable. List the sealed files in the overlay's `kustomization.yaml`, commit,
-and push; Argo CD does the rest.
+and push to `main`; once CI passes, the image workflow deploys them to `production`, and Argo CD
+does the rest.
 
 **Back up the sealing key** right after the first sync (deploy/k8s/README.md shows the command)
 and keep it outside git. After a VM rebuild, restore it before sealing anything new:

@@ -23,9 +23,10 @@
 # Production therefore always pairs a commit's manifests with the images of that commit's code,
 # never with older images.
 #
-# No loops: this workflow runs only for pushes to main, the deploy pushes only to production,
-# pushes made with GITHUB_TOKEN start no workflows, and the deploy commit's message has
-# "[skip ci]".
+# No loops: this workflow runs only for pushes to main, the deploy pushes only to production (and
+# no workflow runs for pushes to production), pushes made with GITHUB_TOKEN start no workflows,
+# and the deploy commit's message has "[skip ci]". The tests run the plan and deploy scripts
+# against a throwaway repository (tests/test_images_workflow.py).
 name: Images
 
 on:
@@ -44,7 +45,8 @@ on:
       - .github/workflows/images.yml
       - deploy/**
   # By hand: Actions -> Images -> Run workflow, on main. Deploys main's newest commit, or the
-  # commit given; deploying a commit older than production's needs "rollback" ticked.
+  # commit given; deploying a commit older than production's needs "rollback" ticked. That is how
+  # to roll back (docs/runbook.md, "Deploys and rollbacks").
   workflow_dispatch:
     inputs:
       commit:

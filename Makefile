@@ -1,5 +1,5 @@
 .DEFAULT_GOAL := help
-.PHONY: help setup sync up down ps logs llm-up llm-down obs-up obs-down migrate api pipeline images lint fmt test audit web-install web web-types web-check loadtest api-loadtest tf-check tf-fmt k8s-tools k8s-check
+.PHONY: help setup sync up down ps logs llm-up llm-down obs-up obs-down migrate backup-drill api pipeline images lint fmt test audit web-install web web-types web-check loadtest api-loadtest tf-check tf-fmt k8s-tools k8s-check
 
 help: ## List targets
 	@grep -E '^[a-z0-9-]+:.*## ' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*## "} {printf "  %-12s %s\n", $$1, $$2}'
@@ -44,6 +44,9 @@ obs-down: ## Stop the local viewer (its data is kept)
 
 migrate: ## Apply database migrations to DATABASE_URL
 	uv run alembic upgrade head
+
+backup-drill: ## Dump the local database, restore it into a throwaway one, and check every table matches
+	scripts/backup-drill.sh
 
 api: ## Run the API locally with auto-reload on http://127.0.0.1:8000 (docs at /docs)
 	uv run uvicorn --factory filings_api.app:create_app --reload

@@ -1,7 +1,9 @@
 # Kubernetes manifests
 
 The production system on one k3s node (Oracle Cloud Ampere A1: arm64, 2 OCPU, 12 GB), as
-Kustomize directories that Argo CD keeps in sync with `main`. Why it is built this way, the
+Kustomize directories that Argo CD keeps in sync with git. You edit them on `main`; the
+application is deployed from the `production` branch, which CI moves after each push once the
+images are built and the tests pass ([Deploying](#deploying)). Why it is built this way, the
 resource budget, and the security posture are in
 [ADR-0017](../../docs/adr/0017-kubernetes-manifests.md).
 
@@ -17,13 +19,15 @@ deploy/
     base/                  the whole application, environment-neutral (namespace "filings")
     overlays/production/   replica counts, production settings, and (Phase 7) the SealedSecrets
                            in sealed-secrets/
-      images/              the service images' registry and tags, which CI updates on each deploy
+      images/              the service images' registry and tags, which CI sets on each deploy
+                           (on the production branch; a placeholder on main)
     platform/sealed-secrets/   the Sealed Secrets controller (vendored upstream release)
     secrets-example/       EXAMPLE Secrets with placeholder values: the list of every secret
     secrets-local/         your filled-in copies before sealing (gitignored; never commit)
   argocd/
     install/               Argo CD itself (pinned upstream release, trimmed)
-    project.yaml, filings.yaml, sealed-secrets.yaml   what Argo CD deploys
+    project.yaml, filings.yaml, sealed-secrets.yaml   what Argo CD deploys: the application from
+                           the production branch, the Sealed Secrets controller from main
 ```
 
 ## Render and validate
@@ -51,8 +55,8 @@ container, the memory budget, pod security, pinned images, real setting names) a
   Secret, so the password has one source.
 - **Images** are `ghcr.io/asood8/filings-<service>`, multi-arch (ADR-0014), built by CI. The
   production overlay pins their tag in `overlays/production/images/kustomization.yaml`, which CI
-  updates ([Deploying](#deploying)). The GHCR packages must be public (free), or the cluster needs
-  a pull secret.
+  sets on the `production` branch ([Deploying](#deploying)); on `main` it is a placeholder. The
+  GHCR packages must be public (free), or the cluster needs a pull secret.
 
 ## Secrets
 
@@ -98,10 +102,11 @@ kubeseal --cert deploy/k8s/overlays/production/sealed-secrets/cert.pem --format 
 ```
 
 Then list the file under `resources` in `overlays/production/kustomization.yaml`, run
-`make k8s-check`, commit, and push. Argo CD applies the SealedSecret and the controller creates
-the Secret. A SealedSecret only decrypts under its own name and namespace (kubeseal's default
-"strict" scope), so a copy renamed or moved elsewhere is useless. Delete the plain copy in
-`secrets-local/` when done, or keep it in a password manager rather than on disk.
+`make k8s-check`, commit, and push to `main`. Once CI passes, the image workflow deploys it to
+the `production` branch ([Deploying](#deploying)), Argo CD applies the SealedSecret, and the
+controller creates the Secret. A SealedSecret only decrypts under its own name and namespace
+(kubeseal's default "strict" scope), so a copy renamed or moved elsewhere is useless. Delete the
+plain copy in `secrets-local/` when done, or keep it in a password manager rather than on disk.
 
 - **Changing a value:** seal the whole Secret again and commit. Pods read Secrets as environment
   variables at startup, so restart the ones that use it:
@@ -119,21 +124,27 @@ the Secret. A SealedSecret only decrypts under its own name and namespace (kubes
 ## First install (Phase 7)
 
 The VM's first-boot bootstrap (`infra/terraform/modules/oci/bootstrap.sh`, ADR-0018) does the
-first three steps; the rest are by hand. The service images must exist by then: CI has to have
-published and deployed them once ([Deploying](#deploying)), or the services can't start.
+first three steps, from a clone of `main`; the rest are by hand. The application is deployed from
+the `production` branch, which the image workflow's first deploy creates, along with the service
+images ([Deploying](#deploying)). If that hasn't happened yet, run the workflow by hand
+(**Actions → Images → Run workflow** on `main`); until the branch exists, the application in
+Argo CD reports that it can't find it, and finds it on a later refresh. Don't create the branch
+with `git push origin main:production`: `main`'s image tags are a placeholder, so nothing could
+start.
 
 1. **k3s**, pinned, without the bundled Traefik ingress controller and service load balancer
    (Cloudflare Tunnel replaces both, and they cost RAM), with local-path volumes on the block
    volume.
 2. **Argo CD:** `kubectl apply --server-side --force-conflicts -k deploy/argocd/install`
 3. **The applications:** `kubectl apply -k deploy/argocd`. Argo CD installs the Sealed Secrets
-   controller, and syncs the application in waves: the namespace, the config and Secrets,
-   Postgres, the migrations, then everything else.
+   controller (from `main`), and syncs the application (from `production`) in waves: the
+   namespace, the config and Secrets, Postgres, the migrations, then everything else.
 4. **Secrets:** on a first install there are none yet, so the application's first sync waits
    for a Postgres that can't start without its Secret. Fetch the certificate, seal each secret
-   (above), commit, and push. Argo CD picks them up by itself: a sync still waiting after
-   30 minutes fails, and the retry, or the next automated sync, starts from the latest commit.
-   To skip the wait, terminate the waiting sync in the Argo CD UI.
+   (above), commit, and push to `main`; once CI passes, the image workflow deploys them to
+   `production`. Argo CD picks them up by itself: a sync still waiting after 30 minutes fails,
+   and the retry, or the next automated sync, starts from the latest commit. To skip the wait,
+   terminate the waiting sync in the Argo CD UI.
    After a rebuild, restore the sealing key instead (above): the SealedSecrets are already in the
    repository, and the application's syncs fail and retry until the controller is up.
 5. **Companies:** discovery only polls companies flagged from the watchlist, so load them once
@@ -147,32 +158,50 @@ password from `kubectl -n argocd get secret argocd-initial-admin-secret -o jsonp
 
 ## Deploying
 
-A push to `main` that changes the services deploys itself
-([ADR-0019](../../docs/adr/0019-image-ci-and-deploy.md)):
+Argo CD deploys the **`production` branch**, and only the image workflow,
+`.github/workflows/images.yml`, moves it
+([ADR-0019](../../docs/adr/0019-image-ci-and-deploy.md)). Edit the manifests on `main` as usual.
+A push to `main` that changes the services or anything under `deploy/` deploys itself:
 
-1. `.github/workflows/images.yml` builds the five images natively for amd64 and arm64 and
-   publishes them to GHCR, tagged `sha-<short commit SHA>` and `main`. It runs when `services/`,
-   `libs/`, `docker/`, `pyproject.toml`, `uv.lock`, `.dockerignore`, or
-   `config/watchlist.toml` change.
-2. Once CI has passed on the same commit, it sets that tag in
-   `overlays/production/images/kustomization.yaml` and commits it to `main` as
-   `github-actions[bot]`: "Deploy sha-... to production [skip ci]".
-3. Argo CD sees the commit within 3 minutes and rolls the services out.
+1. The workflow finds the **image commit**: the newest commit, up to the pushed one, that changed
+   what goes into an image (`services/`, `libs/`, `docker/`, `pyproject.toml`, `uv.lock`,
+   `.dockerignore`, `config/watchlist.toml`, or the workflow). Its images are tagged
+   `sha-<short image commit>`. If GHCR doesn't have them, it builds the five natively for amd64
+   and arm64 and publishes them under that tag and `main`; after a push that changed only
+   manifests, it reuses them.
+2. Once CI has passed on the pushed commit, it sets that tag in
+   `overlays/production/images/kustomization.yaml`, commits the result on top of the pushed
+   commit as `github-actions[bot]` ("Deploy <short commit> (images sha-...) [skip ci]"), and
+   pushes it to `production`. It never commits to `main`.
+3. Argo CD sees `production` move within 3 minutes and rolls the change out.
 
-`main` on GitHub is then a commit ahead of your checkout: pull before pushing again.
+A manifest change therefore goes live together with the code it needs, after CI, never before.
+On `main` the image tags stay a placeholder (`0.1.0`). What production runs:
+
+```
+git fetch origin
+git log -1 origin/production     # "Source commit <SHA>": the commit of main it deploys
+git show origin/production:deploy/k8s/overlays/production/images/kustomization.yaml
+```
 
 - **Not active yet:** the workflow's jobs run only while the repository is public, because
-  that is when its arm64 runners and GHCR storage are free. Until the first deploy, the tags are
-  a placeholder (`0.1.0`) that doesn't exist in GHCR.
+  that is when its arm64 runners and GHCR storage are free.
+- **The first run creates the `production` branch.** To create it without waiting for a push,
+  run the workflow by hand (below); not with `git push origin main:production`, since `main`'s
+  placeholder tags don't exist in GHCR.
 - **After the first run,** make each of the five GHCR packages public (the package's
   **Package settings → Change visibility**), if it isn't already.
-- **Deploy by hand:** **Actions → Images → Run workflow** on `main`. If a deploy job failed
-  because CI did, re-run CI on that commit, then the failed deploy job.
-- **Roll back:** revert the bot's deploy commit (`git revert <commit>`), or set an older `sha-`
-  tag in `overlays/production/images/kustomization.yaml`, and push. The next build of `main`
-  deploys normally again.
+- **Deploy by hand:** **Actions → Images → Run workflow** on `main` deploys `main`'s newest
+  commit; set `commit` to deploy an earlier commit of `main`. If a deploy job failed because CI
+  did, re-run CI on that commit, then the failed deploy job. A run for a commit older than the one
+  production runs leaves production alone, unless **rollback** is ticked.
+- **Roll back:** run the workflow by hand with `commit` set to the commit to go back to and
+  **rollback** ticked, or push an earlier deploy commit back to `production`; then revert or fix
+  the change on `main`, or the next deploy brings it back. The commands are in the
+  [runbook](../../docs/runbook.md#deploys-and-rollbacks). Editing the tags on `main` changes
+  nothing: the next deploy sets them again.
 - **Check a published image:**
-  `docker buildx imagetools inspect ghcr.io/asood8/filings-api:sha-<short commit SHA>` lists
+  `docker buildx imagetools inspect ghcr.io/asood8/filings-api:sha-<short image commit>` lists
   both architectures, plus the build's provenance and SBOM attestations.
 
 ## One-off commands
@@ -206,7 +235,7 @@ rows, which the outbox relay then publishes.
 Every image and upstream manifest is pinned to a version:
 
 - **Our services:** CI sets their tags in `overlays/production/images/kustomization.yaml` on
-  every deploy ([Deploying](#deploying)).
+  every deploy, on the `production` branch ([Deploying](#deploying)).
 - **kustomize for the deploy job:** `KUSTOMIZE_VERSION` and its checksum in
   `.github/workflows/images.yml`. It must be the version inside the pinned kubectl
   (`kubectl version --client`), which `make k8s-check` renders with; a test checks.

@@ -189,3 +189,21 @@ class CsrfMiddleware(BaseHTTPMiddleware):
             if _has_body(request) and not _is_json(request.headers.get("content-type")):
                 return JSONResponse({"detail": "request body must be JSON"}, status_code=415)
         return await call_next(request)
+
+
+# Sent with every response. The API serves JSON (and its own docs page), so none of these limits a
+# legitimate client; they stop browsers from guessing content types, framing the API in another
+# site, or leaking full URLs (which can carry search terms) in the Referer header.
+SECURITY_HEADERS = {
+    "X-Content-Type-Options": "nosniff",
+    "X-Frame-Options": "DENY",
+    "Referrer-Policy": "no-referrer",
+}
+
+
+class SecurityHeadersMiddleware(BaseHTTPMiddleware):
+    async def dispatch(self, request: Request, call_next: RequestResponseEndpoint) -> Response:
+        response = await call_next(request)
+        for name, value in SECURITY_HEADERS.items():
+            response.headers.setdefault(name, value)
+        return response

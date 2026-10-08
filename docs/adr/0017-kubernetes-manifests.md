@@ -19,7 +19,9 @@ availability is a non-goal (§2).
   manifests must therefore render and validate without a cluster, in CI, and the first real apply
   comes later.
 - **The repository is public,** so secrets can only be committed encrypted (brief §12).
-- **Deployment is GitOps with Argo CD** (brief §4): the cluster follows `main`.
+- **Deployment is GitOps with Argo CD** (brief §4): the cluster follows git. (Since 2026-10-08
+  the application follows a `production` branch that CI writes, rather than `main`; see "Argo CD"
+  below and [ADR-0019](0019-image-ci-and-deploy.md).)
 - **Two choices were the user's,** made on 2026-10-07: **Kustomize** rather than Helm, and
   **Sealed Secrets** rather than SOPS.
 
@@ -287,17 +289,27 @@ it a no-op. `BeforeHookCreation` keeps the last run and its logs until the next 
 ### Argo CD
 
 - **Two Applications** in one AppProject: `filings` (the production overlay) and `sealed-secrets`
-  (the controller). Both track `main` with **automated sync, prune, and self-heal**: what is
-  removed from git is deleted from the cluster, and changes made by hand are undone. `PruneLast`
-  deletes leftovers (old hashed ConfigMaps) only after everything else is healthy.
+  (the controller). Both have **automated sync, prune, and self-heal**: what is removed from git
+  is deleted from the cluster, and changes made by hand are undone. `PruneLast` deletes leftovers
+  (old hashed ConfigMaps) only after everything else is healthy.
+- **What they track** (changed on 2026-10-08; both tracked `main` before): `filings` tracks the
+  **`production` branch**, which only the image workflow's deploy job writes: for each push to
+  `main` that changes the code or the manifests, it pushes that commit there with its image tags
+  set, once the images are published and CI has passed ([ADR-0019](0019-image-ci-and-deploy.md)).
+  Tracking `main` put manifest changes live minutes before the images they needed.
+  `sealed-secrets` still tracks `main`: it runs none of our images, and on a new cluster it must
+  be running before anyone can seal the Secrets the application's first deploy needs. People edit
+  both on `main`.
 - **A new cluster gets going without help.** The VM's bootstrap (ADR-0018) applies Argo CD and
   both Applications at once. Sealing a secret needs the controller's certificate, so on a first
   install the Secrets can only be committed after that, and until then the first sync waits on a
   Postgres that can't start. By default an Argo CD sync waits for health forever and blocks every
   later commit, so the install sets a **30-minute sync timeout**, and failed syncs **retry from
-  the latest commit** (`retry.refresh`), with backoff. Once the SealedSecrets are pushed, the next
-  attempt applies them. The same retries cover a rebuilt cluster, whose SealedSecrets are already
-  in git but whose SealedSecret kind doesn't exist until the controller is up.
+  the latest commit** (`retry.refresh`), with backoff. Once the SealedSecrets are pushed (and
+  deployed to `production`), the next attempt applies them. The same retries cover a rebuilt
+  cluster, whose SealedSecrets are already in git but whose SealedSecret kind doesn't exist until
+  the controller is up. If the first deploy hasn't created the `production` branch yet, the
+  application reports that it can't find it, and finds it on a later refresh.
 - **The AppProject** allows only this repository, only the `filings` and `kube-system`
   namespaces, and only the cluster-wide kinds the manifests contain.
 - **No resources finalizer:** deleting an Application leaves the system and its data running.
@@ -425,10 +437,11 @@ under the namespace's restricted profile, and a control Pod without those settin
   `LLM_MODEL`.
 - **The sealing key must be backed up** (`deploy/k8s/README.md`). Without it, a rebuilt cluster
   can't decrypt the SealedSecrets in git, and every secret must be sealed again.
-- **Deploying a new version is a commit.** The production overlay pins image tags. The image
-  workflow ([ADR-0019](0019-image-ci-and-deploy.md)) commits new ones after it builds `main` and
-  CI passes, so a push to `main` deploys automatically; the tags moved to their own file,
-  `overlays/production/images/kustomization.yaml`, for that.
+- **Deploying a new version is a push to the `production` branch.** The production overlay pins
+  image tags. The image workflow ([ADR-0019](0019-image-ci-and-deploy.md)) sets them to the
+  pushed commit's images once they are built and CI passes, and pushes that commit to
+  `production`, so a push to `main` deploys automatically; the tags moved to their own file,
+  `overlays/production/images/kustomization.yaml`, for that. On `main` they stay a placeholder.
 - **Placeholders wait on the real accounts:** the website's origin (`API_CORS_ORIGINS`, a
   Terraform output), `GOOGLE_CLIENT_ID`, the SMTP settings, and the SealedSecrets. Until then the
   features they control stay off or harmless. The tunnel's routing rule and the backups bucket's

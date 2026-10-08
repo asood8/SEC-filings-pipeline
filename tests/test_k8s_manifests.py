@@ -8,11 +8,13 @@ what the project requires on top of that (docs/adr/0017-kubernetes-manifests.md)
 - every image is pinned to a version;
 - the config uses real setting names, and every Secret a workload reads has an example;
 - no plain Secret is ever deployed from git;
-- the image workflow's deploy job renders with the same kustomize as these tests.
+- the image workflow's deploy job renders with the same kustomize as these tests;
+- Argo CD deploys the application from the production branch, which only that job writes, and
+  the Sealed Secrets controller from main (docs/adr/0019-image-ci-and-deploy.md).
 
-They render with `kubectl kustomize`, so they are skipped when kubectl is missing (install it
+Most render with `kubectl kustomize`, so they are skipped when kubectl is missing (install it
 with `make k8s-tools`), unless REQUIRE_K8S_TOOLS=1 (set by `make k8s-check`), which makes them
-fail instead.
+fail instead. The Argo CD tests only read the YAML and always run.
 """
 
 import json
@@ -30,6 +32,7 @@ import yaml
 from pydantic_settings import BaseSettings
 
 ROOT = Path(__file__).parents[1]
+ARGOCD = ROOT / "deploy" / "argocd"
 PRODUCTION = ROOT / "deploy" / "k8s" / "overlays" / "production"
 SEALED_SECRETS = ROOT / "deploy" / "k8s" / "platform" / "sealed-secrets"
 SECRET_EXAMPLES = ROOT / "deploy" / "k8s" / "secrets-example"
@@ -340,6 +343,46 @@ def test_the_deploy_job_renders_with_the_same_kustomize() -> None:
         s for s in workflow["jobs"]["deploy"]["steps"] if s.get("name") == "Install kustomize"
     )
     assert json.loads(client)["kustomizeVersion"] == f"v{install['env']['KUSTOMIZE_VERSION']}"
+
+
+def _argocd_application(name: str) -> dict[str, Any]:
+    application: dict[str, Any] = yaml.safe_load((ARGOCD / f"{name}.yaml").read_text())
+    assert application["kind"] == "Application"
+    assert application["metadata"]["name"] == name
+    return application
+
+
+def test_argo_cd_deploys_the_application_from_the_production_branch() -> None:
+    # People edit the manifests on main. The image workflow's deploy job pushes each commit's
+    # manifests to production, with its code's image tags, once the images exist and CI passed
+    # (tests/test_images_workflow.py). Following main would put a manifest change live before the
+    # code it needs, and run main's placeholder tags.
+    source = _argocd_application("filings")["spec"]["source"]
+    assert source["targetRevision"] == "production"
+    assert ROOT / source["path"] == PRODUCTION
+
+
+def test_argo_cd_deploys_the_sealed_secrets_controller_from_main() -> None:
+    # On a new cluster the controller must run before anyone can seal the Secrets the
+    # application's first deploy needs, so it can't wait for that deploy. It uses none of our
+    # images, so it has nothing to wait for anyway.
+    source = _argocd_application("sealed-secrets")["spec"]["source"]
+    assert source["targetRevision"] == "main"
+    assert ROOT / source["path"] == SEALED_SECRETS
+
+
+def test_argo_cd_manages_both_applications_from_this_repository() -> None:
+    kustomization = yaml.safe_load((ARGOCD / "kustomization.yaml").read_text())
+    assert sorted(kustomization["resources"]) == [
+        "filings.yaml",
+        "project.yaml",
+        "sealed-secrets.yaml",
+    ]
+    project = yaml.safe_load((ARGOCD / "project.yaml").read_text())
+    for name in ("filings", "sealed-secrets"):
+        spec = _argocd_application(name)["spec"]
+        assert spec["project"] == project["metadata"]["name"], name
+        assert spec["source"]["repoURL"] in project["spec"]["sourceRepos"], name
 
 
 def _settings_env_names() -> set[str]:

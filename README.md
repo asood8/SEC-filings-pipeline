@@ -31,6 +31,15 @@ On a live run against EDGAR, for a watchlist of 35 large US companies:
   once it was back. A grounding check flags any number in an LLM summary that doesn't appear in
   the filing.
 
+**Load test** (k6, `make loadtest`, on the development laptop with the whole stack running):
+8,627 requests in 2¼ minutes, browsing rising to 100 requests/s plus 5 searches/s, with no errors.
+Filing and company pages: median 4 ms, p95 18 ms; lists: p95 11 ms; 96% served from the Redis
+cache. Searches: median 5 ms; the slowest 5% take about 2 s, because a search the cache hasn't
+seen waits at most 2 s for the CPU-only embedding model before answering from keywords alone.
+
+**Model benchmark** (`filings-benchmark`, 3 recent 8-Ks, llama3.2:3b on the laptop's CPU): all 3
+summarized, median 28 s, p95 49 s, no numbers that the filing doesn't contain.
+
 Example headlines from that run (public filings):
 
 - *Douglas J Herrington sold 1,000 AMZN shares for $251.5K (avg $251.50/share)* (Form 4)

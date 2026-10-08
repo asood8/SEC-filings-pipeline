@@ -254,3 +254,20 @@ def test_cached_responses_get_each_origins_own_cors_headers(make_client: ClientF
     assert second.headers["X-Cache"] == "HIT"
     assert first.headers["Access-Control-Allow-Origin"] == origins[0]
     assert second.headers["Access-Control-Allow-Origin"] == origins[1]
+
+
+@pytest.mark.parametrize("path", ["/healthz", "/filings", "/nope", "/me"])
+def test_every_response_carries_the_security_headers(client: TestClient, path: str) -> None:
+    response = client.get(path)
+    assert response.headers["X-Content-Type-Options"] == "nosniff"
+    assert response.headers["X-Frame-Options"] == "DENY"
+    assert response.headers["Referrer-Policy"] == "no-referrer"
+
+
+def test_preflights_carry_the_security_headers(client: TestClient) -> None:
+    response = client.options(
+        "/subscriptions",
+        headers={"Origin": "http://localhost:3000", "Access-Control-Request-Method": "POST"},
+    )
+    assert response.status_code == 200
+    assert response.headers["X-Content-Type-Options"] == "nosniff"

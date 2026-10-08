@@ -85,6 +85,10 @@ The top 50 results from each method are merged with **reciprocal rank fusion**: 
   Like the response cache it fails open, and `API_CACHE_TTL_SECONDS=0` turns it off.
 - **Probes:** `GET /healthz` (liveness: the process answers) and `GET /readyz` (readiness: Postgres
   answers `SELECT 1` within 2 s, else 503) are never rate limited, cached, or traced (ADR-0017).
+- **Security headers** (added 2026-10-08): every response, CORS preflights and cached responses
+  included, carries `X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY`, and
+  `Referrer-Policy: no-referrer` (URLs can carry search terms). The website sends its own
+  (ADR-0015).
 - **Redis failures are fast and fail open.** The API's Redis client has 0.5 s timeouts and no
   retries. After an error, Redis is skipped for 10 s, so an outage costs one timeout, not one per
   request. Before this change, an outage added about 8 s to every request (redis-py retries by
@@ -118,4 +122,4 @@ The top 50 results from each method are merged with **reciprocal rank fusion**: 
   column, so a model with another size means a migration and a re-embed with `filings-index`.
 - **Production.** The API needs the embedding server at query time, so Phase 7 must run it next to
   the API. A llama.cpp server serves one model, so that means an embeddings instance alongside the
-  LLM, or Ollama.
+  LLM, or Ollama. (ADR-0017 runs a second llama.cpp server for the embeddings.)

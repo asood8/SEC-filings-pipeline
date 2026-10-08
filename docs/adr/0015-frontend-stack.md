@@ -73,7 +73,9 @@ We will build the website as a single-page app with **Vite, React, and TypeScrip
   website never handles tokens.
 - **Security headers:** the build writes Cloudflare Pages' `_headers` file
   (`web/src/lib/securityHeaders.ts`): nosniff, no framing, a referrer policy, a Permissions-Policy,
-  and a Content-Security-Policy allowing only the site, the API, and Google's sign-in. The policy
+  a Cross-Origin-Opener-Policy that lets Google's sign-in popup report back, and a
+  Content-Security-Policy allowing only the site, the API, and Google's sign-in. (The API sends
+  its own; ADR-0011.) The policy
   ships report-only, since Google's sign-in can only be checked against it on the live site; once
   the browser console shows no violations there, rename the header to enforce it (runbook).
 - **Local development:** `make web` serves the site on port 3000, the origin the API's CORS

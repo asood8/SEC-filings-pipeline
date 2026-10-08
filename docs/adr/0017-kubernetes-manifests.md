@@ -173,11 +173,11 @@ These are laptop numbers, and the A1 is likely slower per core. `LLM_TIMEOUT_SEC
 about twice the measured run. Handling one message, retries included, must fit in the summarizer's
 Kafka poll interval, or the broker hands the message to a new consumer and it is never
 dead-lettered. The summarizer therefore derives that interval from its settings (every attempt
-waiting out each provider's timeout, plus the backoff: about 72 minutes with these values), so a
-filing both providers fail on is retried and dead-lettered as designed, with or without a Gemini
-key. The longest prompts (about 6k tokens, with several exhibits) may exceed the timeout on the
-VM; those fall back to Gemini. The Phase 8 benchmark (`filings-benchmark`) measures this on the
-VM.
+waiting out each provider's timeout and the embedding call's, plus the backoff: about 78 minutes
+with these values and a Gemini key, 72 without one), so a filing both providers fail on is
+retried and dead-lettered as designed, with or without a Gemini key. The longest prompts (about
+6k tokens, with several exhibits) may exceed the timeout on the VM; those fall back to Gemini.
+The Phase 8 benchmark (`filings-benchmark`) measures this on the VM.
 
 ### Probes and shutdown (added 2026-10-07)
 
@@ -449,8 +449,8 @@ under the namespace's restricted profile, and a control Pod without those settin
 - **What the service code could add:**
   - `filings-replay` and `filings-index` don't handle SIGTERM (ADR-0014), so a stopped run is
     killed after the grace period, without its final telemetry export. That is safe, as each
-    filing is one transaction; they run by hand, not in the cluster. (`filings-discovery` stops on
-    SIGTERM since 2026-10-07; see "Probes and shutdown".)
+    filing is one transaction; they run by hand (`kubectl exec`), not as workloads.
+    (`filings-discovery` stops on SIGTERM since 2026-10-07; see "Probes and shutdown".)
   - The summarizer finishes its current filing before stopping, but an 8-K can take minutes, so
     an update kills it mid-summary after the 45 s grace period. The filing is redelivered and
     summarized again, which is idempotent; only the work is lost.

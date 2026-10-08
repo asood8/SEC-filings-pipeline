@@ -15,8 +15,8 @@ row below.
 | [0001](0001-architecture-overview.md) | Architecture overview | Accepted (frontend superseded by 0015) |
 | [0002](0002-python-monorepo-and-tooling.md) | Python monorepo and tooling | Accepted |
 | [0003](0003-local-development-stack.md) | Local development stack | Accepted |
-| [0004](0004-service-runtime-libraries-and-patterns.md) | Service runtime libraries and patterns | Accepted |
-| [0005](0005-httpx2-instead-of-httpx.md) | Use httpx2 instead of httpx | Accepted |
+| [0004](0004-service-runtime-libraries-and-patterns.md) | Service runtime libraries and patterns | Accepted (HTTP client amended by 0005) |
+| [0005](0005-httpx2-instead-of-httpx.md) | Use httpx2 instead of httpx | Accepted (amends 0004) |
 | [0006](0006-form-4-parsing-and-key-fields.md) | Form 4 parsing and key fields | Accepted |
 | [0007](0007-8k-items-summaries-and-replay.md) | 8-K item extraction, summary storage, and replay | Accepted |
 | [0008](0008-llm-providers-failover-and-exhibits.md) | LLM providers, failover, and 8-K exhibits | Accepted |

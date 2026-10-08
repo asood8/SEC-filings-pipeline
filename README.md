@@ -63,8 +63,8 @@ Example headlines from that run (public filings):
 | 4. Users and alerts | Google sign-in, subscriptions, Discord/Slack/email alerts | In progress: all built; waiting for a real new filing to reach Discord |
 | 5. Frontend | React site (Vite + TypeScript) on Cloudflare Pages | Done |
 | 6. Observability | OpenTelemetry traces, metrics, Grafana dashboards and alerts | Done |
-| 7. Production | Terraform, k3s on Oracle Cloud's free tier, Argo CD, multi-arch images | In progress: images, Kubernetes manifests, and Terraform written and validated offline; needs cloud accounts to apply |
-| 8. Hardening | Load tests, local-model benchmark, backups, runbook | In progress: k6 load test, model benchmark tool, runbook, backup restore drill, dependency audit; the benchmark on the production VM is still to do |
+| 7. Production | Terraform, k3s on Oracle Cloud's free tier, Argo CD, multi-arch images | In progress: images and their CI build and deploy, Kubernetes manifests (sealed secrets, Argo CD), and Terraform written and validated offline; nothing applied yet (needs cloud accounts and a domain) |
+| 8. Hardening | Load tests, local-model benchmark, backups, runbook | In progress: k6 load test, model benchmark tool, backup restore drill, outbox pruning and capacity planning, runbook, dependency audit; the runs on the production VM (benchmark, load test, first backup) are still to do |
 
 The full plan is in the [project brief](docs/PROJECT_BRIEF.md#8-build-plan).
 
@@ -186,7 +186,7 @@ uv run filings-replay parsed --form-type 4 # re-summarize history (also: discove
 | `make sync` | Install all workspace packages and dev tools into `.venv` |
 | `make up` / `make down` | Start (and wait until healthy) / stop the local stack |
 | `make ps` / `make logs` | Stack status / follow logs |
-| `make llm-up` / `make llm-down` | Start (and pull the default model) / stop the optional local LLM |
+| `make llm-up` / `make llm-down` | Start (and pull the default LLM and embedding models) / stop the optional local LLM |
 | `make migrate` | Apply database migrations (`uv run alembic revision --autogenerate -m "..."` creates one) |
 | `make api` | Run the API locally with auto-reload |
 | `make pipeline` | Run every pipeline stage locally, with discovery every 10 minutes |
@@ -198,7 +198,7 @@ uv run filings-replay parsed --form-type 4 # re-summarize history (also: discove
 | `make web-check` | Lint, type-check, test, and build the website |
 | `make web-types` | Regenerate the website's API types from the API's OpenAPI schema |
 | `make tf-check` / `make tf-fmt` | Check the Terraform code (fmt, validate, tests on mock providers, free-tier allowlist) / format it |
-| `make k8s-tools` / `make k8s-check` | Install kubectl and kubeconform (checksums verified) / render and validate the Kubernetes manifests |
+| `make k8s-tools` / `make k8s-check` | Install kubectl, kubeconform, and kubeseal (checksums verified) / render and validate the Kubernetes manifests |
 | `make obs-up` / `make obs-down` | Start / stop the optional local trace and metrics viewer (Grafana on :3001) |
 | `make loadtest` | Load-test a running API with k6 (`make api-loadtest` runs the API with rate limits raised) |
 | `make backup-drill` | Dump the local database, restore it into a throwaway database, and check every table matches |
@@ -233,9 +233,12 @@ web/                  the website: Vite + React + TypeScript, static files for C
 tests/fixtures/       real EDGAR documents used by the parser tests
 docs/PROJECT_BRIEF.md spec, architecture, and build plan
 docs/adr/             architecture decision records
+docs/runbook.md       operating the production system: alerts, deploys, secrets, backups
 docker/               the Dockerfile for the service images
-scripts/              development helpers (`make pipeline`)
-deploy/               Kubernetes manifests (Kustomize, Sealed Secrets, Argo CD) and Grafana dashboards
+scripts/              helpers for `make pipeline`, `backup-drill`, `k8s-tools`, and `k8s-check`
+deploy/               Kubernetes manifests (Kustomize, Sealed Secrets, Argo CD), and Grafana
+                      dashboards and alert rules
+.github/workflows/    CI, image builds and deploys, the dependency audit
 infra/terraform/      the cloud resources outside the cluster, for $0 a month (see its README)
 loadtest/             the k6 load test of the API
 docker-compose.yml    local backing services

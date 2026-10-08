@@ -66,6 +66,15 @@ class ParsedFilingStore:
         document["accession_no"] = document.pop("_id")
         return document
 
+    def get_many(self, accession_nos: list[str]) -> dict[str, dict[str, Any]]:
+        """The stored documents among `accession_nos`, shaped like `get`'s, by accession number
+        (missing ones omitted)."""
+        with self._span("find"):
+            documents = list(self._collection.find({"_id": {"$in": accession_nos}}))
+        for document in documents:
+            document["accession_no"] = document.pop("_id")
+        return {document["accession_no"]: document for document in documents}
+
     def parser_versions(self, accession_nos: list[str]) -> dict[str, int]:
         """The parser version of each stored filing among `accession_nos` (missing ones omitted)."""
         cursor = self._collection.find(

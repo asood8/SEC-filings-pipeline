@@ -15,6 +15,7 @@ from filings_common.db import (
     FilingExhibit,
     FilingStatus,
     Form4Filing,
+    Form4Transaction,
     OutboxEvent,
     session_factory,
 )
@@ -183,6 +184,8 @@ def test_real_form_4_key_fields_land_in_postgres(
 
     with sessions() as session:
         [row] = session.scalars(sa.select(Form4Filing)).all()
+        [sale] = session.scalars(sa.select(Form4Transaction)).all()  # not duplicated
+    assert (sale.line, sale.code, sale.shares, sale.price_per_share) == (1, "S", 1000, 251.5)
     assert (row.issuer_cik, row.issuer_ticker, row.period_of_report) == (
         1018724,
         "AMZN",

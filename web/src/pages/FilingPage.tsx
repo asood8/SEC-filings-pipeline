@@ -2,6 +2,7 @@ import { useQuery } from '@tanstack/react-query'
 import { Link, useParams } from 'react-router'
 import { isNotFound, type FilingDetail } from '../api/client'
 import { filingQuery } from '../api/queries'
+import { Form4Transactions } from '../components/Form4Transactions'
 import { ErrorMessage, Loading } from '../components/QueryStatus'
 import { formatDate, formatDateTime, formLabel } from '../lib/format'
 import { ITEMS_8K, TRANSACTION_CODES } from '../lib/glossary'
@@ -151,16 +152,21 @@ function Form4Section({
         </dd>
         <dt>Reported by</dt>
         <dd>{form4.reporting_owners.join('; ')}</dd>
-        <dt>Transactions</dt>
-        <dd>
-          <ul className={styles.codes}>
-            {form4.transaction_codes.map((code) => (
-              <li key={code}>
-                <strong>{code}</strong> {TRANSACTION_CODES[code] ?? ''}
-              </li>
-            ))}
-          </ul>
-        </dd>
+        {form4.transactions.length === 0 && (
+          // Filings parsed before transaction lines were stored list only their codes.
+          <>
+            <dt>Transactions</dt>
+            <dd>
+              <ul className={styles.codes}>
+                {form4.transaction_codes.map((code) => (
+                  <li key={code}>
+                    <strong>{code}</strong> {TRANSACTION_CODES[code] ?? ''}
+                  </li>
+                ))}
+              </ul>
+            </dd>
+          </>
+        )}
         <dt>Date of the trades</dt>
         <dd>{formatDate(form4.period_of_report)}</dd>
         {form4.is_10b5_1 !== null && (
@@ -174,6 +180,12 @@ function Form4Section({
           </>
         )}
       </dl>
+      {form4.transactions.length > 0 && (
+        <>
+          <h3>Transactions</h3>
+          <Form4Transactions transactions={form4.transactions} />
+        </>
+      )}
     </section>
   )
 }

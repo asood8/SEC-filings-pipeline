@@ -31,3 +31,26 @@ def test_upsert_is_idempotent_and_replaces_the_payload(mongo_db: Database[dict[s
 
 def test_get_missing_returns_none(mongo_db: Database[dict[str, Any]]) -> None:
     assert ParsedFilingStore(mongo_db).get(ACCESSION) is None
+
+
+def test_get_many_returns_the_stored_documents_by_accession(
+    mongo_db: Database[dict[str, Any]],
+) -> None:
+    store = ParsedFilingStore(mongo_db)
+    for accession_no in (ACCESSION, "0001140361-26-000203"):
+        store.upsert(
+            accession_no=accession_no,
+            cik=320193,
+            form_type="4",
+            parser_version=1,
+            parsed={"a": accession_no},
+        )
+
+    documents = store.get_many([ACCESSION, "0000000000-26-000001"])
+    assert list(documents) == [ACCESSION]  # missing ones omitted, others not asked for
+    assert documents[ACCESSION]["accession_no"] == ACCESSION
+    assert (documents[ACCESSION]["parser_version"], documents[ACCESSION]["parsed"]) == (
+        1,
+        {"a": ACCESSION},
+    )
+    assert store.get_many([]) == {}

@@ -3,6 +3,7 @@ import { Link, useParams } from 'react-router'
 import { isNotFound } from '../api/client'
 import { companyQuery, filingsQuery } from '../api/queries'
 import { FilingList } from '../components/FilingList'
+import { InsiderActivity } from '../components/InsiderActivity'
 import { ErrorMessage, Loading } from '../components/QueryStatus'
 import { edgarCompanyUrl } from '../lib/format'
 import { NotFoundPage } from './NotFoundPage'
@@ -36,6 +37,7 @@ export function CompanyPage() {
           Get alerts for {company.data.ticker}
         </Link>
       </p>
+      <InsiderActivity ticker={company.data.ticker} />
       <h2>Recent filings</h2>
       {filings.isPending ? (
         <Loading />

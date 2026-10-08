@@ -22,6 +22,10 @@ On a live run against EDGAR, for a watchlist of 35 large US companies:
   across workers through Redis. Running it again creates no duplicates.
 - **Parsing** turned every Form 4 into structured transactions and split every 8-K into its
   numbered items, plus the text of its EX-99 press releases.
+- **Insider trades** are queryable line by line (646 transactions in 256 Form 4s). A filing's page
+  lists its trades, and a company's page totals 90 days of insider buying and selling by owner:
+  Berkshire Hathaway and Warren Buffett bought 7.5 million Lennar shares for $595 million in four
+  filings.
 - **Search** finds filings by keyword (Postgres full-text search) and by meaning (pgvector
   embeddings from a local model), combined into one ranking: "trading plan cancelled" finds
   Oracle's 8-K about Larry Ellison's plan, and "debt offering" finds Amazon's note offering.
@@ -171,10 +175,12 @@ JavaScript origins; no secret needed) in `.env` as `GOOGLE_CLIENT_ID`. Open the 
 `localhost`, not `127.0.0.1`, so the session cookie is shared with the API.
 
 The API: `GET /search?q=...` (hybrid by default; `mode=keyword|semantic`), `GET /filings`,
-`GET /filings/{accession_no}`, `GET /companies`, and `GET /companies/{ticker}`. Lists use cursor
-pagination, and responses are cached briefly and rate-limited per client through Redis. Signed in:
-`POST /auth/google`, `POST /auth/logout`, `GET`/`DELETE /me`, and alert subscriptions at
-`/subscriptions` (`POST /subscriptions/batch` adds several companies and destinations at once).
+`GET /filings/{accession_no}` (with a Form 4's transaction lines), `GET /companies`,
+`GET /companies/{ticker}`, and `GET /companies/{ticker}/insider-activity?days=90` (insiders'
+purchases and sales per owner). Lists use cursor pagination, and responses are cached briefly and
+rate-limited per client through Redis. Signed in: `POST /auth/google`, `POST /auth/logout`,
+`GET`/`DELETE /me`, and alert subscriptions at `/subscriptions` (`POST /subscriptions/batch` adds
+several companies and destinations at once).
 
 8-K summaries need an LLM: set `GEMINI_API_KEY` (free from Google AI Studio, no billing needed)
 and/or a local model. `make llm-up` runs Ollama in Docker and pulls `llama3.2:3b` and the
@@ -184,6 +190,7 @@ and/or a local model. `make llm-up` runs Ollama in Docker and pulls `llama3.2:3b
 ```sh
 uv run filings-discovery fetch-exhibits    # download EX-99 exhibits for 8-Ks found before exhibits
 uv run filings-replay parsed --form-type 4 # re-summarize history (also: discovered, to reparse)
+uv run filings-rebuild-key-fields --form-type 4  # refill Form 4 transaction lines from MongoDB
 ```
 
 ## Commands
@@ -214,6 +221,7 @@ uv run filings-replay parsed --form-type 4 # re-summarize history (also: discove
 | `uv run filings-benchmark --model <name>` | Compare 8-K summarization across models: latency, failures, grounding |
 | `uv run filings-search-eval` | Score keyword, semantic, and hybrid search against labeled queries (`config/search_eval.json`) |
 | `uv run filings-replay discovered --accession <no>` | Reprocess one filing (also `--form-type`, `--status`, or `parsed`) |
+| `uv run filings-rebuild-key-fields --form-type 4` | Rewrite parsed filings' Postgres key fields (Form 4 transaction lines too) from their MongoDB payloads, after a key-field change; no SEC calls, no events |
 | `uv run filings-healthcheck <process>` | The workers' liveness check (e.g. `filings-parser`): exits 1 if its loop stopped beating |
 
 ## Local services

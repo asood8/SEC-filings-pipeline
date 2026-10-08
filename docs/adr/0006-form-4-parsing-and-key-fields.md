@@ -47,11 +47,62 @@ The brief puts the full parsed payload in MongoDB and "key fields" in Postgres.
   being dead-lettered. They are expected, not errors, and the dead-letter topics stay meaningful for
   the "DLQ not empty" alert.
 
+### Transaction lines in Postgres (added 2026-10-08)
+
+The per-transaction table deferred below now has features that need it: the filing page shows
+every trade, and `GET /companies/{ticker}/insider-activity` totals insiders' purchases and sales.
+
+- **`form4_transactions`:** one row per transaction line, from both tables (stock and
+  derivatives), keyed by (accession number, line). Lines are numbered from 1 in the payload's
+  order: stock first, then derivatives, each as filed. The columns are what's worth querying:
+  derivative or not, security title, transaction date, code, shares, price per share (NULL when
+  footnote-only), acquired or disposed, shares owned after, and direct or indirect ownership.
+  Holdings rows, footnotes, the nature of indirect ownership, and derivative terms (exercise
+  price, dates, underlying security) stay in MongoDB only.
+- **Postgres for querying, MongoDB for the full payload.** The API reads only Postgres, and the
+  insider view is an aggregate over many filings, which is SQL's job. MongoDB stays the complete
+  record, and the table can always be rebuilt from it.
+- **Written with the key fields.** The parser's `save_key_fields` upserts the `form4_filings` row
+  and replaces the filing's lines (delete, then insert) in the same transaction that moves the
+  filing to `parsed`.
+  - Replaying a filing leaves exactly the same rows; a reparse that finds fewer lines leaves none
+    behind.
+  - The upsert locks the `form4_filings` row until commit, so two handlers rewriting one filing
+    take turns.
+  - The foreign key points at `form4_filings`, which points at `filings`, both `ON DELETE
+    CASCADE`: lines never exist without their filing's key fields.
+- **Backfill without SEC:** `filings-rebuild-key-fields [--form-type 4] [--accession ...]`
+  rewrites the key fields of parsed filings from their stored payloads. It reads no raw documents,
+  publishes no events, and leaves statuses alone. A payload from another parser version is skipped
+  (reparse it with `filings-replay discovered`), since its meaning may differ. On a copy of the
+  local database it wrote 646 lines (108 of them derivatives) for 256 Form 4s in about a second; a
+  second run changed nothing.
+- **What counts as insider buying and selling:** codes P and S (open-market or private purchases
+  and sales) on stock lines. Grants, exercises, tax withholding, and gifts are left out: they are
+  compensation mechanics, not decisions to buy or sell. Lines are grouped by the filing's list of
+  reporting owners, so joint filers (Berkshire Hathaway and Warren Buffett) count once. Value is
+  shares times price over the lines with a price; shares without one are reported separately. The
+  window is 1 to 365 days of transaction dates, on `issuer_cik`.
+
+Alternatives considered for this change:
+
+- **The API reading MongoDB** for the filing page. Fine for one filing, but the insider totals
+  would need MongoDB aggregation pipelines, and the API a second datastore on every request.
+- **Upserting each line** by (accession number, line). A reparse with fewer lines would leave
+  stale ones behind.
+- **One row per owner** (each joint filer gets every line). It double-counts joint filings.
+
+Consequences: an existing database needs the migration, then one `filings-rebuild-key-fields
+--form-type 4` run. Owner names are shown as filed ("COOK TIMOTHY D"), and an owner who files
+alone and jointly gets two rows; owner CIKs aren't stored yet. Activity totals add shares across
+share classes (Lennar's Class A and B); values are unaffected.
+
 ## Alternatives considered
 
 - **A per-transaction relational table** (`insider_transactions`). It is the natural next step for
   features such as "largest insider purchases this week", but nothing needs it yet; the full detail
-  is in MongoDB. Add it when a feature does.
+  is in MongoDB. Add it when a feature does. (Added on 2026-10-08 as `form4_transactions`; see
+  "Transaction lines in Postgres" above.)
 - **lxml or xmltodict.** lxml is faster but adds a compiled dependency, for no need at these volumes.
   xmltodict yields untyped dicts, where a validated model catches schema surprises.
 - **Decimal quantities.** Exact, but MongoDB would need Decimal128 conversions, for no practical gain

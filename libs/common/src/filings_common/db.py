@@ -135,7 +135,8 @@ class FilingExhibit(Base):
 
 
 class Form4Filing(Base):
-    """Queryable key fields of a parsed Form 4. The full parsed payload is in MongoDB.
+    """Queryable key fields of a parsed Form 4, with its transaction lines in
+    `form4_transactions`. The full parsed payload is in MongoDB.
 
     The issuer can differ from the watchlist company the filing was found under: a company's
     filing feed also lists Form 4s it files as an insider of *another* company.
@@ -160,6 +161,41 @@ class Form4Filing(Base):
     updated_at: Mapped[datetime] = mapped_column(
         server_default=sa.func.now(), onupdate=sa.func.now()
     )
+
+
+class Form4Transaction(Base):
+    """One transaction line of a parsed Form 4, from either table: non-derivative (stock) or
+    derivative (options, RSUs, convertibles). Holdings rows (positions reported without a
+    transaction), footnotes, and derivative terms stay in the MongoDB payload.
+
+    `line` numbers the payload's transactions from 1: the non-derivative table first, then the
+    derivative table, each in document order. The parser rewrites a filing's lines together with
+    its `form4_filings` row, so a replay leaves exactly the same rows.
+    """
+
+    __tablename__ = "form4_transactions"
+    __table_args__ = (
+        sa.CheckConstraint("acquired_disposed IN ('A', 'D')", name="acquired_disposed"),
+        sa.CheckConstraint("direct_or_indirect IN ('D', 'I')", name="direct_or_indirect"),
+    )
+
+    # Deleting a filing deletes its form4_filings row, and with it these lines.
+    accession_no: Mapped[str] = mapped_column(
+        sa.ForeignKey("form4_filings.accession_no", ondelete="CASCADE"), primary_key=True
+    )
+    line: Mapped[int] = mapped_column(sa.SmallInteger, primary_key=True, autoincrement=False)
+    is_derivative: Mapped[bool]
+    security_title: Mapped[str]
+    transaction_date: Mapped[date | None]
+    # SEC transaction code: P open-market purchase, S sale, A award, M exercise, F tax, G gift, ...
+    code: Mapped[str | None]
+    # Floats, like the payload (ADR-0006): reported figures, not accounting balances.
+    shares: Mapped[float | None] = mapped_column(sa.Double)
+    # NULL when the filing gives the price only in a footnote.
+    price_per_share: Mapped[float | None] = mapped_column(sa.Double)
+    acquired_disposed: Mapped[str | None]  # A or D
+    shares_owned_after: Mapped[float | None] = mapped_column(sa.Double)
+    direct_or_indirect: Mapped[str | None]  # D or I
 
 
 class Form8KFiling(Base):

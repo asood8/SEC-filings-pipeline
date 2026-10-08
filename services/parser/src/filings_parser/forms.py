@@ -2,7 +2,8 @@
 
 Each parser turns a raw document into a JSON-ready dict, stored in MongoDB. It can also write a
 few queryable key fields to Postgres. Bump `version` whenever a parser's output changes; it is
-stored with every parsed filing so outdated ones can be found and reparsed.
+stored with every parsed filing so outdated ones can be found and reparsed. When only the key
+fields change, `filings-rebuild-key-fields` rewrites them from the stored payloads.
 
 Forms without a parser are acknowledged and stay `discovered`, ready to be reparsed once one
 exists (`filings-replay discovered`).
@@ -23,7 +24,8 @@ class FormParser:
     version: int
     # The primary document and the filing's collected exhibits, to a JSON-ready payload.
     parse: Callable[[bytes, Sequence[RawExhibit]], dict[str, Any]]
-    # Upserts the form's key fields into Postgres, inside the handler's transaction.
+    # Writes the form's key fields to Postgres, inside the handler's transaction. Must be
+    # idempotent: redeliveries, replays, and filings-rebuild-key-fields run it again.
     save_key_fields: Callable[[Session, str, dict[str, Any]], None] | None = None
 
 

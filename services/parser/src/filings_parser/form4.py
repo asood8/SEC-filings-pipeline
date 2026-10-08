@@ -18,7 +18,7 @@ import sqlalchemy as sa
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.orm import Session
 
-from filings_common.db import Form4Filing
+from filings_common.db import Form4Filing, Form4Transaction
 from filings_common.parsed import (
     Form4,
     Holding,
@@ -195,8 +195,29 @@ def parse(raw: bytes, exhibits: Sequence[RawExhibit] = ()) -> dict[str, Any]:
     return parse_form4(raw).model_dump(mode="json")
 
 
+def transaction_rows(accession_no: str, form: Form4) -> list[dict[str, Any]]:
+    """The filing's `form4_transactions` rows, numbered from 1 in payload order."""
+    return [
+        {
+            "accession_no": accession_no,
+            "line": line,
+            "is_derivative": t.derivative,
+            "security_title": t.security_title,
+            "transaction_date": t.transaction_date,
+            "code": t.code,
+            "shares": t.shares,
+            "price_per_share": t.price_per_share,
+            "acquired_disposed": t.acquired_disposed,
+            "shares_owned_after": t.shares_owned_after,
+            "direct_or_indirect": t.direct_or_indirect,
+        }
+        for line, t in enumerate(form.transactions, start=1)
+    ]
+
+
 def save_key_fields(session: Session, accession_no: str, payload: dict[str, Any]) -> None:
-    """Upsert the queryable summary of a Form 4 into Postgres (`form4_filings`)."""
+    """Write the queryable parts of a Form 4 to Postgres: upsert its `form4_filings` row and
+    rewrite its `form4_transactions` lines. Running it again leaves exactly the same rows."""
     form = Form4.model_validate(payload)
     values = {
         "period_of_report": form.period_of_report,
@@ -214,3 +235,11 @@ def save_key_fields(session: Session, accession_no: str, payload: dict[str, Any]
             set_={**values, "updated_at": sa.func.now()},
         )
     )
+    # The lines are replaced as a set, not upserted one by one, so a reparse that finds fewer
+    # lines leaves none behind. The upsert above holds the form4_filings row's lock until the
+    # transaction ends, so two handlers rewriting the same filing at once take turns.
+    session.execute(
+        sa.delete(Form4Transaction).where(Form4Transaction.accession_no == accession_no)
+    )
+    if rows := transaction_rows(accession_no, form):
+        session.execute(sa.insert(Form4Transaction), rows)

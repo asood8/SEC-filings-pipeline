@@ -1,7 +1,8 @@
 """Handle one `filings.discovered` event: parse the raw filing and announce `filings.parsed`.
 
 Safe to run more than once for the same filing (the consume loop delivers at least once):
-- the parsed payload (MongoDB) and key fields (Postgres) are upserts keyed by accession number;
+- the parsed payload (MongoDB) and key fields (Postgres) are upserts keyed by accession number
+  (a Form 4's transaction lines are rewritten as a set);
 - the status moves discovered → parsed with a conditional update, and the `filings.parsed` outbox
   event is written in that same transaction only when the update happens, so a redelivery never
   announces the filing twice. Only that first time counts in `filings.parsed`.

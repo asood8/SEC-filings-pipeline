@@ -20,6 +20,43 @@ export function formatDateTime(isoDateTime: string): string {
   return dateTimeFormat.format(new Date(isoDateTime))
 }
 
+// Fractional shares exist (dividend reinvestment, RSU vesting), down to thousandths.
+const sharesFormat = new Intl.NumberFormat('en-US', {
+  maximumFractionDigits: 4,
+})
+
+const priceFormat = new Intl.NumberFormat('en-US', {
+  style: 'currency',
+  currency: 'USD',
+  minimumFractionDigits: 2,
+  maximumFractionDigits: 4,
+})
+
+const centsFormat = new Intl.NumberFormat('en-US', {
+  style: 'currency',
+  currency: 'USD',
+})
+
+const dollarsFormat = new Intl.NumberFormat('en-US', {
+  style: 'currency',
+  currency: 'USD',
+  maximumFractionDigits: 0,
+})
+
+export function formatShares(shares: number): string {
+  return sharesFormat.format(shares)
+}
+
+/** A price per share, as filed: "$77.60", "$20.107". */
+export function formatPrice(price: number): string {
+  return priceFormat.format(price)
+}
+
+/** An amount of money: cents only below $1,000 ("$28.50", "$55,872"). */
+export function formatMoney(amount: number): string {
+  return (Math.abs(amount) < 1000 ? centsFormat : dollarsFormat).format(amount)
+}
+
 export function formLabel(formType: string): string {
   return formType === '4' ? 'Form 4' : formType
 }

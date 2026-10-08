@@ -169,6 +169,10 @@ the production ranking.
   `GET /filings/{accession_no}` (current summary with provenance and grounding flags, Form 4 key
   fields, 8-K items, EX-99 exhibit links), `GET /companies` (watchlist filter, name or ticker
   search, cursors), and `GET /companies/{ticker}` (recent filings).
+- **Insider trades (added 2026-10-08):** a Form 4's detail lists its transaction lines, and
+  `GET /companies/{ticker}/insider-activity?days=90` (1 to 365) totals insiders' purchases and
+  sales (codes P and S) of the company's stock per reporting owner. Both read
+  `form4_transactions` (ADR-0006).
 - **Docs:** typed response models generate the OpenAPI docs at `/docs`.
 - **Keyset cursors** encode the last row's sort key, so pages stay correct while new filings
   arrive. Offsets would repeat or skip rows.

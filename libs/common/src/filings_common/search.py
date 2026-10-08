@@ -5,6 +5,8 @@
 - Semantic search compares a query embedding with document embeddings (pgvector, cosine).
 - Hybrid search merges both rankings with reciprocal rank fusion, which needs no score
   calibration between the two: each list contributes 1 / (k + rank).
+
+`filings-search-eval` (search_eval.py) measures ranking changes on a labeled query set.
 """
 
 import logging
@@ -23,6 +25,8 @@ from filings_common.summaries import FilingSummary
 logger = logging.getLogger(__name__)
 
 RRF_K = 60
+# How many candidates each method contributes before hybrid fusion.
+HYBRID_CANDIDATES = 50
 # Words people search with that summaries don't necessarily contain.
 FORM_LABELS = {
     "4": "Form 4 insider trading report",
@@ -176,6 +180,25 @@ def reciprocal_rank_fusion(*rankings: Sequence[SearchHit], k: int = RRF_K) -> li
         for rank, hit in enumerate(ranking, start=1):
             scores[hit.accession_no] = scores.get(hit.accession_no, 0.0) + 1.0 / (k + rank)
     return [SearchHit(a, s) for a, s in sorted(scores.items(), key=lambda item: -item[1])]
+
+
+def hybrid_search(
+    session: Session,
+    text: str,
+    embedding: Sequence[float],
+    *,
+    model: str,
+    limit: int = 20,
+    form_type: str | None = None,
+    cik: int | None = None,
+) -> list[SearchHit]:
+    """The top HYBRID_CANDIDATES of keyword and of semantic search, merged by reciprocal rank
+    fusion. `limit` only cuts the merged list, so a page never changes the order."""
+    keyword = keyword_search(session, text, limit=HYBRID_CANDIDATES, form_type=form_type, cik=cik)
+    semantic = semantic_search(
+        session, embedding, model=model, limit=HYBRID_CANDIDATES, form_type=form_type, cik=cik
+    )
+    return reciprocal_rank_fusion(keyword, semantic)[:limit]
 
 
 def rebuild_index(sessions: sessionmaker[Session], embedder: Embedder | None) -> tuple[int, int]:

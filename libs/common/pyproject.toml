@@ -24,6 +24,7 @@ dependencies = [
 filings-outbox-relay = "filings_common.relay:main"
 filings-replay = "filings_common.replay:main"
 filings-index = "filings_common.indexer:main"
+filings-search-eval = "filings_common.search_eval:main"
 filings-healthcheck = "filings_common.health:main"
 
 [build-system]

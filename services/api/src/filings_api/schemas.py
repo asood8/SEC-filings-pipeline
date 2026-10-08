@@ -165,6 +165,62 @@ class InsiderActivity(BaseModel):
     )
 
 
+TradeSide = Literal["buy", "sell"]
+
+
+class IssuerOut(BaseModel):
+    cik: int
+    name: str = Field(description='Readable: "Lennar Corp" for EDGAR\'s "LENNAR CORP /NEW/".')
+    ticker: str | None = Field(
+        description=(
+            "The company's ticker in SEC's ticker list, which `/companies/{ticker}` takes; null "
+            "for a company that isn't in it."
+        )
+    )
+
+
+class InsiderTrade(BaseModel):
+    """One Form 4's open-market purchases, or its sales, of one company's stock."""
+
+    accession_no: str
+    filed_at: date
+    transaction_date: date = Field(description="The date of the latest trade counted.")
+    issuer: IssuerOut = Field(
+        description="Whose stock was traded, which can differ from the company that filed."
+    )
+    reporting_owners: list[ReportingOwnerOut] = Field(
+        description="In the filing's order. Joint filers share the row, so trades count once."
+    )
+    side: TradeSide
+    shares: float
+    value: float = Field(description="Shares times price, over the trades with a reported price.")
+    average_price: float | None = Field(
+        description="Value per priced share; null when the filing gives no price for any of them."
+    )
+    unpriced_shares: float = Field(
+        description="Shares whose price the filing gives only in a footnote, so not in `value`."
+    )
+    is_10b5_1: bool | None = Field(
+        description=(
+            "Whether the filing says the trades were made under a Rule 10b5-1 plan: a trading "
+            "plan set up in advance, which then trades on its own schedule. It covers the "
+            "whole filing. Null when the filing doesn't say."
+        )
+    )
+
+
+class InsiderTrades(BaseModel):
+    side: TradeSide
+    days: int
+    since: date = Field(description="The earliest transaction date counted.")
+    items: list[InsiderTrade] = Field(
+        description=(
+            "By value, largest first; filings that give no price come last. Equal values: the "
+            "latest trade first."
+        )
+    )
+
+
 class SearchResultOut(FilingOut):
     score: float = Field(description="Higher is better; comparable within one response only.")
 

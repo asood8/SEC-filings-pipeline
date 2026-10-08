@@ -64,6 +64,21 @@ def test_joint_filers_buying_another_companys_stock() -> None:
     assert first.footnote_ids == ["F3", "F1"]
 
 
+def test_an_owners_relationship_is_its_boxes_and_titles() -> None:
+    [huang] = fixture("0001197649-26-000012").reporting_owners
+    assert huang.relationship().model_dump() == {
+        "is_director": True,
+        "is_officer": True,
+        "is_ten_percent_owner": False,
+        "is_other": False,
+        "officer_title": "President and CEO",
+        "other_text": None,
+    }
+    berkshire, buffett = fixture("0001193125-26-397059").reporting_owners
+    assert berkshire.relationship() == buffett.relationship()
+    assert buffett.relationship().is_ten_percent_owner
+
+
 def test_option_exercise_then_sale() -> None:
     form = fixture("0001065280-26-000269")
     assert [(t.derivative, t.code) for t in form.transactions] == [

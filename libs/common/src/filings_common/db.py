@@ -150,6 +150,12 @@ class Form4Filing(Base):
     __tablename__ = "form4_filings"
     __table_args__ = (
         sa.Index("ix_form4_filings_issuer_cik_period", "issuer_cik", "period_of_report"),
+        # One relationship per owner. (jsonb_array_length also rejects a value that isn't an
+        # array.)
+        sa.CheckConstraint(
+            "jsonb_array_length(reporting_owner_relationships) = cardinality(reporting_owners)",
+            name="reporting_owner_relationships_length",
+        ),
     )
 
     accession_no: Mapped[str] = mapped_column(
@@ -164,6 +170,14 @@ class Form4Filing(Base):
     # The owners' CIKs, in the same order as their names. NULL on rows saved before CIKs were
     # stored, until `filings-rebuild-key-fields` rewrites them.
     reporting_owner_ciks: Mapped[list[int] | None] = mapped_column(ARRAY(sa.BigInteger()))
+    # Each owner's relationship to the issuer, in the same order: a JSON array of
+    # filings_common.parsed.OwnerRelationship objects ({"is_director": true, "is_officer": false,
+    # ..., "officer_title": null, "other_text": null}). NULL on rows saved before relationships
+    # were stored, until `filings-rebuild-key-fields` rewrites them. (none_as_null: None is SQL
+    # NULL, not the JSON value null, which the check constraint would reject.)
+    reporting_owner_relationships: Mapped[list[dict[str, Any]] | None] = mapped_column(
+        JSONB(none_as_null=True)
+    )
     transaction_codes: Mapped[list[str]] = mapped_column(ARRAY(sa.Text()))
     is_10b5_1: Mapped[bool | None]
     updated_at: Mapped[datetime] = mapped_column(

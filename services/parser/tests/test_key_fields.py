@@ -35,6 +35,19 @@ JOINT_PURCHASES = "0001193125-26-397059"  # Berkshire and Buffett buying Lennar:
 DERIVATIVE_ONLY = "0001284323-26-000002"  # an RSU award, in the derivative table only
 EXERCISE_AND_SALE = "0001065280-26-000269"  # stock M and S, then the option's M
 FOOTNOTE_PRICE = "0001628280-26-063531"  # the first line's price is only in a footnote
+DIRECTOR_AND_CEO = "0001197649-26-000012"  # Jensen Huang: director, "President and CEO"
+EVERY_ROLE = "0000950103-26-014647"  # Mark Zuckerberg: director, "COB and CEO", 10% owner
+
+# How form4_filings.reporting_owner_relationships stores an owner who ticked no box.
+NO_ROLE = {
+    "is_director": False,
+    "is_officer": False,
+    "is_ten_percent_owner": False,
+    "is_other": False,
+    "officer_title": None,
+    "other_text": None,
+}
+TEN_PERCENT_OWNER = NO_ROLE | {"is_ten_percent_owner": True}
 
 
 def payload(accession_no: str) -> dict[str, Any]:
@@ -51,6 +64,17 @@ def lines(session: Session, accession_no: str | None = None) -> list[dict[str, A
         {c.key: getattr(row, c.key) for c in sa.inspect(Form4Transaction).columns}
         for row in session.scalars(query)
     ]
+
+
+def relationships(sessions: sessionmaker[Session]) -> dict[str, list[dict[str, Any]] | None]:
+    """Each saved filing's form4_filings.reporting_owner_relationships."""
+    with sessions() as session:
+        saved: dict[str, list[dict[str, Any]] | None] = dict(
+            session.execute(
+                sa.select(Form4Filing.accession_no, Form4Filing.reporting_owner_relationships)
+            ).all()
+        )
+        return saved
 
 
 def add_filings(
@@ -167,6 +191,48 @@ def test_derivative_only_joint_and_footnote_priced_filings(
     assert [line["price_per_share"] for line in footnoted] == [None, 103.66, 0]
 
 
+def test_each_owners_relationship_is_saved_in_owner_order(
+    sessions: sessionmaker[Session],
+) -> None:
+    filings = [JOINT_PURCHASES, DIRECTOR_AND_CEO, EVERY_ROLE, FOOTNOTE_PRICE]
+    add_filings(sessions, filings)
+    for accession_no in filings:
+        save(sessions, accession_no, payload(accession_no))
+
+    assert relationships(sessions) == {
+        # Joint filers: Berkshire Hathaway, then Warren Buffett, as in reporting_owners.
+        JOINT_PURCHASES: [TEN_PERCENT_OWNER, TEN_PERCENT_OWNER],
+        DIRECTOR_AND_CEO: [
+            NO_ROLE
+            | {"is_director": True, "is_officer": True, "officer_title": "President and CEO"}
+        ],
+        EVERY_ROLE: [
+            NO_ROLE
+            | {
+                "is_director": True,
+                "is_officer": True,
+                "is_ten_percent_owner": True,
+                "officer_title": "COB and CEO",
+            }
+        ],
+        FOOTNOTE_PRICE: [
+            NO_ROLE | {"is_officer": True, "officer_title": "EVP, Control, Fin Plan & Tax"}
+        ],
+    }
+
+
+def test_one_relationship_per_owner_is_enforced(sessions: sessionmaker[Session]) -> None:
+    add_filings(sessions, [JOINT_PURCHASES])
+    save(sessions, JOINT_PURCHASES, payload(JOINT_PURCHASES))
+    # One relationship for two owners: a check violation. Not an array: jsonb_array_length fails.
+    for wrong, error in (
+        ([TEN_PERCENT_OWNER], sa.exc.IntegrityError),
+        (TEN_PERCENT_OWNER, sa.exc.DataError),
+    ):
+        with pytest.raises(error), sessions.begin() as session:
+            session.execute(sa.update(Form4Filing).values(reporting_owner_relationships=wrong))
+
+
 def test_saving_again_leaves_exactly_the_same_rows(sessions: sessionmaker[Session]) -> None:
     add_filings(sessions, [JOINT_PURCHASES])
     save(sessions, JOINT_PURCHASES, payload(JOINT_PURCHASES))
@@ -262,6 +328,27 @@ def test_rebuild_fills_owner_ciks_on_rows_saved_before_they_were_stored(
             ).all()
         )
     assert ciks == {JOINT_PURCHASES: [1067983, 315090], EXERCISE_AND_SALE: [1184230]}
+
+
+def test_rebuild_fills_owner_relationships_on_rows_saved_before_they_were_stored(
+    sessions: sessionmaker[Session], mongo_db: Database[dict[str, Any]]
+) -> None:
+    parsed = [JOINT_PURCHASES, EXERCISE_AND_SALE]
+    add_filings(sessions, parsed)
+    for accession_no in parsed:
+        save(sessions, accession_no, payload(accession_no))
+    with sessions.begin() as session:  # as migration 1a26f7f8a6f2 leaves existing rows
+        session.execute(sa.update(Form4Filing).values(reporting_owner_relationships=None))
+    store = store_payloads(mongo_db, parsed)
+
+    assert rebuild_key_fields(sessions, store, form_type="4").rebuilt == 2
+    first = relationships(sessions)
+    assert first == {
+        JOINT_PURCHASES: [TEN_PERCENT_OWNER, TEN_PERCENT_OWNER],
+        EXERCISE_AND_SALE: [NO_ROLE | {"is_director": True}],  # Richard Barton, Netflix
+    }
+    assert rebuild_key_fields(sessions, store, form_type="4").rebuilt == 2  # changes nothing
+    assert relationships(sessions) == first
 
 
 def test_rebuild_skips_unparsed_filings_missing_payloads_and_other_parser_versions(

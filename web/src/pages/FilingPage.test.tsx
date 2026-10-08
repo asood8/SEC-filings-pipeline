@@ -5,6 +5,8 @@ import {
   BUFFETT,
   filingDetail,
   form4Transaction,
+  TANEJA,
+  withoutRelationship,
 } from '../test/data'
 import { mockApi, renderRoute } from '../test/render'
 
@@ -76,7 +78,9 @@ describe('FilingPage', () => {
     expect(within(trade).getByText(/filed by BERKSHIRE/)).toBeInTheDocument()
     expect(
       within(trade).getByText('Reported by').nextElementSibling,
-    ).toHaveTextContent('Berkshire Hathaway Inc; Warren E Buffett')
+    ).toHaveTextContent(
+      'Berkshire Hathaway Inc (10% owner); Warren E Buffett (10% owner)',
+    )
     expect(
       within(trade).getByText('Open-market or private purchase'),
     ).toBeInTheDocument()
@@ -85,6 +89,39 @@ describe('FilingPage', () => {
       within(trade).getByText('Not marked as a Rule 10b5-1 trading plan'),
     ).toBeInTheDocument()
     expect(screen.getByText(/hasn't been summarized yet/)).toBeInTheDocument()
+  })
+
+  it('says who reported the trade, with the title as filed on hover', async () => {
+    mockApi({
+      '/filings/x': () =>
+        filingDetail({
+          accession_no: 'x',
+          cik: 1318605,
+          ticker: 'TSLA',
+          company_name: 'Tesla, Inc.',
+          form_type: '4',
+          items: null,
+          form4: {
+            period_of_report: '2026-09-15',
+            issuer_cik: 1318605,
+            issuer_name: 'Tesla, Inc.',
+            issuer_ticker: 'TSLA',
+            reporting_owners: [TANEJA],
+            transaction_codes: ['M', 'S'],
+            is_10b5_1: true,
+            transactions: [form4Transaction()],
+          },
+        }),
+    })
+    renderRoute('/filings/x')
+
+    const reporter = (await screen.findByText('Reported by'))
+      .nextElementSibling as HTMLElement
+    expect(reporter).toHaveTextContent(/^Vaibhav Taneja \(CFO\)$/)
+    expect(within(reporter).getByText('(CFO)')).toHaveAttribute(
+      'title',
+      'Title as filed: Chief Financial Officer',
+    )
   })
 
   it("lists a Form 4's transactions in plain language", async () => {
@@ -99,13 +136,13 @@ describe('FilingPage', () => {
             issuer_cik: 320193,
             issuer_name: 'Apple Inc.',
             issuer_ticker: 'AAPL',
-            // Saved before owner CIKs were stored.
+            // Saved before owner CIKs and relationships were stored.
             reporting_owners: [
-              {
+              withoutRelationship({
                 cik: null,
                 name: 'BARTON RICHARD N',
                 display_name: 'Richard N Barton',
-              },
+              }),
             ],
             transaction_codes: ['M', 'S'],
             is_10b5_1: true,
@@ -171,6 +208,10 @@ describe('FilingPage', () => {
     expect(
       screen.getByText(/gives the price only in a footnote/),
     ).toBeInTheDocument()
+    // No relationship is known for an owner saved before they were stored.
+    expect(
+      screen.getByText('Reported by').nextElementSibling,
+    ).toHaveTextContent(/^Richard N Barton$/)
     // The table replaces the list of codes.
     expect(
       screen.queryByText('Transactions', { selector: 'dt' }),

@@ -226,6 +226,9 @@ def save_key_fields(session: Session, accession_no: str, payload: dict[str, Any]
         "issuer_ticker": form.issuer.trading_symbol,
         "reporting_owners": [o.name for o in form.reporting_owners],
         "reporting_owner_ciks": [o.cik for o in form.reporting_owners],
+        "reporting_owner_relationships": [
+            o.relationship().model_dump(mode="json") for o in form.reporting_owners
+        ],
         "transaction_codes": sorted({t.code for t in form.transactions if t.code}),
         "is_10b5_1": form.aff10b5_one,
     }

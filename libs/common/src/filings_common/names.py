@@ -20,10 +20,16 @@ starts a longer one ("Di Sibio Carmine" is Carmine Di Sibio), but a two-word las
 comes out wrong ("MONTGOMERY RICE VALERIE MD", Valerie Montgomery Rice, is shown as "Rice Valerie
 Montgomery MD"), and so does a name filed first name first ("SACHIN J. MEHRA" is shown as "J. Mehra
 Sachin"). That is why the API also returns names as filed.
+
+A reporting owner's relationship to the company reads the same way: `relationship_label` is
+"CEO", "Director", "10% owner", or several of them ("President and CEO, Director"), with officer
+titles shortened by `officer_title` ("Chief Financial Officer" is "CFO").
 """
 
 import re
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
+
+from filings_common.parsed import OwnerRelationship
 
 # Words that mark a reporting owner as an entity rather than a person, compared in capitals
 # without dots or commas at either end ("L.P." is "L.P").
@@ -110,6 +116,34 @@ _SPELLINGS = {
     "SAP": "SAP",
     "UNITEDHEALTH": "UnitedHealth",
 }
+# Officer titles shown as the abbreviations people know them by, and what they stand for. The
+# search index treats each pair as synonyms (filings_common.search.ABBREVIATIONS starts with
+# these), so "CFO" finds "Chief Financial Officer" and the other way round. Only unambiguous ones:
+# CIO can be an information or an investment officer, and CPO a product or a people officer.
+OFFICER_ABBREVIATIONS: Mapping[str, str] = {
+    "CEO": "chief executive officer",
+    "CFO": "chief financial officer",
+    "COO": "chief operating officer",
+    "CTO": "chief technology officer",
+    "CAO": "chief accounting officer",
+    "EVP": "executive vice president",
+    "SVP": "senior vice president",
+    "VP": "vice president",
+}
+# Each long form as whole words, in any case and spacing; the longest first, so "Executive Vice
+# President" becomes "EVP", not "Executive VP".
+_OFFICER_PATTERNS = [
+    (
+        short,
+        re.compile(
+            rf"(?<![\w-]){r'[\s-]+'.join(re.escape(w) for w in long.split())}(?![\w-])",
+            re.IGNORECASE,
+        ),
+    )
+    for short, long in sorted(OFFICER_ABBREVIATIONS.items(), key=lambda item: -len(item[1]))
+]
+# Words that stay small in a title in capitals: "CHIEF OF STAFF" is "Chief of Staff".
+_TITLE_SMALL_WORDS = _SMALL_WORDS | {"to", "in", "on", "at"}
 
 
 def company_name(name: str) -> str:
@@ -141,6 +175,42 @@ def display_name(name: str) -> str:
     if not capitals:
         return " ".join([*given, *last, *suffixes])
     return " ".join([_title_case([*given, *last]), *(_suffix(t) for t in suffixes)])
+
+
+def relationship_label(relationship: OwnerRelationship) -> str | None:
+    """A Form 4 reporting owner's relationship to the issuer, short: "CFO", "Director",
+    "10% owner", "Other", or several, most specific first: the officer title, "Director",
+    "10% owner", then the other description ("President and CEO, Director"). That is the Form 4
+    template's order too. None when the filing ticks no box."""
+    parts: list[str] = []
+    if relationship.is_officer:
+        title = relationship.officer_title
+        parts.append(officer_title(title) if title and title.strip() else "Officer")
+    if relationship.is_director:
+        parts.append("Director")
+    if relationship.is_ten_percent_owner:
+        parts.append("10% owner")
+    if relationship.is_other:
+        text = relationship.other_text
+        parts.append(officer_title(text) if text and text.strip() else "Other")
+    return ", ".join(parts) or None
+
+
+def officer_title(title: str) -> str:
+    """An officer title for display: the usual long forms abbreviated ("Executive Vice
+    President, Chief Financial Officer" is "EVP, CFO"; OFFICER_ABBREVIATIONS), runs of spaces
+    collapsed, and a title in capitals title-cased but for its abbreviations ("EVP: CHIEF
+    OPERATING OFFICER" is "EVP: COO", "GENERAL COUNSEL" is "General Counsel"). Anything else
+    stays as typed ("SVP, GC and Government Affairs")."""
+    shown = " ".join(title.split())
+    capitals = _in_capitals(shown)  # before abbreviating, which adds capitals
+    for short, pattern in _OFFICER_PATTERNS:
+        shown = pattern.sub(short, shown)
+    if not capitals:
+        return shown
+    return " ".join(
+        _title_word_or_abbreviation(w, first=i == 0) for i, w in enumerate(shown.split())
+    )
 
 
 def _strip_state_tag(name: str) -> str:
@@ -183,6 +253,17 @@ def _title_word(word: str, *, first: bool) -> str:
     titled = re.sub(r"'S\b", "'s", titled)
     # Mc names: McDonald, McInerney, McNabb.
     return re.sub(r"^Mc([a-z])(?=[a-z])", lambda m: f"Mc{m[1].upper()}", titled)
+
+
+def _title_word_or_abbreviation(word: str, *, first: bool) -> str:
+    """A word of a title in capitals. Up to three letters, or none of them a vowel, is taken for
+    an abbreviation and kept ("EVP", "UHG", "R&D", "MKTG"), unless a small word ("OF")."""
+    letters = re.sub(r"[^A-Za-z]", "", word)
+    if letters.lower() in _TITLE_SMALL_WORDS:
+        return _title_word(word, first=first)
+    if letters and (len(letters) <= 3 or not re.search("[AEIOU]", letters)):
+        return word
+    return _title_word(word, first=first)
 
 
 def _suffix(token: str) -> str:

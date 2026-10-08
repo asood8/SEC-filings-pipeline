@@ -1,8 +1,8 @@
 """Shared query pieces: a filing joined with its company and current headline, a Form 4's
 reporting owners, and a company looked up by ticker."""
 
-from collections.abc import Iterator, Sequence
-from typing import Annotated
+from collections.abc import Iterator, Mapping, Sequence
+from typing import Annotated, Any
 
 import sqlalchemy as sa
 from fastapi import Depends, Query, Request
@@ -11,7 +11,8 @@ from sqlalchemy.orm import Session, sessionmaker
 from filings_api.schemas import FilingOut, ReportingOwnerOut
 from filings_common.db import Company, Filing, FilingSearch
 from filings_common.embeddings import Embedder
-from filings_common.names import company_name, display_name
+from filings_common.names import company_name, display_name, relationship_label
+from filings_common.parsed import OwnerRelationship
 
 
 def get_session(request: Request) -> Iterator[Session]:
@@ -55,17 +56,31 @@ def to_filing_out(filing: Filing, ticker: str, name: str, headline: str | None) 
 
 
 def reporting_owners_out(
-    names: Sequence[str], ciks: Sequence[int] | None
+    names: Sequence[str],
+    ciks: Sequence[int] | None,
+    relationships: Sequence[Mapping[str, Any]] | None,
 ) -> list[ReportingOwnerOut]:
-    """A Form 4's owners from its `form4_filings` row: names as filed, CIKs in the same order
-    (NULL on rows saved before CIKs were stored)."""
-    known: Sequence[int | None] = (
-        ciks if ciks is not None and len(ciks) == len(names) else [None] * len(names)
-    )
+    """A Form 4's owners from its `form4_filings` row: names as filed, then CIKs and
+    relationships in the same order (each NULL on rows saved before it was stored)."""
     return [
-        ReportingOwnerOut(cik=cik, name=name, display_name=display_name(name))
-        for name, cik in zip(names, known, strict=True)
+        ReportingOwnerOut(
+            cik=cik, name=name, display_name=display_name(name), **_relationship_fields(role)
+        )
+        for name, cik, role in zip(
+            names, _per_owner(ciks, names), _per_owner(relationships, names), strict=True
+        )
     ]
+
+
+def _per_owner[T](values: Sequence[T] | None, names: Sequence[str]) -> Sequence[T | None]:
+    return values if values is not None and len(values) == len(names) else [None] * len(names)
+
+
+def _relationship_fields(stored: Mapping[str, Any] | None) -> dict[str, Any]:
+    if stored is None:
+        return dict.fromkeys(["relationship", *OwnerRelationship.model_fields])
+    relationship = OwnerRelationship.model_validate(stored)
+    return {"relationship": relationship_label(relationship), **relationship.model_dump()}
 
 
 def company_by_ticker(session: Session, ticker: str) -> Company | None:

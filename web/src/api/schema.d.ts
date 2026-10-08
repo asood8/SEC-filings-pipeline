@@ -100,6 +100,31 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/insider-trades": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * The largest recent insider purchases or sales
+         * @description Open-market or private purchases (`side=buy`, Form 4 code P) or sales (`side=sell`, code
+         *     S) of any company's stock in the last `days` days, by transaction date, one row per Form 4.
+         *     Grants, option exercises, tax withholding, gifts, and derivative trades are left out.
+         *
+         *     The rules are those of `/companies/{ticker}/insider-activity`: one company's rows add up to
+         *     its totals there (when they all fit in `limit`).
+         */
+        get: operations["list_insider_trades_insider_trades_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/search": {
         parameters: {
             query?: never;
@@ -534,6 +559,95 @@ export interface components {
              */
             owners: components["schemas"]["OwnerActivity"][];
         };
+        /**
+         * InsiderTrade
+         * @description One Form 4's open-market purchases, or its sales, of one company's stock.
+         */
+        InsiderTrade: {
+            /** Accession No */
+            accession_no: string;
+            /**
+             * Filed At
+             * Format: date
+             */
+            filed_at: string;
+            /**
+             * Transaction Date
+             * Format: date
+             * @description The date of the latest trade counted.
+             */
+            transaction_date: string;
+            /** @description Whose stock was traded, which can differ from the company that filed. */
+            issuer: components["schemas"]["IssuerOut"];
+            /**
+             * Reporting Owners
+             * @description In the filing's order. Joint filers share the row, so trades count once.
+             */
+            reporting_owners: components["schemas"]["ReportingOwnerOut"][];
+            /**
+             * Side
+             * @enum {string}
+             */
+            side: "buy" | "sell";
+            /** Shares */
+            shares: number;
+            /**
+             * Value
+             * @description Shares times price, over the trades with a reported price.
+             */
+            value: number;
+            /**
+             * Average Price
+             * @description Value per priced share; null when the filing gives no price for any of them.
+             */
+            average_price: number | null;
+            /**
+             * Unpriced Shares
+             * @description Shares whose price the filing gives only in a footnote, so not in `value`.
+             */
+            unpriced_shares: number;
+            /**
+             * Is 10B5 1
+             * @description Whether the filing says the trades were made under a Rule 10b5-1 plan: a trading plan set up in advance, which then trades on its own schedule. It covers the whole filing. Null when the filing doesn't say.
+             */
+            is_10b5_1: boolean | null;
+        };
+        /** InsiderTrades */
+        InsiderTrades: {
+            /**
+             * Side
+             * @enum {string}
+             */
+            side: "buy" | "sell";
+            /** Days */
+            days: number;
+            /**
+             * Since
+             * Format: date
+             * @description The earliest transaction date counted.
+             */
+            since: string;
+            /**
+             * Items
+             * @description By value, largest first; filings that give no price come last. Equal values: the latest trade first.
+             */
+            items: components["schemas"]["InsiderTrade"][];
+        };
+        /** IssuerOut */
+        IssuerOut: {
+            /** Cik */
+            cik: number;
+            /**
+             * Name
+             * @description Readable: "Lennar Corp" for EDGAR's "LENNAR CORP /NEW/".
+             */
+            name: string;
+            /**
+             * Ticker
+             * @description The company's ticker in SEC's ticker list, which `/companies/{ticker}` takes; null for a company that isn't in it.
+             */
+            ticker: string | null;
+        };
         /** OwnerActivity */
         OwnerActivity: {
             /**
@@ -577,7 +691,9 @@ export interface components {
         };
         /**
          * ReportingOwnerOut
-         * @description A person or entity that filed a Form 4.
+         * @description A person or entity that filed a Form 4, and who they are to the issuer: the boxes ticked
+         *     on the filing (several can be). The relationship fields are all null only for Form 4s saved
+         *     before relationships were stored, until their key fields are rebuilt.
          */
         ReportingOwnerOut: {
             /**
@@ -595,6 +711,32 @@ export interface components {
              * @description For display: "Timothy D Cook"; an entity keeps its word order ("Berkshire Hathaway Inc"). People's names are reordered by rule, so an unusual name can come out wrong; `name` is always as filed.
              */
             display_name: string;
+            /**
+             * Relationship
+             * @description For display, short: "CEO", "Director", "10% owner", "Other", or several, the officer title first ("President and CEO, Director"). Common titles are abbreviated ("Chief Financial Officer" is "CFO"). Null when the filing ticks no box, or the relationship isn't stored.
+             */
+            relationship: string | null;
+            /** Is Director */
+            is_director: boolean | null;
+            /** Is Officer */
+            is_officer: boolean | null;
+            /**
+             * Officer Title
+             * @description As filed, for an officer.
+             */
+            officer_title: string | null;
+            /**
+             * Is Ten Percent Owner
+             * @description Owns over 10% of a class of stock.
+             */
+            is_ten_percent_owner: boolean | null;
+            /** Is Other */
+            is_other: boolean | null;
+            /**
+             * Other Text
+             * @description As filed: what the other relationship is.
+             */
+            other_text: string | null;
         };
         /** SearchResponse */
         SearchResponse: {
@@ -969,6 +1111,42 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["InsiderActivity"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_insider_trades_insider_trades_get: {
+        parameters: {
+            query?: {
+                /** @description Purchases or sales. */
+                side?: "buy" | "sell";
+                /** @description How far back, by transaction date. */
+                days?: number;
+                /** @description How many filings. */
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["InsiderTrades"];
                 };
             };
             /** @description Validation Error */

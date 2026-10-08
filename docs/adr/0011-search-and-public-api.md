@@ -191,6 +191,14 @@ the production ranking.
   sales (codes P and S) of the company's stock per reporting owner. Both read
   `form4_transactions` (ADR-0006). Reporting owners are objects, `{cik, name, display_name}`:
   the name as filed and a readable one (ADR-0006, "Owner CIKs and readable names").
+- **Insider trades across companies (added 2026-10-08):** `GET /insider-trades?side=buy&days=30`
+  (`side` buy or sell; `days` 1 to 365; `limit` 1 to 50, default 25) lists the largest recent
+  purchases or sales of any company's stock, one row per Form 4, by value. Each row has the
+  issuer (readable name, and its ticker in the companies table, or null), the reporting owners,
+  the shares, value, and average price of the filing's P or S stock lines, the shares without a
+  price, and the 10b5-1 flag. It follows insider activity's rules, so a company's rows add up to
+  its totals there (ADR-0006, "Insider trades across companies"). The website's Insider trades
+  page (`/insiders`) shows it.
 - **Docs:** typed response models generate the OpenAPI docs at `/docs`.
 - **Keyset cursors** encode the last row's sort key, so pages stay correct while new filings
   arrive. Offsets would repeat or skip rows.
@@ -227,6 +235,16 @@ data: 500 companies, 10 years, 452,000 filings; runbook, "Capacity planning", ha
   probes the issuer's filings' lines instead of hash-joining all of them: 87 → 36 ms for an
   issuer with 8,400 Form 4s. Its condition must change with the query's. The work still grows
   with the issuer's whole history, not with `days`.
+- **Insider trades across companies** (`GET /insider-trades`, added 2026-10-08) use the same
+  partial index. Their condition is the index's, written with literal codes so that a prepared
+  statement's generic plan can use it too. They also ask for filings filed within the window,
+  which the feed's index finds: a trade is reported after it happens, so this changes no result,
+  and the work follows `days` (ADR-0006). At volume: 49–57 ms of SQL for 30 days, 60–116 ms for
+  90, 100–250 ms for 365; without the filing-date condition, 130–185 ms for 30 days (up to 2 s
+  with a cold cache). The planner still reads `form4_filings` whole (420,000 rows, about 10 ms
+  per worker) rather than probe it 3,400 times at the default `random_page_cost` of 4; at 1.1
+  it probes, and 30 days take 25–44 ms. The same filing-date condition would bound insider
+  activity; `period_of_report` wouldn't, since it is a filing's earliest trade.
 - **Semantic search scans the HNSW index iteratively** (`hnsw.iterative_scan = strict_order`, set
   for the transaction). An HNSW scan returns its `hnsw.ef_search` (40) nearest vectors and filters
   apply afterwards, so at volume an 8-K filter returned nothing once Form 4s filled those 40, and

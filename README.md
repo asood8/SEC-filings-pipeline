@@ -22,10 +22,13 @@ On a live run against EDGAR, for a watchlist of 35 large US companies:
   across workers through Redis. Running it again creates no duplicates.
 - **Parsing** turned every Form 4 into structured transactions and split every 8-K into its
   numbered items, plus the text of its EX-99 press releases.
-- **Insider trades** are queryable line by line (646 transactions in 256 Form 4s). A filing's page
-  lists its trades, and a company's page totals 90 days of insider buying and selling by owner:
+- **Insider trades** are queryable line by line (646 transactions in 256 Form 4s), and each
+  insider is shown with their role ("Amy Hood (EVP, CFO)"). A filing's page lists its trades,
+  and a company's page totals 90 days of insider buying and selling by owner:
   Berkshire Hathaway and Warren Buffett bought 7.5 million Lennar shares for $595 million in four
-  filings.
+  filings. The Insider trades page ranks the largest open-market purchases and sales across all
+  companies: over 90 days, the largest sale was NVIDIA director Mark A Stevens's 1.37 million
+  shares for $300 million.
 - **Search** finds filings by keyword (Postgres full-text search) and by meaning (pgvector
   embeddings from a local model), combined into one ranking: "trading plan cancelled" finds
   Oracle's 8-K about Larry Ellison's plan, and "debt offering" finds Amazon's note offering.
@@ -34,6 +37,10 @@ On a live run against EDGAR, for a watchlist of 35 large US companies:
   mid-run moved the remaining work to Gemini automatically, and the local model took over again
   once it was back. A grounding check flags any number in an LLM summary that doesn't appear in
   the filing.
+- **Alerts** reached a real Discord channel: on 2026-10-08 SEC accepted an Apple Form 4 at
+  18:30:32 ET; discovery found it at 18:38:44 (it polls every 10 minutes), and the alert reached
+  Discord at 18:39:05, 8½ minutes after acceptance. Replaying that filing from discovery and from
+  summarization sent nothing more: one alert per subscription, exactly once.
 
 **Load test** (k6, `make loadtest`, on the development laptop with the whole stack running):
 8,627 requests in 2¼ minutes, browsing rising to 100 requests/s plus 5 searches/s, with no errors.
@@ -80,7 +87,7 @@ Example headlines from that run (public filings):
 | 1. Thin vertical slice | EDGAR client, discovery, outbox relay, Form 4 parser, `GET /filings` | Done |
 | 2. Summarization | 8-K items and exhibits, Form 4 template, LLM failover, replay | Done |
 | 3. Search and API | Full-text and semantic search (pgvector), caching, rate limiting | Done |
-| 4. Users and alerts | Google sign-in, subscriptions, Discord/Slack/email alerts | In progress: all built; waiting for a real new filing to reach Discord |
+| 4. Users and alerts | Google sign-in, subscriptions, Discord/Slack/email alerts | Done |
 | 5. Frontend | React site (Vite + TypeScript) on Cloudflare Pages | Done |
 | 6. Observability | OpenTelemetry traces, metrics, Grafana dashboards and alerts | Done |
 | 7. Production | Terraform, k3s on Oracle Cloud's free tier, Argo CD, multi-arch images | In progress: images and their CI build and deploy, Kubernetes manifests (sealed secrets, Argo CD), and Terraform written and validated offline; nothing applied yet (needs cloud accounts and a domain) |
@@ -184,12 +191,16 @@ JavaScript origins; no secret needed) in `.env` as `GOOGLE_CLIENT_ID`. Open the 
 
 The API: `GET /search?q=...` (hybrid by default; `mode=keyword|semantic`), `GET /filings`,
 `GET /filings/{accession_no}` (with a Form 4's transaction lines), `GET /companies`,
-`GET /companies/{ticker}`, and `GET /companies/{ticker}/insider-activity?days=90` (insiders'
-purchases and sales per owner, grouped by owner CIK; owners come with the name as filed and a
-readable one, "COOK TIMOTHY D" as "Timothy D Cook"). Lists use cursor pagination, and responses
-are cached briefly and rate-limited per client through Redis. Signed in: `POST /auth/google`,
-`POST /auth/logout`, `GET`/`DELETE /me`, and alert subscriptions at `/subscriptions`
-(`POST /subscriptions/batch` adds several companies and destinations at once).
+`GET /companies/{ticker}`, `GET /companies/{ticker}/insider-activity?days=90` (insiders'
+purchases and sales per owner, grouped by owner CIK), and `GET /insider-trades?side=buy&days=30`
+(the largest purchases or sales across companies, one row per Form 4). A Form 4's reporting
+owners come with the name as filed and a readable one ("COOK TIMOTHY D" as "Timothy D Cook"),
+and with who they are to the company: a short `relationship` ("Executive Chair, Director",
+"EVP, CFO", "10% owner") and the filing's boxes and titles as filed (`is_director`,
+`is_officer`, `officer_title`, `is_ten_percent_owner`, `is_other`, `other_text`). Lists use cursor
+pagination, and responses are cached briefly and rate-limited per client through Redis. Signed
+in: `POST /auth/google`, `POST /auth/logout`, `GET`/`DELETE /me`, and alert subscriptions at
+`/subscriptions` (`POST /subscriptions/batch` adds several companies and destinations at once).
 
 8-K summaries need an LLM: set `GEMINI_API_KEY` (free from Google AI Studio, no billing needed)
 and/or a local model. `make llm-up` runs Ollama in Docker and pulls `llama3.2:3b` and the

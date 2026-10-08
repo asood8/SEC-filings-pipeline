@@ -3,7 +3,7 @@ import {
   keepPreviousData,
   queryOptions,
 } from '@tanstack/react-query'
-import { api, unwrap } from './client'
+import { api, unwrap, type TradeSide } from './client'
 
 const PAGE_SIZE = 25
 
@@ -67,6 +67,13 @@ export const insiderActivityQuery = (ticker: string, days: number) =>
           params: { path: { ticker }, query: { days } },
         }),
       ),
+  })
+
+export const insiderTradesQuery = (side: TradeSide, days: number) =>
+  queryOptions({
+    queryKey: ['insider-trades', side, days],
+    queryFn: () =>
+      unwrap(api.GET('/insider-trades', { params: { query: { side, days } } })),
   })
 
 export type SearchMode = 'hybrid' | 'keyword' | 'semantic'

@@ -3,24 +3,74 @@ import type {
   FilingDetail,
   Form4Transaction,
   InsiderActivity,
+  InsiderTrade,
   ReportingOwner,
 } from '../api/client'
 
-// Form 4 reporting owners as the API returns them (real names and CIKs from EDGAR).
+// A Form 4 reporting owner's relationship fields when no box is ticked.
+const NO_ROLE = {
+  relationship: null,
+  is_director: false,
+  is_officer: false,
+  officer_title: null,
+  is_ten_percent_owner: false,
+  is_other: false,
+  other_text: null,
+} satisfies Partial<ReportingOwner>
+
+// Form 4 reporting owners as the API returns them (real names, CIKs, and relationships from
+// EDGAR).
 export const COOK: ReportingOwner = {
   cik: 1214156,
   name: 'COOK TIMOTHY D',
   display_name: 'Timothy D Cook',
+  ...NO_ROLE,
+  relationship: 'Executive Chair, Director',
+  is_director: true,
+  is_officer: true,
+  officer_title: 'Executive Chair',
 }
 export const BERKSHIRE: ReportingOwner = {
   cik: 1067983,
   name: 'BERKSHIRE HATHAWAY INC',
   display_name: 'Berkshire Hathaway Inc',
+  ...NO_ROLE,
+  relationship: '10% owner',
+  is_ten_percent_owner: true,
 }
 export const BUFFETT: ReportingOwner = {
   cik: 315090,
   name: 'BUFFETT WARREN E',
   display_name: 'Warren E Buffett',
+  ...NO_ROLE,
+  relationship: '10% owner',
+  is_ten_percent_owner: true,
+}
+
+export const TANEJA: ReportingOwner = {
+  cik: 1771340,
+  name: 'Taneja Vaibhav',
+  display_name: 'Vaibhav Taneja',
+  ...NO_ROLE,
+  relationship: 'CFO',
+  is_officer: true,
+  officer_title: 'Chief Financial Officer',
+}
+
+/** An owner from a Form 4 saved before relationships were stored: all null. */
+export function withoutRelationship(
+  owner: Pick<ReportingOwner, 'cik' | 'name' | 'display_name'>,
+): ReportingOwner {
+  return {
+    ...owner,
+    relationship: null,
+    is_director: null,
+    is_officer: null,
+    officer_title: null,
+    is_ten_percent_owner: null,
+    is_other: null,
+    other_text: null,
+  }
 }
 
 export function filing(overrides: Partial<Filing> = {}): Filing {
@@ -93,6 +143,26 @@ export function insiderActivity(
     sold: NO_TRADES,
     filings: 0,
     owners: [],
+    ...overrides,
+  }
+}
+
+/** One Form 4's open-market sales (Tim Cook's, from a real filing); override for others. */
+export function insiderTrade(
+  overrides: Partial<InsiderTrade> = {},
+): InsiderTrade {
+  return {
+    accession_no: '0001140361-26-038674',
+    filed_at: '2026-10-05',
+    transaction_date: '2026-10-02',
+    issuer: { cik: 320193, name: 'Apple Inc.', ticker: 'AAPL' },
+    reporting_owners: [COOK],
+    side: 'sell',
+    shares: 191753,
+    value: 63845841.04,
+    average_price: 332.9588,
+    unpriced_shares: 0,
+    is_10b5_1: true,
     ...overrides,
   }
 }

@@ -19,6 +19,19 @@ class Issuer(BaseModel):
     trading_symbol: str | None
 
 
+class OwnerRelationship(BaseModel):
+    """A reporting owner's relationship to the issuer: the Form 4's boxes (several can be ticked)
+    and the officer title or other description typed next to them. Stored per owner on
+    `form4_filings.reporting_owner_relationships` too."""
+
+    is_director: bool
+    is_officer: bool
+    is_ten_percent_owner: bool
+    is_other: bool
+    officer_title: str | None
+    other_text: str | None
+
+
 class ReportingOwner(BaseModel):
     cik: int
     name: str
@@ -28,6 +41,9 @@ class ReportingOwner(BaseModel):
     is_other: bool
     officer_title: str | None
     other_text: str | None
+
+    def relationship(self) -> OwnerRelationship:
+        return OwnerRelationship.model_validate(self, from_attributes=True)
 
 
 class _Position(BaseModel):

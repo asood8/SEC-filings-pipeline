@@ -4,13 +4,14 @@
   body) queried with `websearch_to_tsquery`, so quotes, OR, and -term work as people expect.
 - Semantic search compares a query embedding with document embeddings (pgvector, cosine).
 - Hybrid search merges both rankings with reciprocal rank fusion, which needs no score
-  calibration between the two: each list contributes 1 / (k + rank).
+  calibration between the two: each list contributes 1 / (k + rank), except that a Form 4's
+  semantic rank counts half (SEMANTIC_FORM_WEIGHTS).
 
 `filings-search-eval` (search_eval.py) measures ranking changes on a labeled query set.
 """
 
 import logging
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 
 import sqlalchemy as sa
@@ -27,6 +28,11 @@ logger = logging.getLogger(__name__)
 RRF_K = 60
 # How many candidates each method contributes before hybrid fusion.
 HYBRID_CANDIDATES = 50
+# In hybrid search, a semantic match of these forms adds only this share of 1 / (k + rank).
+# Form 4 documents come from one template and are over 90% of the filings, so they fill the
+# semantic top 50 of almost any query, and each one that also matches a keyword collects both
+# contributions, ahead of the 8-K being looked for. Chosen with filings-search-eval (ADR-0011).
+SEMANTIC_FORM_WEIGHTS: Mapping[str, float] = {"4": 0.5}
 # Words people search with that summaries don't necessarily contain.
 FORM_LABELS = {
     "4": "Form 4 insider trading report",
@@ -49,6 +55,7 @@ class SearchDocument:
 class SearchHit:
     accession_no: str
     score: float
+    form_type: str | None = None
 
 
 def build_document(
@@ -142,14 +149,14 @@ def _keyword_hits(
 ) -> list[SearchHit]:
     rank = sa.func.ts_rank_cd(FilingSearch.tsv, tsquery).label("rank")
     query = (
-        sa.select(FilingSearch.accession_no, rank)
+        sa.select(FilingSearch.accession_no, rank, Filing.form_type)
         .join(Filing, Filing.accession_no == FilingSearch.accession_no)
         .where(FilingSearch.tsv.bool_op("@@")(tsquery), *_filters(form_type=form_type, cik=cik))
         .order_by(rank.desc(), Filing.filed_at.desc(), FilingSearch.accession_no)
         .limit(limit)
     )
     rows = session.execute(query).all()
-    return [SearchHit(accession_no, float(score)) for accession_no, score in rows]
+    return [SearchHit(accession_no, float(score), form) for accession_no, score, form in rows]
 
 
 def semantic_search(
@@ -163,23 +170,33 @@ def semantic_search(
 ) -> list[SearchHit]:
     distance = FilingEmbedding.embedding.cosine_distance(list(embedding)).label("distance")
     query = (
-        sa.select(FilingEmbedding.accession_no, distance)
+        sa.select(FilingEmbedding.accession_no, distance, Filing.form_type)
         .join(Filing, Filing.accession_no == FilingEmbedding.accession_no)
         .where(FilingEmbedding.model == model, *_filters(form_type=form_type, cik=cik))
         .order_by(distance, FilingEmbedding.accession_no)
         .limit(limit)
     )
     rows = session.execute(query).all()
-    return [SearchHit(accession_no, 1.0 - float(d)) for accession_no, d in rows]
+    return [SearchHit(accession_no, 1.0 - float(d), form) for accession_no, d, form in rows]
 
 
-def reciprocal_rank_fusion(*rankings: Sequence[SearchHit], k: int = RRF_K) -> list[SearchHit]:
-    """Merge rankings: each list adds 1 / (k + rank) for every result it contains."""
+def reciprocal_rank_fusion(
+    *rankings: Sequence[SearchHit],
+    k: int = RRF_K,
+    form_weights: Sequence[Mapping[str, float]] = (),
+) -> list[SearchHit]:
+    """Merge rankings: each list adds 1 / (k + rank) for every result it contains. The i-th
+    mapping in `form_weights`, if any, scales the i-th list's contributions by form type."""
     scores: dict[str, float] = {}
-    for ranking in rankings:
+    forms: dict[str, str | None] = {}
+    for i, ranking in enumerate(rankings):
+        weights = form_weights[i] if i < len(form_weights) else {}
         for rank, hit in enumerate(ranking, start=1):
-            scores[hit.accession_no] = scores.get(hit.accession_no, 0.0) + 1.0 / (k + rank)
-    return [SearchHit(a, s) for a, s in sorted(scores.items(), key=lambda item: -item[1])]
+            weight = weights.get(hit.form_type, 1.0) if hit.form_type is not None else 1.0
+            scores[hit.accession_no] = scores.get(hit.accession_no, 0.0) + weight / (k + rank)
+            forms.setdefault(hit.accession_no, hit.form_type)
+    ranked = sorted(scores.items(), key=lambda item: -item[1])
+    return [SearchHit(a, s, forms[a]) for a, s in ranked]
 
 
 def hybrid_search(
@@ -193,12 +210,16 @@ def hybrid_search(
     cik: int | None = None,
 ) -> list[SearchHit]:
     """The top HYBRID_CANDIDATES of keyword and of semantic search, merged by reciprocal rank
-    fusion. `limit` only cuts the merged list, so a page never changes the order."""
+    fusion. `limit` only cuts the merged list, so a page never changes the order.
+
+    SEMANTIC_FORM_WEIGHTS apply when forms compete: with a `form_type` filter, they would only
+    shift the balance between keyword and semantic matches."""
     keyword = keyword_search(session, text, limit=HYBRID_CANDIDATES, form_type=form_type, cik=cik)
     semantic = semantic_search(
         session, embedding, model=model, limit=HYBRID_CANDIDATES, form_type=form_type, cik=cik
     )
-    return reciprocal_rank_fusion(keyword, semantic)[:limit]
+    weights = [{}, SEMANTIC_FORM_WEIGHTS] if form_type is None else []
+    return reciprocal_rank_fusion(keyword, semantic, form_weights=weights)[:limit]
 
 
 def rebuild_index(sessions: sessionmaker[Session], embedder: Embedder | None) -> tuple[int, int]:

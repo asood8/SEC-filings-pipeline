@@ -312,7 +312,7 @@ def test_evaluate_runs_every_mode_like_the_api(corpus: Engine) -> None:
     assert keyword["CFO appointment"].top == [SALE_4]
     assert keyword["CFO appointment"].form4_share_at_5 == pytest.approx(0.2)
     assert semantic["CFO appointment"].top == [CFO_8K, SALE_4, NOTES_8K]
-    # The Form 4 matched both ways, so fusion puts it first.
+    # The Form 4 matched both ways, so fusion still puts it first, at half its semantic weight.
     assert hybrid["CFO appointment"].top == [SALE_4, CFO_8K, NOTES_8K]
     assert hybrid["CFO appointment"].first_relevant_rank == 2
     assert semantic["note offering"].recall_at_5 == 0.5  # one of its two filings doesn't exist

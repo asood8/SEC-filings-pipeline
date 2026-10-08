@@ -19,9 +19,12 @@ from filings_common.db import (
 )
 from filings_common.embeddings import EmbeddingError
 from filings_common.search import (
+    HYBRID_CANDIDATES,
+    SEMANTIC_FORM_WEIGHTS,
     SearchHit,
     build_document,
     embed_missing,
+    hybrid_search,
     keyword_search,
     rebuild_index,
     reciprocal_rank_fusion,
@@ -144,7 +147,8 @@ def test_build_document_adds_company_and_form_label() -> None:
 def test_keyword_search_ranks_headline_matches_first(indexed: Engine) -> None:
     with session_factory(indexed)() as session:
         assert accessions(keyword_search(session, "chief executive"))[0] == FILINGS[0][0]
-        assert accessions(keyword_search(session, "insider")) == [FILINGS[2][0]]  # form label
+        insider = keyword_search(session, "insider")  # matches the form label
+        assert [(h.accession_no, h.form_type) for h in insider] == [(FILINGS[2][0], "4")]
         assert set(accessions(keyword_search(session, "GLOB"))) == {FILINGS[2][0], FILINGS[3][0]}
 
 
@@ -184,6 +188,7 @@ def test_semantic_search_orders_by_similarity(indexed: Engine) -> None:
         hits = semantic_search(session, query, model="word-hash", limit=4)
         assert hits[0].accession_no == FILINGS[3][0]
         assert hits[0].score > hits[-1].score
+        assert {(h.accession_no, h.form_type) for h in hits} == {(f[0], f[2]) for f in FILINGS}
         assert semantic_search(session, query, model="another-model") == []
 
 
@@ -191,6 +196,40 @@ def test_reciprocal_rank_fusion_rewards_agreement() -> None:
     keyword = [SearchHit("a", 9.0), SearchHit("b", 5.0)]
     semantic = [SearchHit("b", 0.9), SearchHit("c", 0.8)]
     assert accessions(reciprocal_rank_fusion(keyword, semantic)) == ["b", "a", "c"]
+
+
+def test_reciprocal_rank_fusion_weighs_a_list_by_form_type() -> None:
+    keyword = [SearchHit("f4", 9.0, "4"), SearchHit("8k", 5.0, "8-K")]
+    semantic = [SearchHit("8k", 0.9, "8-K"), SearchHit("f4", 0.8, "4")]
+    # A tie without weights; with a Form 4's semantic rank at half weight, the 8-K wins.
+    unweighted = reciprocal_rank_fusion(keyword, semantic)
+    assert unweighted[0].score == unweighted[1].score
+    fused = reciprocal_rank_fusion(keyword, semantic, form_weights=[{}, {"4": 0.5}])
+    assert [(h.accession_no, h.form_type) for h in fused] == [("8k", "8-K"), ("f4", "4")]
+    assert fused[1].score == pytest.approx(1 / 61 + 0.5 / 62)
+
+
+def test_hybrid_search_halves_form4_semantic_ranks_unless_filtered_by_form(
+    indexed: Engine,
+) -> None:
+    query = "Globex shares revenue"
+    vector = WordHashEmbedder().embed_query(query)
+    form4 = FILINGS[2][0]
+    with session_factory(indexed)() as session:
+        keyword = accessions(keyword_search(session, query, limit=HYBRID_CANDIDATES))
+        semantic = accessions(
+            semantic_search(session, vector, model="word-hash", limit=HYBRID_CANDIDATES)
+        )
+        hits = hybrid_search(session, query, vector, model="word-hash")
+        score = {h.accession_no: h.score for h in hits}[form4]
+        weight = SEMANTIC_FORM_WEIGHTS["4"]
+        expected = 1 / (60 + keyword.index(form4) + 1) + weight / (60 + semantic.index(form4) + 1)
+        assert score == pytest.approx(expected)
+        assert len(hybrid_search(session, query, vector, model="word-hash", limit=1)) == 1
+        # Among Form 4s alone, the weight would only tilt keyword against semantic: not applied.
+        only = hybrid_search(session, query, vector, model="word-hash", form_type="4")
+        assert accessions(only) == [form4]
+        assert only[0].score == pytest.approx(2 / 61)
 
 
 def test_rebuild_is_idempotent_and_embeds_only_missing(indexed: Engine) -> None:

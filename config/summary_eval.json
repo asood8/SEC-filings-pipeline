@@ -76,6 +76,11 @@
           "evidence": "Proposal 5 - Shareholder Proposal Regarding a Discrimination in Charitable Support Report: For 7,363,988, Against 1,073,903,174. Proposal 6 - Shareholder Proposal Regarding Environmental Targets: For 110,862,692, Against 935,451,481."
         },
         {
+          "claim": "the vote results are in the proxy statement (they are in this 8-K)",
+          "patterns": ["\\b(vote|voting) results?[^.]{0,60}\\bproxy statement", "\\bresults of the (shareholder )?votes?[^.]{0,60}\\bproxy statement"],
+          "evidence": "Item 5.07: The following matters were submitted to a vote of the shareholders, the results of which were as follows. (The proxy statement holds the plan's description.)"
+        },
+        {
           "claim": "shareholders approved a shareholder proposal",
           "patterns": ["(shareholders|stockholders) (also )?(approved|passed|adopted|supported)(?:(?!reject|against|fail|\\bnot\\b|\\bbut\\b|while)[^.]){0,60}(shareholder proposal|discrimination|environmental targets?|charitable)", "(discrimination|environmental targets?|charitable)[^.]{0,60}\\b(was|were) (approved|passed|adopted)\\b"],
           "evidence": "Proposal 5: For 7,363,988, Against 1,073,903,174. Proposal 6: For 110,862,692, Against 935,451,481."
@@ -341,8 +346,8 @@
           "evidence": "$20.0 billion senior unsecured three-year delayed draw term loan facility ... no more than ten times during the 18-month period following the closing date"
         },
         {
-          "claim": "revolving commitments of $14.0 billion (that needs an optional $4.0 billion increase)",
-          "patterns": ["total commitments:? (of )?(up to )?\\$ ?14(\\.0)? billion"],
+          "claim": "commitments of $14.0 billion (the revolvers reach $14.0 billion only with an optional $4.0 billion increase)",
+          "patterns": ["total commitments:? (of )?(up to )?\\$ ?14(\\.0)? billion", "\\$ ?14(\\.0)? billion (in |of )?(total )?commitments"],
           "evidence": "Tesla may increase the total commitments under the Revolving Credit Agreements by up to an additional $4.0 billion ... potentially increasing the Revolving Facilities to $14.0 billion in the aggregate."
         },
         {
@@ -406,6 +411,11 @@
         {"fact": "effective January 1, 2027", "patterns": ["(january|jan\\.?) 1,? 2027", "2027-01-01"]}
       ],
       "forbidden": [
+        {
+          "claim": "Nelson steps down (he stays Vice Chairman)",
+          "patterns": ["\\bnelson (is |will |to )?(step|steps|stepping) down\\b(?! as (executive vice president|evp))", "\\bnelson (will )?(no longer serve|cease to serve|leave|leaves) as vice chair"],
+          "evidence": "Mark A. Nelson, currently Chevron's Vice Chairman and Executive Vice President of Oil, Products & Gas, will remain Vice Chairman with responsibility for Strategy and Business Development ... and will no longer serve as Executive Vice President, Oil, Products & Gas"
+        },
         {
           "claim": "Bonner or Nelson leaves Chevron",
           "patterns": ["\\b(bonner|nelson) (will )?(retire|retires|resign|resigns|leave|leaves|depart|departs)( from)? (chevron|the company)"],

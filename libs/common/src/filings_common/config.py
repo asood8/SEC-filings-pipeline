@@ -80,6 +80,16 @@ class OutboxRelaySettings(BaseSettings):
     idle_seconds: float = Field(default=1.0, gt=0)
 
 
+class OutboxSettings(BaseSettings):
+    """The outbox table itself. The relay prunes it."""
+
+    model_config = _config("OUTBOX_")
+
+    # Published events are deleted from the outbox this many days after publishing (Kafka keeps
+    # them). Unpublished ones are never deleted.
+    retention_days: int = Field(default=7, ge=1)
+
+
 class LlmSettings(BaseSettings):
     """The local, OpenAI-compatible LLM server: Ollama in development, llama.cpp in production."""
 

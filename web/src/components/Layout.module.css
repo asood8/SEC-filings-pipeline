@@ -21,7 +21,8 @@
 
 .nav {
   display: flex;
-  gap: 1rem;
+  flex-wrap: wrap; /* five links don't fit on one line on a phone */
+  gap: 0.25rem 1rem;
 }
 
 .nav a {

@@ -1,5 +1,5 @@
 from datetime import UTC, datetime, timedelta
-from typing import Any
+from typing import Any, NamedTuple
 
 import pytest
 import sqlalchemy as sa
@@ -21,15 +21,52 @@ ISSUERS = {
 }
 TODAY = datetime.now(UTC).date()
 
-# Reporting owners: (CIK, name as filed, display name). Berkshire Hathaway's and Warren Buffett's
-# are real, from the joint Form 4 fixture 0001193125-26-397059; the others' CIKs are made up.
-Owner = tuple[int, str, str]
-NADELLA: Owner = (1000001, "NADELLA SATYA", "Satya Nadella")
-SMITH: Owner = (1000002, "SMITH BRADFORD L", "Bradford L Smith")
-HOOD: Owner = (1000003, "HOOD AMY", "Amy Hood")
-ALTHOFF: Owner = (1000004, "ALTHOFF JUDSON", "Judson Althoff")
-BERKSHIRE: Owner = (1067983, "BERKSHIRE HATHAWAY INC", "Berkshire Hathaway Inc")
-BUFFETT: Owner = (315090, "BUFFETT WARREN E", "Warren E Buffett")
+NO_ROLE = {
+    "is_director": False,
+    "is_officer": False,
+    "is_ten_percent_owner": False,
+    "is_other": False,
+    "officer_title": None,
+    "other_text": None,
+}
+
+
+class Owner(NamedTuple):
+    cik: int
+    name: str  # as filed
+    display_name: str
+    relationship: dict[str, Any]  # as stored in form4_filings.reporting_owner_relationships
+    label: str  # the API's `relationship`
+
+
+def officer(title: str) -> dict[str, Any]:
+    return NO_ROLE | {"is_officer": True, "officer_title": title}
+
+
+# Berkshire Hathaway's and Warren Buffett's are real, from the joint Form 4 fixture
+# 0001193125-26-397059, and so are Smith's and Hood's titles; the CIKs of the others, and
+# Nadella's and Althoff's relationships, are made up.
+NADELLA = Owner(1000001, "NADELLA SATYA", "Satya Nadella", officer("CEO"), "CEO")
+SMITH = Owner(
+    1000002,
+    "SMITH BRADFORD L",
+    "Bradford L Smith",
+    officer("Vice Chair and President"),
+    "Vice Chair and President",
+)
+HOOD = Owner(1000003, "HOOD AMY", "Amy Hood", officer("EVP, Chief Financial Officer"), "EVP, CFO")
+ALTHOFF = Owner(
+    1000004,
+    "ALTHOFF JUDSON",
+    "Judson Althoff",
+    NO_ROLE | {"is_other": True, "other_text": "Former officer"},
+    "Former officer",
+)
+TEN_PERCENT_OWNER = NO_ROLE | {"is_ten_percent_owner": True}
+BERKSHIRE = Owner(
+    1067983, "BERKSHIRE HATHAWAY INC", "Berkshire Hathaway Inc", TEN_PERCENT_OWNER, "10% owner"
+)
+BUFFETT = Owner(315090, "BUFFETT WARREN E", "Warren E Buffett", TEN_PERCENT_OWNER, "10% owner")
 
 # The Form 4s added here (the seeded Apple sale is moved to 20 days ago).
 SALES = "0000789019-26-000301"  # Nadella: sales, plus lines that don't count, and one purchase
@@ -91,8 +128,9 @@ def add_form4(
             issuer_cik=issuer,
             issuer_name=name,
             issuer_ticker=ticker,
-            reporting_owners=[name for _, name, _ in owners],
-            reporting_owner_ciks=[cik for cik, _, _ in owners],
+            reporting_owners=[o.name for o in owners],
+            reporting_owner_ciks=[o.cik for o in owners],
+            reporting_owner_relationships=[o.relationship for o in owners],
             transaction_codes=sorted({t["code"] for t in trades}),
             is_10b5_1=is_10b5_1,
         )
@@ -178,7 +216,11 @@ def insider_trades(seeded: Engine, ids: Any) -> None:
 
 def shown(*owners: Owner) -> list[dict[str, Any]]:
     """Owners as the API returns them."""
-    return [{"cik": cik, "name": name, "display_name": display} for cik, name, display in owners]
+    return [
+        {"cik": o.cik, "name": o.name, "display_name": o.display_name, "relationship": o.label}
+        | o.relationship
+        for o in owners
+    ]
 
 
 def trades(client: TestClient, **params: str | int) -> list[dict[str, Any]]:
@@ -223,6 +265,15 @@ def test_largest_purchases_first_one_row_per_filing(client: TestClient) -> None:
         (SALES, 10.0, 4900.0),
         (UNPRICED, 1000.0, 0.0),
     ]
+    # Who each insider is to the company whose stock they bought.
+    assert [[o["relationship"] for o in t["reporting_owners"]] for t in body["items"]] == [
+        ["10% owner", "10% owner"],
+        ["Vice Chair and President"],
+        ["Vice Chair and President"],
+        ["Former officer"],
+        ["CEO"],
+        ["EVP, CFO"],
+    ]
     unpriced = body["items"][-1]
     assert (unpriced["average_price"], unpriced["unpriced_shares"]) == (None, 1000.0)
     assert unpriced["issuer"] == {"cik": MSFT, "name": "Microsoft Corp", "ticker": "MSFT"}
@@ -240,6 +291,7 @@ def test_largest_sales_count_stock_sales_only(client: TestClient, ids: Any) -> N
         20_000.0,
     )
     assert (cook["issuer"]["ticker"], cook["is_10b5_1"]) == ("AAPL", True)
+    assert [o["relationship"] for o in cook["reporting_owners"]] == ["Executive Chair, Director"]
     # Only the two stock sales: not the award, the tax withholding, the derivative, or the
     # purchase. The latest of them is the row's date.
     assert {k: nadella[k] for k in ("shares", "value", "average_price", "unpriced_shares")} == {

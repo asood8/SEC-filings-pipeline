@@ -42,6 +42,16 @@ MSFT_8K = "0000789019-26-000003"
 GOOGLE_CLIENT_ID = "1234-test.apps.googleusercontent.com"
 GOOGLE_KID = "test-key-1"
 FRONTEND_ORIGIN = "http://localhost:3000"
+# Tim Cook's relationship to Apple, as stored for the seeded Form 4
+# (form4_filings.reporting_owner_relationships).
+COOK_AT_APPLE = {
+    "is_director": True,
+    "is_officer": True,
+    "is_ten_percent_owner": False,
+    "is_other": False,
+    "officer_title": "Executive Chair",
+    "other_text": None,
+}
 
 
 class WordHashEmbedder:
@@ -153,6 +163,8 @@ def seeded(clean_db: Engine) -> Engine:
                     issuer_ticker="AAPL",
                     reporting_owners=["COOK TIMOTHY D"],
                     reporting_owner_ciks=[1214156],
+                    # As on his real Apple Form 4s.
+                    reporting_owner_relationships=[COOK_AT_APPLE],
                     transaction_codes=["S"],
                     is_10b5_1=True,
                 ),

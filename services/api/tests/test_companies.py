@@ -1,5 +1,5 @@
 from datetime import UTC, datetime, timedelta
-from typing import Any
+from typing import Any, NamedTuple
 
 import pytest
 from fastapi.testclient import TestClient
@@ -45,19 +45,52 @@ def test_unknown_company(client: TestClient) -> None:
 MSFT, AAPL = 789019, 320193
 TODAY = datetime.now(UTC).date()
 
-# Reporting owners: (CIK, name as filed, display name). Berkshire Hathaway's and Warren Buffett's
-# are real, from the joint Form 4 fixture 0001193125-26-397059; Nadella's CIK is made up.
-Owner = tuple[int, str, str]
-NADELLA: Owner = (1000001, "NADELLA SATYA", "Satya Nadella")
-BERKSHIRE: Owner = (1067983, "BERKSHIRE HATHAWAY INC", "Berkshire Hathaway Inc")
-BUFFETT: Owner = (315090, "BUFFETT WARREN E", "Warren E Buffett")
+NO_ROLE = {
+    "is_director": False,
+    "is_officer": False,
+    "is_ten_percent_owner": False,
+    "is_other": False,
+    "officer_title": None,
+    "other_text": None,
+}
 
 
-def shown(*owners: Owner, ciks: bool = True) -> list[dict[str, Any]]:
-    """Owners as the API returns them."""
+class Owner(NamedTuple):
+    cik: int
+    name: str  # as filed
+    display_name: str
+    relationship: dict[str, Any]  # as stored in form4_filings.reporting_owner_relationships
+    label: str  # the API's `relationship`
+
+
+# Berkshire Hathaway's and Warren Buffett's are real, from the joint Form 4 fixture
+# 0001193125-26-397059; Nadella's CIK and title are made up.
+NADELLA = Owner(
+    1000001,
+    "NADELLA SATYA",
+    "Satya Nadella",
+    NO_ROLE | {"is_director": True, "is_officer": True, "officer_title": "Chief Executive Officer"},
+    "CEO, Director",
+)
+TEN_PERCENT_OWNER = NO_ROLE | {"is_ten_percent_owner": True}
+BERKSHIRE = Owner(
+    1067983, "BERKSHIRE HATHAWAY INC", "Berkshire Hathaway Inc", TEN_PERCENT_OWNER, "10% owner"
+)
+BUFFETT = Owner(315090, "BUFFETT WARREN E", "Warren E Buffett", TEN_PERCENT_OWNER, "10% owner")
+
+
+def shown(*owners: Owner, ciks: bool = True, roles: bool = True) -> list[dict[str, Any]]:
+    """Owners as the API returns them. `ciks` or `roles` False: from a Form 4 saved before they
+    were stored."""
     return [
-        {"cik": cik if ciks else None, "name": name, "display_name": display}
-        for cik, name, display in owners
+        {
+            "cik": o.cik if ciks else None,
+            "name": o.name,
+            "display_name": o.display_name,
+            "relationship": o.label if roles else None,
+        }
+        | (o.relationship if roles else dict.fromkeys(o.relationship))
+        for o in owners
     ]
 
 
@@ -87,6 +120,7 @@ def add_form4(
     owners: list[Owner],
     trades: list[dict[str, Any]],
     ciks: bool = True,  # False: saved before owner CIKs were stored
+    roles: bool = True,  # False: saved before owner relationships were stored
 ) -> None:
     session.add(
         Filing(
@@ -106,8 +140,9 @@ def add_form4(
             issuer_cik=issuer,
             issuer_name="MICROSOFT CORP" if issuer == MSFT else "Apple Inc.",
             issuer_ticker="MSFT" if issuer == MSFT else "AAPL",
-            reporting_owners=[name for _, name, _ in owners],
-            reporting_owner_ciks=[cik for cik, _, _ in owners] if ciks else None,
+            reporting_owners=[o.name for o in owners],
+            reporting_owner_ciks=[o.cik for o in owners] if ciks else None,
+            reporting_owner_relationships=[o.relationship for o in owners] if roles else None,
             transaction_codes=sorted({t["code"] for t in trades}),
             is_10b5_1=None,
         )
@@ -215,7 +250,7 @@ def test_insider_activity_counts_the_issuers_stock_only(client: TestClient) -> N
 def test_insider_activity_groups_filings_by_who_filed_them(
     seeded: Engine, client: TestClient
 ) -> None:
-    buffett_alone: Owner = (BUFFETT[0], "Buffett Warren E", "Warren E Buffett")
+    buffett_alone = BUFFETT._replace(name="Buffett Warren E")
     with session_factory(seeded).begin() as session:
 
         def add(number: int, owners: list[Owner], line: dict[str, Any], ciks: bool = True) -> None:
@@ -227,6 +262,7 @@ def test_insider_activity_groups_filings_by_who_filed_them(
                 owners=owners,
                 trades=[line],
                 ciks=ciks,
+                roles=ciks,  # saved before CIKs, so before relationships too
             )
 
         add(201, [BERKSHIRE, BUFFETT], trade(1, "P", 100, 480.0, days_ago=6))
@@ -246,10 +282,47 @@ def test_insider_activity_groups_filings_by_who_filed_them(
     assert rows == [
         (shown(BUFFETT, BERKSHIRE), 2, 72_100.0, 0.0),
         (shown(buffett_alone), 1, 9700.0, 0.0),
-        (shown(NADELLA, ciks=False), 2, 0.0, 5000.0),
+        (shown(NADELLA, ciks=False, roles=False), 2, 0.0, 5000.0),
     ]
     # Joint filings count once, in the totals as in their row.
     assert (activity["bought"]["shares"], activity["filings"]) == (170.0, 5)
+
+
+def test_insider_activity_shows_relationships_as_on_the_latest_filing(
+    seeded: Engine, client: TestClient
+) -> None:
+    # Bradford L Smith's CIK and titles are made up.
+    director = Owner(
+        1000002, "SMITH BRADFORD L", "Bradford L Smith", NO_ROLE | {"is_director": True}, "Director"
+    )
+    promoted = director._replace(
+        relationship=NO_ROLE | {"is_officer": True, "officer_title": "Vice Chair and President"},
+        label="Vice Chair and President",
+    )
+    with session_factory(seeded).begin() as session:
+
+        def add(number: int, owner: Owner, days_ago: int, roles: bool = True) -> None:
+            add_form4(
+                session,
+                f"0000789019-26-000{number}",
+                found_under=MSFT,
+                issuer=MSFT,
+                owners=[owner],
+                trades=[trade(1, "S", 10, 500.0, days_ago=days_ago)],
+                roles=roles,
+            )
+
+        add(301, director, days_ago=6)
+        add(302, promoted, days_ago=2)
+        add(303, NADELLA, days_ago=5)
+        # Nadella's latest was saved before relationships were stored (until the rebuild).
+        add(304, NADELLA, days_ago=1, roles=False)
+
+    activity = client.get("/companies/MSFT/insider-activity").json()
+    assert [(o["reporting_owners"], o["filings"]) for o in activity["owners"]] == [
+        (shown(NADELLA, roles=False), 2),  # the latest trade first, on equal values
+        (shown(promoted), 2),
+    ]
 
 
 def test_insider_activity_with_no_trades_and_bad_requests(client: TestClient) -> None:

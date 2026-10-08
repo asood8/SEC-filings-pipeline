@@ -93,6 +93,23 @@ class ReportingOwnerOut(BaseModel):
             "`name` is always as filed."
         )
     )
+    # Who the owner is to the issuer, from the boxes ticked on the Form 4 (several can be). All
+    # null only for Form 4s saved before relationships were stored, until their key fields are
+    # rebuilt.
+    relationship: str | None = Field(
+        description=(
+            'For display, short: "CEO", "Director", "10% owner", "Other", or several, the officer '
+            'title first ("President and CEO, Director"). Common titles are abbreviated '
+            '("Chief Financial Officer" is "CFO"). Null when the filing ticks no box, or the '
+            "relationship isn't stored."
+        )
+    )
+    is_director: bool | None
+    is_officer: bool | None
+    officer_title: str | None = Field(description="As filed, for an officer.")
+    is_ten_percent_owner: bool | None = Field(description="Owns over 10% of a class of stock.")
+    is_other: bool | None
+    other_text: str | None = Field(description="As filed: what the other relationship is.")
 
 
 class Form4Details(BaseModel):

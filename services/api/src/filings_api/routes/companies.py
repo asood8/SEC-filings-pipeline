@@ -156,6 +156,7 @@ def get_insider_activity(
                 form.accession_no,
                 form.reporting_owners,
                 form.reporting_owner_ciks,
+                form.reporting_owner_relationships,
                 *(c for side, code in INSIDER_TRADE_CODES.items() for c in _trade_sums(side, code)),
                 sa.func.max(traded_on).label("latest_date"),
             )
@@ -210,7 +211,9 @@ def _owner_activity(filings: Sequence[RowMapping]) -> OwnerActivity:
     latest = max(filings, key=lambda f: (f["latest_date"], f["accession_no"]))
     return OwnerActivity(
         reporting_owners=reporting_owners_out(
-            latest["reporting_owners"], latest["reporting_owner_ciks"]
+            latest["reporting_owners"],
+            latest["reporting_owner_ciks"],
+            latest["reporting_owner_relationships"],
         ),
         bought=_totals(filings, "bought"),
         sold=_totals(filings, "sold"),

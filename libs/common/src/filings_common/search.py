@@ -51,15 +51,9 @@ FORM_LABELS = {
 # other as keywords: "CFO" finds "Chief Financial Officer", and "chief financial officer" finds
 # "EVP & CFO". Only unambiguous ones: CIO (information or investment officer?) and CLO (legal
 # officer or loan obligation?) are left out. Changing these needs a `filings-index` rebuild.
+# Officer titles come first: the ones the API's owner relationships are shown with.
 ABBREVIATIONS: Mapping[str, str] = {
-    "CEO": "chief executive officer",
-    "CFO": "chief financial officer",
-    "COO": "chief operating officer",
-    "CTO": "chief technology officer",
-    "CAO": "chief accounting officer",
-    "EVP": "executive vice president",
-    "SVP": "senior vice president",
-    "VP": "vice president",
+    **names.OFFICER_ABBREVIATIONS,
     "RSU": "restricted stock unit",
     "ESPP": "employee stock purchase plan",
     "EPS": "earnings per share",

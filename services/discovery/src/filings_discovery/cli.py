@@ -2,7 +2,9 @@
 
 import argparse
 import logging
+import signal
 from datetime import UTC, datetime, timedelta
+from types import FrameType
 
 import redis
 from opentelemetry import trace
@@ -43,9 +45,23 @@ def main(argv: list[str] | None = None) -> int:
     telemetry = setup_telemetry("filings-discovery")
     logging.getLogger("httpx2").setLevel(logging.WARNING)  # one line per request is too noisy
     try:
+        signal.signal(signal.SIGTERM, exit_on_sigterm)
         return _run(args.command)
     finally:
+        signal.signal(signal.SIGTERM, signal.SIG_IGN)  # a late SIGTERM can't cut the export short
         telemetry.shutdown()  # a job exits right after: export its spans first
+
+
+def exit_on_sigterm(signum: int, frame: FrameType | None) -> None:
+    """Stop at once, but through the `finally` blocks: the filing in progress is rolled back
+    (as when killed) and the spans so far are exported.
+
+    Kubernetes sends SIGTERM when a run outlives its deadline, and that run's trace is the one
+    worth reading. Without a handler, Python running as PID 1 ignores SIGTERM and is killed at
+    the end of the grace period, its buffered spans lost.
+    """
+    logger.warning("stopping: received SIGTERM")
+    raise SystemExit(128 + signum)
 
 
 def _run(command: str) -> int:

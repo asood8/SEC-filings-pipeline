@@ -48,11 +48,11 @@ first install, and upgrades.
 | valkey | Deployment, no volume | `valkey/valkey:9.1.2-alpine` | 1 | Everything in it is disposable; one store keeps the rate limits global |
 | llm | Deployment + 8 Gi volume | `ghcr.io/ggml-org/llama.cpp:server-b11434` | 1 | Llama 3.2 3B Instruct Q4_K_M; OpenAI-compatible API on `http://llm:8080/v1` |
 | embeddings | Deployment + 1 Gi volume | same llama.cpp image | 1 | nomic-embed-text v1.5 (16-bit), `--embeddings` |
-| api | Deployment + Service | `filings-api` | 1 (overlay) | Probes on `GET /healthz` |
-| outbox-relay | Deployment | `filings-discovery`, `filings-outbox-relay` | exactly 1 | A second relay could publish out of order |
-| parser | Deployment | `filings-parser` | 1 (overlay) | Up to 3 could share the 3 partitions |
-| summarizer | Deployment | `filings-summarizer` | exactly 1 | The LLM serves one request at a time; a second copy would only queue |
-| notifier | Deployment | `filings-notifier` | 1 (overlay) | More would be safe: the one-alert guarantee is a database row |
+| api | Deployment + Service | `filings-api` | 1 (overlay) | Ready on `GET /readyz` (Postgres answers), alive on `GET /healthz` |
+| outbox-relay | Deployment | `filings-discovery`, `filings-outbox-relay` | exactly 1 | A second relay could publish out of order; heartbeat probe |
+| parser | Deployment | `filings-parser` | 1 (overlay) | Up to 3 could share the 3 partitions; heartbeat probe |
+| summarizer | Deployment | `filings-summarizer` | exactly 1 | The LLM serves one request at a time; a second copy would only queue; heartbeat probe |
+| notifier | Deployment | `filings-notifier` | 1 (overlay) | More would be safe: the one-alert guarantee is a database row; heartbeat probe |
 | discovery | CronJob, every 10 min | `filings-discovery` | 1 at a time | `concurrencyPolicy: Forbid`, no retries (the next run is 10 minutes away) |
 | load-companies | CronJob, daily | `filings-discovery load-companies` | 1 | Run once by hand after the first install |
 | migrate | Job, Argo CD hook | `filings-discovery`, `run_migrations()` | 1 | Before the services on every sync (below) |
@@ -176,6 +176,56 @@ filing both providers fail on is retried and dead-lettered as designed, with or 
 key. The longest prompts (about 6k tokens, with several exhibits) may exceed the timeout on the
 VM; those fall back to Gemini. The Phase 8 benchmark (`filings-benchmark`) measures this on the
 VM.
+
+### Probes and shutdown (added 2026-10-07)
+
+- **The workers prove they aren't hung with a heartbeat.** The relay, parser, summarizer, and
+  notifier serve no HTTP, so Kubernetes used to restart them only when the process exited. Now each
+  one's main loop keeps a heartbeat file in `/tmp` (the pod's `emptyDir`; the root filesystem is
+  read-only), and an exec probe runs `filings-healthcheck <process name>`, which fails once the
+  heartbeat is overdue (`filings_common.health`).
+- **The file holds a deadline, not the time of the last beat**: when the loop promises to beat
+  again. The loops beat on every pass (about once a second when idle) and promise the next beat
+  within a 2-minute window, generous because the slowest ordinary step (publishing while the broker
+  is unreachable, or measuring consumer lag) takes about 40 s. Before each attempt at a message, a
+  consumer promises that attempt's own limit instead: for the summarizer every configured model
+  timeout plus a minute (13 minutes with the production settings), for the parser and notifier
+  their Kafka poll interval (5 minutes), past which the broker has given the partition away anyway.
+  So a summarizer working through a long 8-K is never killed mid-summary, yet an attempt that
+  outlives every timeout it could be waiting on is caught, and so is a loop that hangs anywhere
+  else, within a window. The file is rewritten only when the deadline moves by half a window, about
+  once a minute.
+- **Probe settings:** a startup probe allows 5 minutes for the first beat (every 10 s, 30 failures),
+  then the liveness probe runs every 30 s and restarts the container after 2 failures, so a hung
+  idle loop is restarted within about 4 minutes. Each check is a fresh Python process that imports
+  nothing heavy: about 40 ms of CPU and 16 MiB of memory at its peak (measured on the laptop), well
+  inside each worker's limit (the smallest is 144 MiB; the workers peak at 75-90 MB). Its timeout
+  is 5 s rather than the default 1 s, for a node whose cores the LLM keeps busy. A new process
+  removes the file a previous container in the same pod left behind, so the probes wait for its
+  own first beat.
+- **The API is ready only while Postgres answers.** `GET /readyz` runs `SELECT 1` and returns 503
+  when that fails or takes over 2 s. It is the readiness probe (every 10 s, 3 failures, 5 s
+  timeout), so a replica without its database gets no traffic and a rollout (`maxUnavailable: 0`)
+  waits until the new pod can serve. `GET /healthz` stays the liveness probe and checks nothing
+  else: a database outage is no reason to restart the API. Like `/healthz`, `/readyz` is never
+  rate limited, cached, or traced. It is reachable through the tunnel, so it says only `ok` or
+  `unavailable` (the log says why, once per change), and nobody can turn it into a flood of
+  database work: one check runs at a time, concurrent requests share its answer, an answer is
+  reused for a second, and a check that times out is abandoned in its worker thread, with no new
+  check reaching the database until that thread returns. A hung database therefore ties up one
+  thread, not one per probe (`filings_api.readiness`).
+- **Grace period: 45 s for every pod that exports telemetry** (the default is 30 s): the five
+  service Deployments and the discovery and load-companies CronJobs. After SIGTERM a service
+  finishes its current step (the API its requests in flight), then flushes its last spans and
+  metrics, which gives up after 30 s with the collector unreachable (ADR-0016). The summarizer
+  doesn't wait for a summary in progress, which can take minutes; it is killed after the grace
+  period, and the filing is redelivered and summarized again.
+- **Discovery now stops on SIGTERM.** As PID 1 without a handler, Python ignored SIGTERM
+  (ADR-0014), so a run that outlived its `activeDeadlineSeconds` was killed at the end of the grace
+  period and its buffered spans were lost, though that run's trace is the one worth reading. It
+  now exits at once through its `finally` blocks: the filing in progress is rolled back, as when
+  killed, and the spans so far are exported. The migrate Job keeps the default grace: it exports
+  no telemetry, and still ignores SIGTERM.
 
 ### Sync order
 
@@ -313,8 +363,9 @@ it a no-op. `BeforeHookCreation` keeps the last run and its logs until the next 
    pinned to a commit. The CustomResourceDefinitions themselves (upstream ones only) get the
    non-strict schema, since there is no strict one for them;
 4. runs `tests/test_k8s_manifests.py`: requests and limits everywhere, the budget, the restricted
-   profile, probes on serving containers, pinned images, real setting names, an example for every
-   Secret, and no plain Secrets. `make test` runs these too when kubectl is installed.
+   profile, probes on every long-running container (each worker's on the heartbeat its process
+   writes), the grace periods, pinned images, real setting names, an example for every Secret, and
+   no plain Secrets. `make test` runs these too when kubectl is installed.
 
 It needs the internet (schemas, cached; Argo CD's manifest), but no cluster and no cloud account.
 
@@ -374,25 +425,28 @@ under the namespace's restricted profile, and a control Pod without those settin
   `LLM_MODEL`.
 - **The sealing key must be backed up** (`deploy/k8s/README.md`). Without it, a rebuilt cluster
   can't decrypt the SealedSecrets in git, and every secret must be sealed again.
-- **Deploying a new version is a commit.** The production overlay pins image tags; Phase 7's
-  image-build CI must update them (or Argo CD Image Updater must) for a push to `main` to deploy
-  automatically.
+- **Deploying a new version is a commit.** The production overlay pins image tags. The image
+  workflow ([ADR-0019](0019-image-ci-and-deploy.md)) commits new ones after it builds `main` and
+  CI passes, so a push to `main` deploys automatically; the tags moved to their own file,
+  `overlays/production/images/kustomization.yaml`, for that.
 - **Placeholders wait on the real accounts:** the website's origin (`API_CORS_ORIGINS`, a
   Terraform output), `GOOGLE_CLIENT_ID`, the SMTP settings, and the SealedSecrets. Until then the
   features they control stay off or harmless. The tunnel's routing rule and the backups bucket's
   lifecycle rule are Terraform's (ADR-0018).
 - **What the service code could add:**
-  - The consumers and the relay have no health endpoint, so Kubernetes restarts them only if the
-    process exits, not if it hangs. A heartbeat file or a small HTTP endpoint would allow
-    liveness probes.
-  - `/healthz` only shows that the API process answers. A readiness check that also pings
-    Postgres would keep traffic off a pod that can't reach the database.
-  - `filings-discovery`, `filings-replay`, and `filings-index` don't handle SIGTERM (ADR-0014), so
-    a stopped job is killed after the grace period. That is safe, as each filing is one
-    transaction.
+  - `filings-replay` and `filings-index` don't handle SIGTERM (ADR-0014), so a stopped run is
+    killed after the grace period, without its final telemetry export. That is safe, as each
+    filing is one transaction; they run by hand, not in the cluster. (`filings-discovery` stops on
+    SIGTERM since 2026-10-07; see "Probes and shutdown".)
   - The summarizer finishes its current filing before stopping, but an 8-K can take minutes, so
-    an update kills it mid-summary after the 30 s grace period. The filing is redelivered and
+    an update kills it mid-summary after the 45 s grace period. The filing is redelivered and
     summarized again, which is idempotent; only the work is lost.
+  - Liveness and readiness (heartbeat probes, `/readyz`) and the longer grace periods were added
+    on 2026-10-07; see "Probes and shutdown" above.
+- **With one API replica, a database outage takes the API off the tunnel** (after 30 s of failed
+  readiness checks): Cloudflare answers with its own error page instead of the API's 500s, and the
+  response cache can't serve anything meanwhile. Every endpoint but `/healthz` needs Postgres, so
+  little is lost; a second replica wouldn't help, since both would share the database.
 - **Upgrades are manual and listed** in `deploy/k8s/README.md`. A dependency bot (Renovate) could
   propose them later.
 
@@ -413,6 +467,12 @@ under the namespace's restricted profile, and a control Pod without those settin
 - **CronJob:** a Kubernetes object that starts a Job on a schedule written like a Unix crontab
   (`*/10 * * * *` is every ten minutes). `concurrencyPolicy: Forbid` skips a run while the
   previous one is still going.
+- **Probes:** checks the kubelet runs against each container. A **liveness** probe that keeps
+  failing gets the container restarted; while a **readiness** probe fails, the pod gets no traffic
+  from its Service; a **startup** probe holds the other two off until the container has started.
+  A probe is an HTTP request, or (`exec`) a command run inside the container that passes by exiting
+  with 0. **terminationGracePeriodSeconds** is how long a stopping pod has between SIGTERM and being
+  killed.
 - **NetworkPolicy:** a firewall rule between pods, by label. Once a pod is selected by a policy,
   only the traffic the policy allows can reach it; here a default policy blocks everything and
   each service opens just its port to its clients.

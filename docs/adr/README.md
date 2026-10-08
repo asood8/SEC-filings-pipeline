@@ -4,6 +4,9 @@ An ADR is a short document that records one significant decision: its context, w
 the alternatives, and the consequences. Accepted ADRs are not rewritten. When a decision changes,
 a new ADR supersedes the old one, and the old one's status is updated to point at it.
 
+How to operate the production system these decisions describe (alerts, dead letters, deploys,
+secrets, backups, capacity) is in the [runbook](../runbook.md).
+
 To add one, copy [`0000-template.md`](0000-template.md) to the next number, fill it in, and add a
 row below.
 
@@ -27,3 +30,4 @@ row below.
 | [0016](0016-observability.md) | Observability with OpenTelemetry | Accepted |
 | [0017](0017-kubernetes-manifests.md) | Kubernetes manifests for the production cluster | Accepted |
 | [0018](0018-terraform.md) | Infrastructure as code with Terraform | Proposed |
+| [0019](0019-image-ci-and-deploy.md) | Building images in CI and deploying on push | Proposed |

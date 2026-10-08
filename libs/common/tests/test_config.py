@@ -5,7 +5,9 @@ from filings_common.config import (
     ApiSettings,
     DatabaseSettings,
     EdgarSettings,
+    EmbeddingSettings,
     GoogleSignInSettings,
+    OutboxSettings,
 )
 
 
@@ -75,3 +77,22 @@ def test_google_client_id_env_var(monkeypatch: pytest.MonkeyPatch) -> None:
     assert GoogleSignInSettings(_env_file=None).client_id == "1234-abc.apps.googleusercontent.com"
     monkeypatch.setenv("GOOGLE_CLIENT_ID", "  ")
     assert GoogleSignInSettings(_env_file=None).client_id is None  # blank means sign-in is off
+
+
+def test_outbox_retention_env_var(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv("OUTBOX_RETENTION_DAYS", raising=False)
+    assert OutboxSettings(_env_file=None).retention_days == 7
+    monkeypatch.setenv("OUTBOX_RETENTION_DAYS", "30")
+    assert OutboxSettings(_env_file=None).retention_days == 30
+    monkeypatch.setenv("OUTBOX_RETENTION_DAYS", "0")  # would delete events as soon as published
+    with pytest.raises(ValidationError, match="retention_days"):
+        OutboxSettings(_env_file=None)
+
+
+def test_queries_get_a_shorter_embedding_timeout(monkeypatch: pytest.MonkeyPatch) -> None:
+    for name in ["EMBEDDING_TIMEOUT_SECONDS", "EMBEDDING_QUERY_TIMEOUT_SECONDS"]:
+        monkeypatch.delenv(name, raising=False)
+    settings = EmbeddingSettings(_env_file=None)
+    assert (settings.timeout_seconds, settings.query_timeout_seconds) == (60.0, 2.0)
+    monkeypatch.setenv("EMBEDDING_QUERY_TIMEOUT_SECONDS", "0.5")
+    assert EmbeddingSettings(_env_file=None).query_timeout_seconds == 0.5

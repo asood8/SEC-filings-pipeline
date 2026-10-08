@@ -10,24 +10,10 @@ resources:
   # (deploy/k8s/README.md). Phase 7 adds them here:
   # - sealed-secrets/postgres.yaml
 
-# The service images, built for linux/amd64 and linux/arm64 by CI and pushed to GHCR. All five
-# come from the same commit and share a tag.
-images:
-  - name: filings-api
-    newName: ghcr.io/asood8/filings-api
-    newTag: "0.1.0"
-  - name: filings-discovery
-    newName: ghcr.io/asood8/filings-discovery
-    newTag: "0.1.0"
-  - name: filings-parser
-    newName: ghcr.io/asood8/filings-parser
-    newTag: "0.1.0"
-  - name: filings-summarizer
-    newName: ghcr.io/asood8/filings-summarizer
-    newTag: "0.1.0"
-  - name: filings-notifier
-    newName: ghcr.io/asood8/filings-notifier
-    newTag: "0.1.0"
+# The service images' registry and tags. CI updates the tags after each build of main
+# (images/kustomization.yaml).
+components:
+  - images
 
 # Replica counts for the workloads that can run more than one copy. The rest must stay at one:
 # the data stores, the LLM servers, the outbox relay, and the summarizer (see each manifest).

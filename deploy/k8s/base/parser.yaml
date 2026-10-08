@@ -20,6 +20,9 @@ spec:
     spec:
       automountServiceAccountToken: false
       enableServiceLinks: false
+      # SIGTERM stops the loop; then the process flushes its last spans and metrics, which can take
+      # up to 30 s with the collector unreachable (ADR-0016). The default 30 s grace is too tight.
+      terminationGracePeriodSeconds: 45
       securityContext:
         runAsNonRoot: true
         runAsUser: 10001
@@ -41,6 +44,21 @@ spec:
           env:
             - name: DATABASE_URL
               value: postgresql+psycopg://$(POSTGRES_USER):$(POSTGRES_PASSWORD)@postgres:5432/$(POSTGRES_DB)
+          # The loop keeps a heartbeat file in /tmp; the check fails once it is overdue, i.e. the
+          # loop hangs (filings_common.health, ADR-0017). Until the first beat, the startup probe
+          # allows 5 minutes.
+          startupProbe:
+            exec:
+              command: ["filings-healthcheck", "filings-parser"]
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 30
+          livenessProbe:
+            exec:
+              command: ["filings-healthcheck", "filings-parser"]
+            periodSeconds: 30
+            timeoutSeconds: 5
+            failureThreshold: 2
           resources:
             requests:
               cpu: 20m

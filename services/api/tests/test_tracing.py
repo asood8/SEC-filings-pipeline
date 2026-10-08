@@ -20,6 +20,7 @@ def test_each_request_is_a_server_span_named_by_its_route_except_health_checks(
 ) -> None:
     client = make_client(traced=True)
     assert client.get("/healthz").status_code == 200
+    assert client.get("/readyz").status_code == 200
     assert client.get("/companies/aapl").status_code == 200
 
     [span] = spans.get_finished_spans()
@@ -52,6 +53,7 @@ def test_requests_are_measured_by_route_and_status_but_never_by_host_or_size(
 ) -> None:
     client = make_client(traced=True)
     assert client.get("/healthz").status_code == 200
+    assert client.get("/readyz").status_code == 200
     assert client.get("/companies/aapl").status_code == 200
     assert client.get("/companies/nope").status_code == 404
     client.get("/companies/aapl", headers={"Host": "random-123.example"})

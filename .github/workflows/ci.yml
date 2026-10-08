@@ -40,7 +40,8 @@ jobs:
           path: ~/.cache/pre-commit
           key: pre-commit-${{ hashFiles('.pre-commit-config.yaml') }}
 
-      # Same hooks as local commits: file hygiene, ruff, mypy, and the lockfile check.
+      # Same hooks as local commits: file hygiene, shellcheck, actionlint, ruff, mypy, and the
+      # lockfile check.
       - name: Pre-commit hooks
         run: uv run pre-commit run --all-files --show-diff-on-failure
 

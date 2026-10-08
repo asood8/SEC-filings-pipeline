@@ -1,4 +1,5 @@
 import json
+import logging
 import smtplib
 from datetime import date
 from typing import Any, ClassVar
@@ -14,6 +15,7 @@ from filings_notifier.channels import (
     PermanentDeliveryError,
     SlackSender,
     SmtpEmailSender,
+    mask_email,
 )
 
 DISCORD = "https://discord.com/api/webhooks/123456/abc-DEF_789"
@@ -92,6 +94,27 @@ def test_invalid_targets_are_rejected_before_any_request() -> None:
     with pytest.raises(PermanentDeliveryError):
         LogEmailSender().send("bad\naddress@example.com", ALERT)
     assert requests == []
+
+
+@pytest.mark.parametrize(
+    ("address", "masked"),
+    [
+        ("ada.lovelace@example.com", "a***@example.com"),
+        ("a@example.com", "a***@example.com"),
+        ("Ada+alerts@mail.example.co.uk", "A***@mail.example.co.uk"),
+    ],
+)
+def test_email_addresses_are_masked(address: str, masked: str) -> None:
+    assert mask_email(address) == masked
+
+
+def test_the_log_backend_masks_the_recipient(caplog: pytest.LogCaptureFixture) -> None:
+    with caplog.at_level(logging.INFO, logger="filings_notifier.channels"):
+        LogEmailSender().send("ada.lovelace@example.com", ALERT)
+    [record] = caplog.records
+    message = record.getMessage()
+    assert "lovelace" not in message
+    assert "to a***@example.com about 0000320193-26-000001: Apple names" in message
 
 
 class FakeSmtp:

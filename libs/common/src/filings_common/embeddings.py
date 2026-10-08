@@ -32,7 +32,12 @@ class Embedder(Protocol):
 
 
 class OpenAICompatibleEmbedder:
-    """Calls the `/embeddings` endpoint that Ollama, llama.cpp, and OpenAI all serve."""
+    """Calls the `/embeddings` endpoint that Ollama, llama.cpp, and OpenAI all serve.
+
+    Queries get their own, shorter timeout: someone is waiting on a search, and a model busy with
+    documents is better skipped (search falls back to keywords) than waited for. Like every
+    httpx2 timeout, each applies to connecting and to each read or write, not to the whole call.
+    """
 
     def __init__(
         self,
@@ -42,24 +47,27 @@ class OpenAICompatibleEmbedder:
         document_prefix: str = "",
         query_prefix: str = "",
         timeout: float = 60.0,
+        query_timeout: float | None = None,
         dimensions: int = EMBEDDING_DIMENSIONS,
         transport: httpx2.BaseTransport | None = None,
     ) -> None:
         self.model = model
         self._document_prefix = document_prefix
         self._query_prefix = query_prefix
+        self._timeout = timeout
+        self._query_timeout = timeout if query_timeout is None else query_timeout
         self._dimensions = dimensions
         self._http = httpx2.Client(
             base_url=base_url.rstrip("/"), timeout=timeout, transport=transport
         )
 
     def embed_documents(self, texts: Sequence[str]) -> list[list[float]]:
-        return self._embed([self._document_prefix + t for t in texts])
+        return self._embed([self._document_prefix + t for t in texts], self._timeout)
 
     def embed_query(self, text: str) -> list[float]:
-        return self._embed([self._query_prefix + text])[0]
+        return self._embed([self._query_prefix + text], self._query_timeout)[0]
 
-    def _embed(self, inputs: list[str]) -> list[list[float]]:
+    def _embed(self, inputs: list[str], timeout: float) -> list[list[float]]:
         if not inputs:
             return []
         # The span never holds the texts (search queries are user input); nor do its errors.
@@ -73,11 +81,13 @@ class OpenAICompatibleEmbedder:
                 "filings.embedding.inputs": len(inputs),
             },
         ):
-            return self._request(inputs)
+            return self._request(inputs, timeout)
 
-    def _request(self, inputs: list[str]) -> list[list[float]]:
+    def _request(self, inputs: list[str], timeout: float) -> list[list[float]]:
         try:
-            response = self._http.post("/embeddings", json={"model": self.model, "input": inputs})
+            response = self._http.post(
+                "/embeddings", json={"model": self.model, "input": inputs}, timeout=timeout
+            )
             response.raise_for_status()
             data = sorted(response.json()["data"], key=lambda d: d["index"])
             vectors = [[float(x) for x in d["embedding"]] for d in data]
@@ -100,4 +110,5 @@ def embedder_from_settings(settings: EmbeddingSettings) -> Embedder | None:
         document_prefix=settings.document_prefix,
         query_prefix=settings.query_prefix,
         timeout=settings.timeout_seconds,
+        query_timeout=settings.query_timeout_seconds,
     )

@@ -7,13 +7,15 @@ what the project requires on top of that (docs/adr/0017-kubernetes-manifests.md)
 - every pod meets the "restricted" Pod Security Standard that the namespace enforces;
 - every image is pinned to a version;
 - the config uses real setting names, and every Secret a workload reads has an example;
-- no plain Secret is ever deployed from git.
+- no plain Secret is ever deployed from git;
+- the image workflow's deploy job renders with the same kustomize as these tests.
 
 They render with `kubectl kustomize`, so they are skipped when kubectl is missing (install it
 with `make k8s-tools`), unless REQUIRE_K8S_TOOLS=1 (set by `make k8s-check`), which makes them
 fail instead.
 """
 
+import json
 import os
 import re
 import shutil
@@ -235,14 +237,70 @@ def test_application_pods_get_no_api_token_or_service_variables(
         assert pod.spec.get("enableServiceLinks") is False, pod.workload
 
 
-def test_serving_containers_have_probes(production: list[dict[str, Any]]) -> None:
+def test_long_running_containers_have_probes(production: list[dict[str, Any]]) -> None:
+    # Every one can be restarted if it hangs; serving ones also leave the Service while unready.
     for pod in pods(production):
         if not pod.long_running:
             continue
         for container in pod.spec["containers"]:
+            assert "livenessProbe" in container, pod.workload
             if container.get("ports"):
                 assert "readinessProbe" in container, pod.workload
-                assert "livenessProbe" in container, pod.workload
+
+
+def _container(objects: list[dict[str, Any]], workload: str) -> dict[str, Any]:
+    [pod] = [p for p in pods(objects) if p.workload == workload]
+    [container] = pod.containers()
+    return container
+
+
+def test_workers_are_probed_by_their_heartbeat(production: list[dict[str, Any]]) -> None:
+    from filings_common import relay
+    from filings_notifier import cli as notifier
+    from filings_parser import cli as parser
+    from filings_summarizer import cli as summarizer
+
+    # Each Deployment checks the heartbeat its process actually writes (filings_common.health).
+    workers = {
+        "Deployment/outbox-relay": relay.PROCESS_NAME,
+        "Deployment/parser": parser.PROCESS_NAME,
+        "Deployment/summarizer": summarizer.PROCESS_NAME,
+        "Deployment/notifier": notifier.PROCESS_NAME,
+    }
+    for workload, process in workers.items():
+        container = _container(production, workload)
+        for probe in ("startupProbe", "livenessProbe"):
+            command = container[probe]["exec"]["command"]
+            assert command == ["filings-healthcheck", process], (workload, probe)
+            # A probe is a fresh Python process: give it more than the default 1 s on a busy node.
+            assert container[probe]["timeoutSeconds"] >= 5, (workload, probe)
+        # The heartbeat lives in /tmp, which needs a writable volume on a read-only root.
+        assert {"name": "tmp", "mountPath": "/tmp"} in container["volumeMounts"], workload
+
+
+def test_the_api_is_ready_only_with_its_database(production: list[dict[str, Any]]) -> None:
+    container = _container(production, "Deployment/api")
+    assert container["readinessProbe"]["httpGet"]["path"] == "/readyz"
+    # Longer than /readyz takes to give up on the database (2 s), so the probe sees its 503.
+    assert container["readinessProbe"]["timeoutSeconds"] > 2
+    assert container["livenessProbe"]["httpGet"]["path"] == "/healthz"
+
+
+def test_our_processes_have_time_to_export_their_last_telemetry(
+    production: list[dict[str, Any]],
+) -> None:
+    # The exporters' final flush gives up after 30 s (ADR-0016); the default grace is also 30 s.
+    # The migrate Job exports no telemetry, and ignores SIGTERM anyway (ADR-0014).
+    exporting = [
+        pod
+        for pod in pods(production)
+        if any("filings-" in c["image"] for c in pod.containers()) and pod.workload != "Job/migrate"
+    ]
+    assert {"CronJob/discovery", "CronJob/load-companies", "Deployment/api"} <= {
+        pod.workload for pod in exporting
+    }
+    for pod in exporting:
+        assert pod.spec.get("terminationGracePeriodSeconds", 30) >= 45, pod.workload
 
 
 def test_images_are_pinned(
@@ -265,6 +323,23 @@ def test_images_are_pinned(
         f"ghcr.io/asood8/filings-{service}"
         for service in ("api", "discovery", "parser", "summarizer", "notifier")
     }
+
+
+def test_the_deploy_job_renders_with_the_same_kustomize() -> None:
+    # Before committing new image tags, the deploy job in .github/workflows/images.yml renders
+    # production with a standalone kustomize (docs/adr/0019). Versions can render it differently,
+    # so it must be the one inside kubectl, which these tests and kubeconform check.
+    client = subprocess.run(
+        [_kubectl(), "version", "--client", "--output=json"],
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout
+    workflow = yaml.safe_load((ROOT / ".github" / "workflows" / "images.yml").read_text())
+    install = next(
+        s for s in workflow["jobs"]["deploy"]["steps"] if s.get("name") == "Install kustomize"
+    )
+    assert json.loads(client)["kustomizeVersion"] == f"v{install['env']['KUSTOMIZE_VERSION']}"
 
 
 def _settings_env_names() -> set[str]:

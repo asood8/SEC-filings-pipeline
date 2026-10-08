@@ -27,6 +27,9 @@ spec:
           restartPolicy: Never
           automountServiceAccountToken: false
           enableServiceLinks: false
+          # A run past its deadline gets SIGTERM, stops, and exports its spans (up to 30 s with the
+          # collector unreachable, ADR-0016): the trace that shows why it was slow.
+          terminationGracePeriodSeconds: 45
           securityContext:
             runAsNonRoot: true
             runAsUser: 10001
@@ -95,6 +98,8 @@ spec:
           restartPolicy: Never
           automountServiceAccountToken: false
           enableServiceLinks: false
+          # Time for the final telemetry export after SIGTERM, as for discovery above.
+          terminationGracePeriodSeconds: 45
           securityContext:
             runAsNonRoot: true
             runAsUser: 10001

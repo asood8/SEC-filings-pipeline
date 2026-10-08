@@ -80,6 +80,16 @@ class OutboxRelaySettings(BaseSettings):
     idle_seconds: float = Field(default=1.0, gt=0)
 
 
+class OutboxSettings(BaseSettings):
+    """The outbox table itself. The relay prunes it."""
+
+    model_config = _config("OUTBOX_")
+
+    # Published events are deleted from the outbox this many days after publishing (Kafka keeps
+    # them). Unpublished ones are never deleted.
+    retention_days: int = Field(default=7, ge=1)
+
+
 class LlmSettings(BaseSettings):
     """The local, OpenAI-compatible LLM server: Ollama in development, llama.cpp in production."""
 
@@ -121,7 +131,12 @@ class EmbeddingSettings(BaseSettings):
     # nomic-embed-text is trained with these task prefixes; other models may want none.
     document_prefix: str = "search_document: "
     query_prefix: str = "search_query: "
+    # For documents (summarizer, `filings-index`), which can wait.
     timeout_seconds: float = Field(default=60.0, gt=0)
+    # For search queries, which someone is waiting on: past this, the API answers with keyword
+    # results (degraded) rather than slowly. A query takes well under a second on an idle model;
+    # this covers waiting behind a document the model is busy embedding.
+    query_timeout_seconds: float = Field(default=2.0, gt=0)
 
 
 class ApiSettings(BaseSettings):
@@ -130,6 +145,7 @@ class ApiSettings(BaseSettings):
     # Per client, shared by all API replicas through Redis.
     rate_limit_per_minute: float = Field(default=60.0, gt=0)
     rate_limit_burst: int = Field(default=20, ge=1)
+    # Responses. 0 turns caching off, also for query embeddings (kept 10 minutes otherwise).
     cache_ttl_seconds: int = Field(default=60, ge=0)
     # Behind Cloudflare Tunnel the client address is in CF-Connecting-IP. Only trust it when the
     # API is reachable through the tunnel alone, or clients could spoof it.

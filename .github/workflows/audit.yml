@@ -1,0 +1,43 @@
+# Known vulnerabilities in the locked dependencies: pip-audit on every package in uv.lock, and npm
+# audit on the website's runtime packages (high and critical advisories).
+#
+# A workflow of its own, not a job in ci.yml: a newly published advisory (often in a dev-only
+# tool that never ships in an image) or a registry outage must not fail CI, because the image
+# workflow deploys only commits whose CI passed (docs/adr/0019). It also runs weekly, so new
+# advisories surface when nobody is pushing.
+name: Dependency audit
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  schedule:
+    - cron: "17 6 * * 1" # Mondays 06:17 UTC
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: audit-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  audit:
+    name: Dependency audit
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: astral-sh/setup-uv@v10
+        with:
+          enable-cache: true
+
+      # npm audit reads web/package-lock.json; it needs npm, not the installed packages.
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: web/.nvmrc
+
+      - name: Known vulnerabilities in the locked dependencies
+        run: make audit

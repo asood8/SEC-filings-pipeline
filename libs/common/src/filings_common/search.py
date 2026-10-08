@@ -267,6 +267,13 @@ def semantic_search(
     form_type: str | None = None,
     cik: int | None = None,
 ) -> list[SearchHit]:
+    # The HNSW index scan stops at its hnsw.ef_search (40) nearest vectors, and the filters apply
+    # after it: without iterative scans, a form or company filter returns only those of the 40
+    # that pass (none for 8-Ks once Form 4s fill them), and hybrid search gets 40 candidates, not
+    # 50. Iterative scans go on, nearest first, until the limit is met or hnsw.max_scan_tuples
+    # (20,000) are visited. For the transaction only; small or selective searches don't use the
+    # index at all (the planner computes those distances exactly).
+    session.execute(sa.text("SET LOCAL hnsw.iterative_scan = strict_order"))
     distance = FilingEmbedding.embedding.cosine_distance(list(embedding)).label("distance")
     query = (
         sa.select(FilingEmbedding.accession_no, distance, Filing.form_type)

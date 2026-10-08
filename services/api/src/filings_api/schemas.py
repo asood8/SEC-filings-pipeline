@@ -77,7 +77,9 @@ class Form4TransactionOut(BaseModel):
 
 
 class ReportingOwnerOut(BaseModel):
-    """A person or entity that filed a Form 4."""
+    """A person or entity that filed a Form 4, and who they are to the issuer: the boxes ticked
+    on the filing (several can be). The relationship fields are all null only for Form 4s saved
+    before relationships were stored, until their key fields are rebuilt."""
 
     cik: int | None = Field(
         description=(
@@ -93,9 +95,6 @@ class ReportingOwnerOut(BaseModel):
             "`name` is always as filed."
         )
     )
-    # Who the owner is to the issuer, from the boxes ticked on the Form 4 (several can be). All
-    # null only for Form 4s saved before relationships were stored, until their key fields are
-    # rebuilt.
     relationship: str | None = Field(
         description=(
             'For display, short: "CEO", "Director", "10% owner", "Other", or several, the officer '

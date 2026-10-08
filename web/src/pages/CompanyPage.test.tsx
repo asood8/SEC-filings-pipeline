@@ -77,14 +77,14 @@ describe('CompanyPage', () => {
         .getAllByRole('cell')
         .map((cell) => cell.textContent)
     expect(cells(cook)).toEqual([
-      'Timothy D Cook',
+      'Timothy D Cook (Executive Chair, Director)',
       '—',
       '$551,000* 1,600.5 shares',
       '2',
       'Oct 5, 2026',
     ])
     expect(cells(berkshire)).toEqual([
-      'Berkshire Hathaway Inc; Warren E Buffett',
+      'Berkshire Hathaway Inc (10% owner); Warren E Buffett (10% owner)',
       '$144,150 300 shares',
       '—',
       '1',
@@ -95,6 +95,10 @@ describe('CompanyPage', () => {
       'title',
       'As filed: COOK TIMOTHY D',
     )
+    // The label shows the title as filed, so there's nothing to add on hover.
+    expect(
+      within(cook).getByText('(Executive Chair, Director)'),
+    ).not.toHaveAttribute('title')
     expect(cells(total).slice(0, 4)).toEqual([
       'All insiders',
       '$144,150 300 shares',

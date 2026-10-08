@@ -691,7 +691,9 @@ export interface components {
         };
         /**
          * ReportingOwnerOut
-         * @description A person or entity that filed a Form 4.
+         * @description A person or entity that filed a Form 4, and who they are to the issuer: the boxes ticked
+         *     on the filing (several can be). The relationship fields are all null only for Form 4s saved
+         *     before relationships were stored, until their key fields are rebuilt.
          */
         ReportingOwnerOut: {
             /**
@@ -709,6 +711,32 @@ export interface components {
              * @description For display: "Timothy D Cook"; an entity keeps its word order ("Berkshire Hathaway Inc"). People's names are reordered by rule, so an unusual name can come out wrong; `name` is always as filed.
              */
             display_name: string;
+            /**
+             * Relationship
+             * @description For display, short: "CEO", "Director", "10% owner", "Other", or several, the officer title first ("President and CEO, Director"). Common titles are abbreviated ("Chief Financial Officer" is "CFO"). Null when the filing ticks no box, or the relationship isn't stored.
+             */
+            relationship: string | null;
+            /** Is Director */
+            is_director: boolean | null;
+            /** Is Officer */
+            is_officer: boolean | null;
+            /**
+             * Officer Title
+             * @description As filed, for an officer.
+             */
+            officer_title: string | null;
+            /**
+             * Is Ten Percent Owner
+             * @description Owns over 10% of a class of stock.
+             */
+            is_ten_percent_owner: boolean | null;
+            /** Is Other */
+            is_other: boolean | null;
+            /**
+             * Other Text
+             * @description As filed: what the other relationship is.
+             */
+            other_text: string | null;
         };
         /** SearchResponse */
         SearchResponse: {

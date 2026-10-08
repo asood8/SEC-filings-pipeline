@@ -41,10 +41,12 @@ seen waits at most 2 s for the CPU-only embedding model before answering from ke
 summarized, median 28 s, p95 49 s, no numbers that the filing doesn't contain.
 
 **Search quality** (`filings-search-eval`, 20 labeled queries over the local filings): hybrid
-search (the default) finds the first relevant filing at an average reciprocal rank of 0.94 and
-91% of the relevant filings in its top 10. Weighting Form 4s' semantic matches at half cut their
-share of the top 5, for queries about other forms, from 54% to 30%
-([ADR-0011](docs/adr/0011-search-and-public-api.md)).
+search (the default) ranks a relevant filing first for every query (mean reciprocal rank 1.00)
+and finds 95% of the relevant filings in its top 10. Weighting Form 4s' semantic matches at half
+cut their share of the top 5, for queries about other forms, from 54% to 30%. Keyword search's
+mean reciprocal rank went from 0.83 to 0.94 once it learned other words for what summaries say
+("CFO" for "Chief Financial Officer", "purchase" for "bought") and stopped matching Costco's
+ticker COST for "costs" ([ADR-0011](docs/adr/0011-search-and-public-api.md)).
 
 Example headlines from that run (public filings):
 

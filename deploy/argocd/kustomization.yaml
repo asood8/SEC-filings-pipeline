@@ -1,8 +1,10 @@
 # What Argo CD manages, applied once when the cluster is created, after Argo CD itself (install/),
 # by the VM's first-boot bootstrap (infra/terraform/modules/oci/bootstrap.sh):
 #   kubectl apply -k deploy/argocd
-# From then on Argo CD syncs both applications from git. Changes to these three files are rare;
-# apply them the same way.
+# From then on Argo CD syncs both applications from git: the application from the production
+# branch, which only the image workflow's deploy job writes, and the Sealed Secrets controller from
+# main. These three files themselves are applied from main, not synced. Changes to them are rare;
+# apply them the same way, from a checkout of main.
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 

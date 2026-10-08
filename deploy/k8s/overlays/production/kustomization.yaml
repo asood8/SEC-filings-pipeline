@@ -1,6 +1,8 @@
-# Production: the single-node k3s cluster on Oracle Cloud (arm64, 2 OCPU, 12 GB). Argo CD syncs
-# this directory from main (deploy/argocd/filings.yaml). Render it with
-# `kubectl kustomize deploy/k8s/overlays/production`; `make k8s-check` also validates it.
+# Production: the single-node k3s cluster on Oracle Cloud (arm64, 2 OCPU, 12 GB). Edit it on
+# main; Argo CD syncs this directory from the production branch (deploy/argocd/filings.yaml),
+# where CI's deploy job puts each pushed commit's version of it once its images are published and
+# CI has passed. Render it with `kubectl kustomize deploy/k8s/overlays/production`;
+# `make k8s-check` also validates it.
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 
@@ -10,8 +12,8 @@ resources:
   # (deploy/k8s/README.md). Phase 7 adds them here:
   # - sealed-secrets/postgres.yaml
 
-# The service images' registry and tags. CI updates the tags after each build of main
-# (images/kustomization.yaml).
+# The service images' registry and tags. CI sets the tags on each deploy, on the production
+# branch (images/kustomization.yaml).
 components:
   - images
 

@@ -1,4 +1,4 @@
-# Builds the five service images, publishes them to GHCR, and deploys them to production
+# Builds the five service images, publishes them to GHCR, and deploys to production
 # (docs/adr/0019-image-ci-and-deploy.md).
 #
 # COST GATE: every job has `if: github.event.repository.private == false`. Native arm64 runners
@@ -8,23 +8,32 @@
 # the repository public turns the workflow on with no other change. A new job needs the same
 # condition (tests/test_images_workflow.py checks).
 #
-# On a push to main that changes what goes into an image, or when started by hand:
-#   1. build:  each service on a native runner per architecture (no emulation), pushed to GHCR
+# Argo CD deploys the `production` branch, and only this workflow's deploy job moves it; people
+# edit the manifests on main. On a push to main that changes an image input or anything under
+# deploy/, or when started by hand, for that commit S (the source commit):
+#   1. plan:   finds the image commit I: the newest commit at or before S that changed an image
+#              input (IMAGE_INPUTS). Its images are tagged sha-<short I>. If GHCR already has
+#              them (a push that changed only manifests), build and merge are skipped.
+#   2. build:  each service on a native runner per architecture (no emulation), pushed to GHCR
 #              by digest, without a tag.
-#   2. merge:  per service, the two builds become one multi-arch image tagged sha-<short commit
-#              SHA> and main.
-#   3. deploy: once CI has passed on the same commit, the production overlay's tags are set to
-#              sha-<short commit SHA> and committed to main. Argo CD then rolls the images out.
+#   3. merge:  per service, the two builds become one multi-arch image tagged sha-<short I> and
+#              main.
+#   4. deploy: once CI has passed on S, commits S's manifests with the tags set to sha-<short I>,
+#              on top of S, and pushes that commit to production. Argo CD rolls it out.
+# Production therefore always pairs a commit's manifests with the images of that commit's code,
+# never with older images.
 #
-# The deploy commit can't start another run: pushes made with GITHUB_TOKEN start no workflows,
-# it changes only deploy/, which is outside the paths below, and its message has "[skip ci]".
+# No loops: this workflow runs only for pushes to main, the deploy pushes only to production,
+# pushes made with GITHUB_TOKEN start no workflows, and the deploy commit's message has
+# "[skip ci]".
 name: Images
 
 on:
   push:
     branches: [main]
     paths:
-      # What the image build reads (.dockerignore lists it), and this file.
+      # The image inputs (IMAGE_INPUTS below), then the manifests, so a manifest change deploys
+      # too.
       - services/**
       - libs/**
       - docker/**
@@ -33,29 +42,129 @@ on:
       - .dockerignore
       - config/watchlist.toml
       - .github/workflows/images.yml
+      - deploy/**
+  # By hand: Actions -> Images -> Run workflow, on main. Deploys main's newest commit, or the
+  # commit given; deploying a commit older than production's needs "rollback" ticked.
   workflow_dispatch:
+    inputs:
+      commit:
+        description: Commit SHA to deploy (empty for the branch's newest commit)
+        type: string
+        required: false
+        default: ""
+      rollback:
+        description: Deploy it even if production runs a newer commit (a rollback)
+        type: boolean
+        required: false
+        default: false
 
 permissions:
   contents: read
 
 # One run at a time per branch. A newer push waits instead of cancelling a run halfway through
-# publishing (only the newest waiting run is kept), so deploys land in push order.
+# publishing or deploying (GitHub keeps only the newest waiting run, which covers the ones it
+# replaces), so deploys land in push order.
 concurrency:
   group: images-${{ github.ref }}
   cancel-in-progress: false
 
 env:
-  # Every image's tags: its commit, which production pins, and "main" for the newest build of
-  # main. The deploy job derives the same sha-<short commit SHA> tag.
-  IMAGE_TAGS: |
-    type=sha,prefix=sha-,format=short
-    type=raw,value=main,enable={{is_default_branch}}
-  DOCKER_METADATA_SHORT_SHA_LENGTH: 7
+  # What goes into an image, as git pathspecs: what the build reads (.dockerignore's allowlist)
+  # and this file, which says how the images are built. One line; the push paths list the same.
+  IMAGE_INPUTS: services libs docker pyproject.toml uv.lock .dockerignore config/watchlist.toml .github/workflows/images.yml
+  SHORT_SHA_LENGTH: 7
+  # The images production runs and their tags, on the production branch. On main the tags are a
+  # placeholder; the deploy job sets them.
+  IMAGES_FILE: deploy/k8s/overlays/production/images/kustomization.yaml
 
 jobs:
+  plan:
+    name: Find the images
+    if: github.event.repository.private == false
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      packages: read  # look the images up in GHCR, also while the packages are private
+    outputs:
+      source: ${{ steps.commits.outputs.source }}
+      image_commit: ${{ steps.commits.outputs.image_commit }}
+      tag: ${{ steps.commits.outputs.tag }}
+      build: ${{ steps.registry.outputs.build }}
+    steps:
+      # The whole history, since the image commit can be any number of commits back.
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      # The source commit is the pushed one, or the one given to a run started by hand, which
+      # must be on the branch the run was started on.
+      - name: Find the source and image commits
+        id: commits
+        env:
+          COMMIT: ${{ inputs.commit }}
+        run: |
+          if [[ -n $COMMIT && ! $COMMIT =~ ^[0-9a-f]{7,40}$ ]]; then
+            echo "::error::The commit to deploy must be a commit SHA: 7 to 40 lowercase hex digits."
+            exit 1
+          fi
+          if ! source=$(git rev-parse --verify --quiet "${COMMIT:-$GITHUB_SHA}^{commit}"); then
+            echo "::error::Commit $COMMIT isn't in the repository, or is ambiguous; give more digits."
+            exit 1
+          fi
+          if ! git merge-base --is-ancestor "$source" "$GITHUB_SHA"; then
+            echo "::error::Commit $source isn't on $GITHUB_REF_NAME."
+            exit 1
+          fi
+          read -ra inputs <<<"$IMAGE_INPUTS"
+          image_commit=$(git log -1 --format=%H "$source" -- "${inputs[@]}")
+          if [[ -z $image_commit ]]; then
+            echo "::error::No commit at or before $source changed an image input."
+            exit 1
+          fi
+          tag="sha-${image_commit::$SHORT_SHA_LENGTH}"
+          echo "Source commit $source, image commit $image_commit, images tagged $tag."
+          {
+            echo "source=$source"
+            echo "image_commit=$image_commit"
+            echo "tag=$tag"
+          } >> "$GITHUB_OUTPUT"
+
+      - uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # Every image production runs, under the image commit's tag. If any is missing, or can't be
+      # looked up, all are built: a build from the same image inputs only replaces the tag with an
+      # equivalent image.
+      - name: Look for the images in GHCR
+        id: registry
+        env:
+          TAG: ${{ steps.commits.outputs.tag }}
+        run: |
+          mapfile -t images < <(sed -n 's/^  newName: //p' "$IMAGES_FILE")
+          if [[ ${#images[@]} -eq 0 ]]; then
+            echo "::error::No images found in $IMAGES_FILE."
+            exit 1
+          fi
+          build=false
+          for image in "${images[@]}"; do
+            if found=$(docker buildx imagetools inspect "$image:$TAG" 2>&1); then
+              echo "Found $image:$TAG."
+            else
+              echo "::notice::$image:$TAG isn't in GHCR (${found##*$'\n'}), so the images are built."
+              build=true
+            fi
+          done
+          echo "build=$build" >> "$GITHUB_OUTPUT"
+
   build:
     name: Build ${{ matrix.service }} (${{ matrix.arch }})
-    if: github.event.repository.private == false
+    needs: plan
+    if: github.event.repository.private == false && needs.plan.outputs.build == 'true'
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 30
     permissions:
@@ -74,13 +183,23 @@ jobs:
             runner: ubuntu-24.04-arm
     env:
       IMAGE: ghcr.io/asood8/filings-${{ matrix.service }}
+      # sha-<short image commit>, which production pins, and "main" for the newest build of main
+      # (not moved by a run started by hand for an older commit).
+      IMAGE_TAGS: |
+        type=raw,value=${{ needs.plan.outputs.tag }}
+        type=raw,value=main,enable=${{ github.ref == 'refs/heads/main' && !inputs.commit }}
     steps:
+      # The source commit S, not the image commit I. No image input changed between the two (I is
+      # the newest commit at or before S that changed one), so building at S produces the same
+      # images as building at I. The labels name I, like the tag; the provenance records S.
       - uses: actions/checkout@v7
         with:
+          ref: ${{ needs.plan.outputs.source }}
           persist-credentials: false
 
       # OCI labels (source, revision, created, licenses, ...). The generated title and
-      # description would describe the repository, so these replace them.
+      # description would describe the repository, and the revision would be the commit the run
+      # started on, so these replace them.
       - name: Image metadata
         id: meta
         uses: docker/metadata-action@v6
@@ -90,6 +209,7 @@ jobs:
           labels: |
             org.opencontainers.image.title=filings-${{ matrix.service }}
             org.opencontainers.image.description=SEC filings pipeline: the ${{ matrix.service }} service
+            org.opencontainers.image.revision=${{ needs.plan.outputs.image_commit }}
 
       - uses: docker/setup-buildx-action@v4
 
@@ -134,8 +254,8 @@ jobs:
 
   merge:
     name: Publish ${{ matrix.service }}
-    needs: build
-    if: github.event.repository.private == false
+    needs: [plan, build]
+    if: github.event.repository.private == false && needs.plan.outputs.build == 'true'
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     permissions:
@@ -147,6 +267,9 @@ jobs:
         service: [api, discovery, notifier, parser, summarizer]
     env:
       IMAGE: ghcr.io/asood8/filings-${{ matrix.service }}
+      IMAGE_TAGS: |
+        type=raw,value=${{ needs.plan.outputs.tag }}
+        type=raw,value=main,enable=${{ github.ref == 'refs/heads/main' && !inputs.commit }}
       # GHCR reads a multi-arch image's description from its index.
       DOCKER_METADATA_ANNOTATIONS_LEVELS: index
     steps:
@@ -165,6 +288,7 @@ jobs:
           annotations: |
             org.opencontainers.image.title=filings-${{ matrix.service }}
             org.opencontainers.image.description=SEC filings pipeline: the ${{ matrix.service }} service
+            org.opencontainers.image.revision=${{ needs.plan.outputs.image_commit }}
 
       - uses: docker/setup-buildx-action@v4
 
@@ -192,50 +316,57 @@ jobs:
 
       - name: Inspect
         env:
-          VERSION: ${{ steps.meta.outputs.version }}
-        run: docker buildx imagetools inspect "$IMAGE:$VERSION"
+          TAG: ${{ needs.plan.outputs.tag }}
+        run: docker buildx imagetools inspect "$IMAGE:$TAG"
 
   deploy:
     name: Deploy to production
-    needs: merge
-    if: github.event.repository.private == false && github.ref == 'refs/heads/main'
+    needs: [plan, merge]
+    # Also when build and merge were skipped because the images already existed; never after a
+    # failed or cancelled job.
+    if: >-
+      github.event.repository.private == false && github.ref == 'refs/heads/main' &&
+      !cancelled() && !failure()
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     permissions:
-      actions: read  # CI's result on this commit
-      contents: write  # push the new tags to main
+      actions: read  # CI's result on the source commit
+      contents: write  # push the production branch
     env:
-      IMAGES_FILE: deploy/k8s/overlays/production/images/kustomization.yaml
+      SOURCE: ${{ needs.plan.outputs.source }}
+      IMAGE_COMMIT: ${{ needs.plan.outputs.image_commit }}
+      TAG: ${{ needs.plan.outputs.tag }}
     steps:
       # Production only gets commits that passed CI (ci.yml), which runs alongside the builds.
       # A failed or cancelled CI run stops the deploy; once CI passes, re-run this job. A run
-      # started by hand on a commit CI skipped (such as a deploy commit) deploys without it.
-      - name: Wait for CI on this commit
+      # started by hand for a commit CI never ran on (one pushed with "[skip ci]") deploys
+      # without it.
+      - name: Wait for CI on the source commit
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           run=""
           for _ in {1..10}; do
             run=$(gh run list --repo "$GITHUB_REPOSITORY" --workflow ci.yml --event push \
-              --commit "$GITHUB_SHA" --limit 1 --json databaseId --jq '.[0].databaseId // empty')
+              --commit "$SOURCE" --limit 1 --json databaseId --jq '.[0].databaseId // empty')
             [[ -n $run || $GITHUB_EVENT_NAME == workflow_dispatch ]] && break
             sleep 30
           done
           if [[ -z $run && $GITHUB_EVENT_NAME == workflow_dispatch ]]; then
-            echo "::warning::CI didn't run on $GITHUB_SHA; deploying anyway, as this run was started by hand."
+            echo "::warning::CI didn't run on $SOURCE; deploying anyway, as this run was started by hand."
           elif [[ -z $run ]]; then
-            echo "::error::No CI run found for $GITHUB_SHA."
+            echo "::error::No CI run found for $SOURCE."
             exit 1
           elif ! gh run watch "$run" --repo "$GITHUB_REPOSITORY" --exit-status --compact --interval 30; then
-            echo "::error::CI did not pass on $GITHUB_SHA, so it is not deployed."
+            echo "::error::CI did not pass on $SOURCE, so it is not deployed."
             exit 1
           fi
 
-      # The branch's newest commit rather than this run's, since main may have moved on, with
-      # its history, to compare commits below.
+      # The source commit, which the deploy commit goes on top of, with the whole history to
+      # compare it with what production deploys. The credentials stay, for the push.
       - uses: actions/checkout@v7
         with:
-          ref: main
+          ref: ${{ needs.plan.outputs.source }}
           fetch-depth: 0
 
       # The kustomize inside kubectl v1.36.5, which `make k8s-check` renders with
@@ -254,21 +385,44 @@ jobs:
           tar -xzf "$RUNNER_TEMP/kustomize.tar.gz" -C "$RUNNER_TEMP/bin" kustomize
           echo "$RUNNER_TEMP/bin" >> "$GITHUB_PATH"
 
-      # Every image in the file is one of ours, and all of them were just published. A re-run of
-      # an older run leaves production alone if it already runs a build of a later commit.
-      - name: Point production at the new images
-        id: images
+      # Production's head is a deploy commit, whose message names its source commit, or, if it
+      # was pushed by hand, a commit to compare as it is. A re-run of an older run leaves
+      # production alone if it already deploys the source commit or a later one, unless the run
+      # was started by hand with "rollback".
+      - name: Read the production branch
+        id: production
+        env:
+          ROLLBACK: ${{ inputs.rollback }}
         run: |
-          tag="sha-${GITHUB_SHA::$DOCKER_METADATA_SHORT_SHA_LENGTH}"
-          echo "tag=$tag" >> "$GITHUB_OUTPUT"
-          deployed=$(sed -n 's/^  newTag: sha-//p' "$IMAGES_FILE" | sort -u)
-          if [[ -n $deployed ]] && deployed=$(git rev-parse --verify --quiet "$deployed^{commit}") &&
-            git merge-base --is-ancestor "$GITHUB_SHA" "$deployed"; then
-            echo "::notice::Production already runs images from $deployed, which is $GITHUB_SHA or a later commit."
+          head=$(git ls-remote origin refs/heads/production | awk '$2 == "refs/heads/production" { print $1 }')
+          echo "head=$head" >> "$GITHUB_OUTPUT"
+          if [[ -z $head ]]; then
+            echo "::notice::There is no production branch yet; this first deploy creates it."
+            echo "deploy=true" >> "$GITHUB_OUTPUT"
             exit 0
           fi
+          git fetch --quiet --no-tags origin "$head"
+          message=$(git log -1 --format=%B "$head")
+          deployed=$(sed -n '/^Source commit [0-9a-f]\{40\}$/{s/^Source commit //p;q;}' <<<"$message")
+          if [[ -z $deployed ]] || ! git rev-parse --quiet --verify "$deployed^{commit}" > /dev/null; then
+            deployed=$head
+          fi
+          if [[ $ROLLBACK != true ]] && git merge-base --is-ancestor "$SOURCE" "$deployed"; then
+            echo "::notice::Production already deploys $deployed, which is $SOURCE or a later commit, so it is left alone."
+            echo "deploy=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          if ! git merge-base --is-ancestor "$deployed" "$SOURCE"; then
+            echo "::notice::Production deploys $deployed, which isn't an earlier commit of $SOURCE; replacing it."
+          fi
+          echo "deploy=true" >> "$GITHUB_OUTPUT"
+
+      # Every image in the file is one of ours, and all of them come from the image commit.
+      - name: Point production at the images
+        if: steps.production.outputs.deploy == 'true'
+        run: |
           images=()
-          while read -r name; do images+=("$name=*:$tag"); done < <(sed -n 's/^- name: //p' "$IMAGES_FILE")
+          while read -r name; do images+=("$name=*:$TAG"); done < <(sed -n 's/^- name: //p' "$IMAGES_FILE")
           if [[ ${#images[@]} -eq 0 ]]; then
             echo "::error::No images found in $IMAGES_FILE."
             exit 1
@@ -276,24 +430,27 @@ jobs:
           (cd "$(dirname "$IMAGES_FILE")" && kustomize edit set image "${images[@]}")
           kustomize build deploy/k8s/overlays/production > /dev/null
 
-      - name: Commit and push
+      # The source commit's tree with the new tags, as a commit on top of it. The body names the
+      # source commit on a line of its own, for the step above to read on the next deploy (and no
+      # "Key: value" trailers). It isn't a fast-forward of the previous deploy commit, which sits
+      # on an older source commit, hence the force; the lease refuses the push if production moved
+      # since it was read.
+      - name: Commit and push to production
+        if: steps.production.outputs.deploy == 'true'
         env:
-          TAG: ${{ steps.images.outputs.tag }}
+          PRODUCTION_HEAD: ${{ steps.production.outputs.head }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
-          if git diff --quiet -- "$IMAGES_FILE"; then
-            echo "Nothing to deploy: the production tags didn't change."
-            exit 0
-          fi
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git commit --quiet --message "Deploy $TAG to production [skip ci]" \
-            --message "Images built from $GITHUB_SHA by $RUN_URL" -- "$IMAGES_FILE"
-          # If main moved since the checkout, replay the commit on top of it. A conflict means
-          # the tags were changed meanwhile; the job then fails rather than overwrite them.
-          for _ in 1 2 3; do
-            git push origin HEAD:main && exit 0
-            git pull --rebase origin main
-          done
-          echo "::error::Could not push to main."
-          exit 1
+          git add -- "$IMAGES_FILE"
+          body=$(printf 'Source commit %s\nImage commit %s\nRun %s' "$SOURCE" "$IMAGE_COMMIT" "$RUN_URL")
+          git commit --quiet --allow-empty \
+            --message "Deploy ${SOURCE::$SHORT_SHA_LENGTH} (images $TAG) [skip ci]" --message "$body"
+          if ! git push --quiet --force-with-lease="refs/heads/production:$PRODUCTION_HEAD" \
+            origin HEAD:refs/heads/production; then
+            echo "::error::Pushing to production failed. If someone pushed to it since it was read, check what it deploys now; re-running this job deploys $SOURCE over it."
+            exit 1
+          fi
+          # The deploy commit's SHA, to roll back to later by pushing it to production again.
+          echo "::notice::Production now deploys $SOURCE with the images $TAG: deploy commit $(git rev-parse HEAD)."

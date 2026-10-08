@@ -1,5 +1,10 @@
-# The application: Argo CD keeps the cluster matching deploy/k8s/overlays/production on main.
-# A push to main is deployed within Argo CD's polling interval (3 minutes by default).
+# The application: Argo CD keeps the cluster matching deploy/k8s/overlays/production on the
+# production branch, within its polling interval (3 minutes by default). People edit the manifests
+# on main; only the image workflow's deploy job moves production (.github/workflows/images.yml,
+# docs/adr/0019). For a push to main that changes the code or the manifests, once its images are
+# published and CI has passed, it pushes that commit's manifests with the image tags set, so a
+# manifest change never goes live before the code it needs. The first deploy creates the branch;
+# until then this application reports that it can't find it, and finds it on a later refresh.
 apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
@@ -11,7 +16,7 @@ spec:
   project: filings
   source:
     repoURL: https://github.com/asood8/SEC-filings-pipeline.git
-    targetRevision: main
+    targetRevision: production
     path: deploy/k8s/overlays/production
   destination:
     server: https://kubernetes.default.svc
@@ -30,7 +35,7 @@ spec:
     # get a new cluster going without help. Its first syncs may fail because the Sealed Secrets
     # controller (sealed-secrets.yaml) hasn't installed the SealedSecret kind yet, or wait on a
     # Postgres whose Secret hasn't been sealed and committed yet. Once the SealedSecrets are
-    # pushed, a retry or the next automated sync applies them.
+    # pushed to main and deployed, a retry or the next automated sync applies them.
     retry:
       limit: 10
       refresh: true

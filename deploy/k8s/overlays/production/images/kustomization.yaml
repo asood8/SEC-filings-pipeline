@@ -2,11 +2,14 @@
 # .github/workflows/images.yml and pushed to GHCR. All five come from the same commit and share
 # its tag, sha-<short commit SHA>.
 #
-# CI writes this file. After a push to main builds new images and CI passes, its deploy job sets
-# the tags with `kustomize edit set image` and commits the change, and Argo CD rolls it out
-# (docs/adr/0019-image-ci-and-deploy.md). kustomize rewrites a file it edits in its own layout,
-# which is why the tags live here, on their own, in that layout. To roll back, revert CI's commit
-# or set an older tag here, and push.
+# CI sets the tags, on the production branch only: on main they stay a placeholder that doesn't
+# exist in GHCR. For each push to main that changes the code or the manifests, once CI passes,
+# the deploy job sets them with `kustomize edit set image` to the images of that commit's code,
+# commits the result on top of the pushed commit, and pushes it to the production branch, which
+# Argo CD deploys (docs/adr/0019-image-ci-and-deploy.md). kustomize rewrites a file it edits in its
+# own layout, which is why the tags live here, on their own, in that layout. To roll back, deploy
+# an older commit (docs/runbook.md, "Deploys and rollbacks"); editing the tags here changes
+# nothing, since the next deploy sets them again.
 apiVersion: kustomize.config.k8s.io/v1alpha1
 kind: Component
 

@@ -308,13 +308,13 @@ def test_evaluate_runs_every_mode_like_the_api(corpus: Engine) -> None:
     assert [r.mode for r in evaluation.results] == ["keyword", "semantic", "hybrid"]
     assert (evaluation.skipped, evaluation.missing) == ({}, [MISSING])
     keyword, semantic, hybrid = ({q.query: q for q in r.queries} for r in evaluation.results)
-    # No summary says "appointment"; the any-word fallback finds the Form 4 that says "CFO".
-    assert keyword["CFO appointment"].top == [SALE_4]
+    # No summary says "appointment"; the any-word fallback finds the Form 4 that says "CFO" and,
+    # through its keywords, the 8-K that says "chief financial officer" (equal ranks: by accession).
+    assert keyword["CFO appointment"].top == [CFO_8K, SALE_4]
     assert keyword["CFO appointment"].form4_share_at_5 == pytest.approx(0.2)
     assert semantic["CFO appointment"].top == [CFO_8K, SALE_4, NOTES_8K]
-    # The Form 4 matched both ways, so fusion still puts it first, at half its semantic weight.
-    assert hybrid["CFO appointment"].top == [SALE_4, CFO_8K, NOTES_8K]
-    assert hybrid["CFO appointment"].first_relevant_rank == 2
+    assert hybrid["CFO appointment"].top == [CFO_8K, SALE_4, NOTES_8K]
+    assert hybrid["CFO appointment"].first_relevant_rank == 1
     assert semantic["note offering"].recall_at_5 == 0.5  # one of its two filings doesn't exist
 
 
@@ -359,8 +359,8 @@ def test_main_prints_markdown_and_writes_json(
     assert main(["--labels", str(labels), "--per-query", "--json", str(out)]) == 0
 
     printed = capsys.readouterr().out
-    # "note offering" finds its filing first (MRR 1) but not the missing one (recall 0.5).
-    assert "| keyword | 2 | 0.25 | 0.25 | 0.50 | 20% (1 queries) |" in printed
+    # Both queries find a filing first (MRR 1); "note offering" can't find its missing one.
+    assert "| keyword | 2 | 0.75 | 0.75 | 1.00 | 20% (1 queries) |" in printed
     assert "semantic: skipped" in printed
     assert "#### keyword" in printed
     report = json.loads(out.read_text())

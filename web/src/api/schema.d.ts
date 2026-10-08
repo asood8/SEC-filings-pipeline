@@ -84,7 +84,8 @@ export interface paths {
         };
         /**
          * Search filings by keyword, meaning, or both
-         * @description Keyword search understands quotes, `OR`, and `-word`. Semantic search matches meaning
+         * @description Keyword search understands quotes, `OR`, and `-word`, and finds a company's filings by its
+         *     ticker typed in capitals (`COST`; `costs` is only a word). Semantic search matches meaning
          *     ("leadership change" finds CEO appointments). Hybrid, the default, combines both. Without a
          *     working embedding model, semantic and hybrid fall back to keywords (`degraded: true`).
          */

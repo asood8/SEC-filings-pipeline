@@ -10,6 +10,7 @@ from filings_common.db import (
     Base,
     Company,
     Filing,
+    FilingSearch,
     FilingStatus,
     OutboxEvent,
     create_engine,
@@ -23,6 +24,29 @@ def test_migrations_match_the_models(db_engine: Engine) -> None:
     with db_engine.connect() as conn:
         diff = compare_metadata(MigrationContext.configure(conn), Base.metadata)
     assert diff == [], "models changed without a migration: run alembic revision --autogenerate"
+
+
+def test_migrations_match_the_search_vector_expression(db_engine: Engine) -> None:
+    """Autogenerate doesn't compare generated-column expressions, so this compares Postgres's own
+    rendering of the model's expression with the migrated column's."""
+    computed = FilingSearch.__table__.c.tsv.computed
+    assert computed is not None
+    model_expression = str(computed.sqltext.compile(dialect=db_engine.dialect))
+    expression_of = sa.text(
+        "SELECT pg_get_expr(adbin, adrelid) FROM pg_attrdef WHERE adrelid = CAST(:t AS regclass)"
+        " AND adnum = (SELECT attnum FROM pg_attribute WHERE attrelid = CAST(:t AS regclass)"
+        " AND attname = 'tsv')"
+    )
+    with db_engine.connect() as conn:
+        conn.exec_driver_sql(
+            "CREATE TEMPORARY TABLE search_model (title text, company text, ticker text, body text,"
+            f" keywords text, tsv tsvector GENERATED ALWAYS AS ({model_expression}) STORED)"
+        )
+        migrated = conn.scalar(expression_of, {"t": "filing_search"})
+        modeled = conn.scalar(expression_of, {"t": "search_model"})
+        conn.rollback()
+    assert migrated is not None
+    assert migrated == modeled
 
 
 def test_filing_round_trip_with_default_status(clean_db: Engine) -> None:

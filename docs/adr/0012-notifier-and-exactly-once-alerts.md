@@ -74,4 +74,6 @@ Sign-in and subscription management (the API side of Phase 4) are decided separa
 - **Lock duration.** A row lock is held during one HTTP call (10 s timeout) or SMTP send (20 s).
   That's fine at this volume.
 - **Still to come in Phase 4:** sign-in (Google OIDC) and the subscription API, which must apply the
-  same target validation when subscriptions are created.
+  same target validation when subscriptions are created. (Both done on 2026-10-06: sign-in is
+  ADR-0013, and the subscriptions API validates targets with the notifier's own checks,
+  `filings_common.targets`.)

@@ -1,0 +1,110 @@
+/* A table of figures. On narrow screens each row becomes a card of "label: value" lines,
+ * labelled from each cell's data-label, so nothing scrolls sideways. */
+
+/* In case a wide table still doesn't fit just above the breakpoint. */
+.scroll {
+  overflow-x: auto;
+}
+
+.table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.9rem;
+}
+
+.table th,
+.table td {
+  padding: 0.45rem 0.5rem;
+  border-bottom: 1px solid var(--border);
+  text-align: left;
+  vertical-align: top;
+}
+
+.table th:first-child,
+.table td:first-child {
+  padding-left: 0;
+}
+
+.table thead th {
+  color: var(--muted);
+  font-size: 0.8rem;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.table .number {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.table tfoot td {
+  border-bottom: 0;
+  font-weight: 600;
+}
+
+/* A second, quieter line in a cell. */
+.detail {
+  display: block;
+  color: var(--muted);
+  font-size: 0.8rem;
+}
+
+.note {
+  margin-top: 0.5rem;
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+
+@media (max-width: 48rem) {
+  .table thead {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+
+  .table,
+  .table tbody,
+  .table tfoot,
+  .table tr,
+  .table td {
+    display: block;
+  }
+
+  .table tr {
+    padding: 0.5rem 0;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .table td,
+  .table td:first-child,
+  .table .number {
+    display: flex;
+    gap: 1rem;
+    justify-content: space-between;
+    padding: 0.1rem 0;
+    border: 0;
+    text-align: right;
+    white-space: normal;
+  }
+
+  .table td::before {
+    content: attr(data-label);
+    flex-shrink: 0;
+    color: var(--muted);
+    text-align: left;
+  }
+
+  /* The row's title: no label, set apart. */
+  .table td:first-child {
+    font-weight: 600;
+    text-align: left;
+  }
+
+  .table td:first-child::before {
+    content: none;
+  }
+}

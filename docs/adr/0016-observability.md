@@ -166,14 +166,19 @@ session token, an API key, or LLM prompt or answer text.
 - **Dashboards and alert rules are tested against the code**, so renaming a metric or attribute
   fails CI instead of silently emptying a panel.
 - **Alerts notify nobody yet.** Locally they show in Grafana only; Grafana Cloud needs a contact
-  point and notification policy (Phase 7).
+  point and notification policy (Phase 7). (ADR-0018 leaves both to the stack's UI: alerts go to
+  its default contact point, email to the account owner, until another is added.)
 - **Follow-ups (Phase 7):** the production headers secret (a Sealed Secret); Terraform for the
   dashboards (`grafana_dashboard`) and rules (`grafana_rule_group`, substituting the data source
   UID), plus a contact point (Discord, its webhook a secret) and notification policy; the pods'
   `service.instance.id` (the pod name) and a shutdown grace period for the last export (done
   2026-10-07: 45 s, and discovery now stops on SIGTERM so a run killed at its deadline still
   exports its spans; ADR-0017); and whether to export straight to Grafana Cloud or through an
-  in-cluster collector (the brief's budget reserves ~0.2 GB for one).
+  in-cluster collector (the brief's budget reserves ~0.2 GB for one). Since then: the services
+  export to an in-cluster collector, which holds the Grafana Cloud credentials in its own Secret,
+  so they need no headers secret (ADR-0017); Terraform uploads the dashboards and rules, and
+  contact points stay manual (ADR-0018); and the manifests don't set the pod name, so each
+  process keeps its random `service.instance.id`, which is just as unique.
 
 ## Metrics
 
@@ -218,9 +223,9 @@ computed by the dashboards from these counters rather than recorded separately.
 - **Cumulative values:** each export carries totals since the process started. That is what
   Prometheus and Grafana Cloud store; queries turn totals into rates, and handle the reset to zero
   when a process restarts.
-- **Each process is its own `service.instance.id`**: a random ID, or in Kubernetes the pod name
-  from `OTEL_RESOURCE_ATTRIBUTES`. Two replicas, or two runs of a job, writing their totals into
-  one series would turn it into nonsense.
+- **Each process is its own `service.instance.id`**: a random ID, unless `OTEL_RESOURCE_ATTRIBUTES`
+  sets one (such as a pod's name; the Kubernetes manifests keep the random ID). Two replicas, or
+  two runs of a job, writing their totals into one series would turn it into nonsense.
 - Instruments are created when the module is imported, through the OpenTelemetry API. They record
   nothing until `setup_telemetry` installs the SDK, and with telemetry off they never do.
 

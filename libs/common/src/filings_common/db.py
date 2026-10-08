@@ -29,11 +29,34 @@ NAMING_CONVENTION = {
 # migration, because pgvector columns have a fixed dimension.
 EMBEDDING_DIMENSIONS = 768
 
-# Weighted full-text vector: the headline and company count more than the body.
+
+def _without_ticker(column: str) -> str:
+    """SQL for the column's text with the ticker blanked out where it stands alone, as written
+    (in capitals): the English configuration would index "COST" as the word "cost", which "costs"
+    matches. The ticker's characters are escaped for the regular expression."""
+    pattern = r"'\m' || regexp_replace(ticker, '\W', '\\\&', 'g') || '\M'"
+    return f"coalesce(regexp_replace({column}, {pattern}, ' ', 'g'), {column})"
+
+
+# The ticker as one lexeme in capitals, written as tsvector input ('COST':1, quotes and backslashes
+# escaped): normalized words are lowercase, so no word can match it, only a search for the ticker
+# (filings_common.search). ("\:" is a literal colon in SQLAlchemy text, where ":1" would be a bind
+# parameter.)
+_TICKER_LEXEME = (
+    r"setweight((''''"
+    r" || replace(replace(upper(ticker), '\', '\\'), '''', '''''')"
+    r" || '''\:1')::tsvector, 'A')"
+)
+
+# Weighted full-text vector: the headline, company, and ticker count more than the body and the
+# keywords (other words for what the text says, which weigh what the words they stand for weigh).
+# Migration 23e9e08283f1 has a copy, and test_db checks that the two agree.
 _SEARCH_TSV = (
-    "setweight(to_tsvector('english', title), 'A') || "
+    f"setweight(to_tsvector('english', {_without_ticker('title')}), 'A') || "
     "setweight(to_tsvector('english', company), 'A') || "
-    "setweight(to_tsvector('english', body), 'B')"
+    f"coalesce({_TICKER_LEXEME}, '') || "
+    f"setweight(to_tsvector('english', {_without_ticker('body')}), 'B') || "
+    "setweight(to_tsvector('english', keywords), 'B')"
 )
 
 
@@ -112,7 +135,8 @@ class FilingExhibit(Base):
 
 
 class Form4Filing(Base):
-    """Queryable key fields of a parsed Form 4. The full parsed payload is in MongoDB.
+    """Queryable key fields of a parsed Form 4, with its transaction lines in
+    `form4_transactions`. The full parsed payload is in MongoDB.
 
     The issuer can differ from the watchlist company the filing was found under: a company's
     filing feed also lists Form 4s it files as an insider of *another* company.
@@ -137,6 +161,41 @@ class Form4Filing(Base):
     updated_at: Mapped[datetime] = mapped_column(
         server_default=sa.func.now(), onupdate=sa.func.now()
     )
+
+
+class Form4Transaction(Base):
+    """One transaction line of a parsed Form 4, from either table: non-derivative (stock) or
+    derivative (options, RSUs, convertibles). Holdings rows (positions reported without a
+    transaction), footnotes, and derivative terms stay in the MongoDB payload.
+
+    `line` numbers the payload's transactions from 1: the non-derivative table first, then the
+    derivative table, each in document order. The parser rewrites a filing's lines together with
+    its `form4_filings` row, so a replay leaves exactly the same rows.
+    """
+
+    __tablename__ = "form4_transactions"
+    __table_args__ = (
+        sa.CheckConstraint("acquired_disposed IN ('A', 'D')", name="acquired_disposed"),
+        sa.CheckConstraint("direct_or_indirect IN ('D', 'I')", name="direct_or_indirect"),
+    )
+
+    # Deleting a filing deletes its form4_filings row, and with it these lines.
+    accession_no: Mapped[str] = mapped_column(
+        sa.ForeignKey("form4_filings.accession_no", ondelete="CASCADE"), primary_key=True
+    )
+    line: Mapped[int] = mapped_column(sa.SmallInteger, primary_key=True, autoincrement=False)
+    is_derivative: Mapped[bool]
+    security_title: Mapped[str]
+    transaction_date: Mapped[date | None]
+    # SEC transaction code: P open-market purchase, S sale, A award, M exercise, F tax, G gift, ...
+    code: Mapped[str | None]
+    # Floats, like the payload (ADR-0006): reported figures, not accounting balances.
+    shares: Mapped[float | None] = mapped_column(sa.Double)
+    # NULL when the filing gives the price only in a footnote.
+    price_per_share: Mapped[float | None] = mapped_column(sa.Double)
+    acquired_disposed: Mapped[str | None]  # A or D
+    shares_owned_after: Mapped[float | None] = mapped_column(sa.Double)
+    direct_or_indirect: Mapped[str | None]  # D or I
 
 
 class Form8KFiling(Base):
@@ -194,8 +253,13 @@ class FilingSearch(Base):
         sa.BigInteger, sa.ForeignKey("summaries.id", ondelete="CASCADE")
     )
     title: Mapped[str]  # the summary's headline
-    company: Mapped[str]  # company name and ticker
+    # The company's name. Rows written before the ticker column existed hold "name ticker".
+    company: Mapped[str]
+    ticker: Mapped[str | None]
     body: Mapped[str]  # the summary and its key points
+    # Searchable but not embedded or shown: other words for what the text says ("CFO" for "Chief
+    # Financial Officer", "purchase" for "bought").
+    keywords: Mapped[str] = mapped_column(server_default="")
     tsv: Mapped[str] = mapped_column(
         TSVECTOR, sa.Computed(_SEARCH_TSV, persisted=True), deferred=True
     )

@@ -23,12 +23,13 @@ applying, reaching the cluster, Terraform state).
 - [Pausing Argo CD for hands-on work](#pausing-argo-cd-for-hands-on-work)
 - [Rotating secrets](#rotating-secrets)
 - [Dependency audit fails](#dependency-audit-fails)
-- [Enforce the website's Content-Security-Policy](#enforce-the-websites-content-security-policy)
 - [SEC 429s and fair access](#sec-429s-and-fair-access)
 - [Swapping the local LLM model](#swapping-the-local-llm-model)
+- [Changing search ranking or the embedding model](#changing-search-ranking-or-the-embedding-model)
 - [Oracle idle reclamation and capacity errors](#oracle-idle-reclamation-and-capacity-errors)
 - [Backups and restores](#backups-and-restores)
 - [Capacity planning](#capacity-planning)
+- [Enforce the website's Content-Security-Policy](#enforce-the-websites-content-security-policy)
 
 ## Before you start
 
@@ -49,7 +50,10 @@ kubectl -n filings exec -it postgres-0 -- sh -c 'psql -U "$POSTGRES_USER" -d "$P
   summarizer's pod, which can reach Postgres, MongoDB, the LLM, and the embeddings server:
   `kubectl -n filings exec deploy/summarizer -- <command>`. Pods started any other way are shut
   out by the NetworkPolicies. A command shares the container's 256 Mi memory limit with the
-  running summarizer, so run one at a time.
+  running summarizer, so run one at a time. `filings-rebuild-key-fields` ships with the parser
+  instead: `kubectl -n filings exec deploy/parser -- filings-rebuild-key-fields --form-type 4`
+  rewrites Form 4 key fields and transaction lines from MongoDB, for example after a migration
+  adds a key-field table (it calls nothing at SEC and publishes nothing).
 - **Logs** stay in the cluster (only traces and metrics go to Grafana Cloud), and only the current
   and previous run of each container are kept. Lines logged while a filing or a request is being
   handled end with `trace_id=… span_id=…`; look the trace up in Grafana Cloud's Tempo.
@@ -351,9 +355,10 @@ The general procedure, for any Secret:
 | `mongodb`: `MONGODB_URL` | `terraform apply -replace=module.atlas.random_password.database_user`, then pipe `terraform output -raw mongodb_url` into kubeseal | parser, summarizer | The old password stops working at the apply: seal and push right after. |
 
 Not in the cluster, rotated where they live: Terraform's own credentials (`CLOUDFLARE_API_TOKEN`,
-`MONGODB_ATLAS_CLIENT_ID`/`_SECRET`, `GRAFANA_AUTH`, the OCI API key in `~/.oci`), and the Discord
-webhook of Grafana's contact point (make a new webhook in Discord, update the contact point in
-Grafana Cloud, delete the old webhook).
+`MONGODB_ATLAS_CLIENT_ID`/`_SECRET`, `GRAFANA_AUTH`, the OCI API key in `~/.oci`), and, if you
+added a Discord contact point in Grafana Cloud (alerts otherwise go to the stack's default email
+contact point; ADR-0018), its webhook: make a new webhook in Discord, update the contact point,
+delete the old webhook.
 
 **`GOOGLE_CLIENT_ID` is configuration, not a secret** (the website embeds it). To change it, set it
 in `deploy/k8s/overlays/production/config.env` (the API restarts by itself: the ConfigMap's name
@@ -376,10 +381,11 @@ unset NEW_PASSWORD
 
 ## Dependency audit fails
 
-The "Dependency audit" workflow (`.github/workflows/audit.yml`, on every push, pull request,
-and weekly; locally `make audit`) checks every package version in `uv.lock` with
-pip-audit (PyPI's advisory data) and the website's runtime packages with `npm audit` (high and
-critical only). A new advisory fails it even when nothing in the repository changed.
+The "Dependency audit" workflow (`.github/workflows/audit.yml`, on every push to `main`, every
+pull request, and weekly on Mondays; locally `make audit`, which the workflow runs) checks every
+package version in `uv.lock` with pip-audit (PyPI's advisory data) and the website's runtime
+packages with `npm audit` (high and critical only). A new advisory fails it even when nothing in
+the repository changed. It is separate from CI, so a failure doesn't block deploys.
 
 1. **See what it found:** `make audit` locally names the package, the advisory, and the fixed
    version.
@@ -425,7 +431,8 @@ or `SEC returned 429` in discovery's log):
 1. **Look for another client.** Anything that calls SEC outside `EdgarClient` and the cluster's
    Valkey (a script, a second deployment, a run pointed at another Redis) doesn't share the bucket.
 2. **Slow down:** set `SEC_RATE_LIMIT_PER_SECOND=2` in `deploy/k8s/overlays/production/config.env`
-   and push. The next discovery run uses it.
+   and push. Once the image workflow has deployed it ([Deploys](#deploys-and-rollbacks)), the
+   next discovery run uses it.
 3. **While blocked (403s), pause discovery,** so new runs don't extend the block:
    `kubectl -n filings patch cronjob discovery -p '{"spec":{"suspend":true}}'`. Self-heal leaves
    it alone, since git doesn't set `suspend` (check SUSPEND in `kubectl -n filings get cronjob`).
@@ -459,9 +466,9 @@ saves every summary for reading side by side: numbers can't catch a wrong but we
    `MODEL_URL` (pinned to a Hugging Face commit: `.../resolve/<commit>/<file>`), `MODEL_SHA256`
    (from the file's Hugging Face page), and the server's `--model` path and `--alias`. Set
    `LLM_MODEL` in `deploy/k8s/base/config.env` to the alias: it is stored with every summary.
-   `make k8s-check`, commit, push. Argo CD replaces the pod, and its init container downloads the
-   model once into the 8 Gi volume. The old file stays there (room for three or four 2 GB
-   models); it is under `/mnt/k3s-data/local-path/` on the VM.
+   `make k8s-check`, commit, push. Once the image workflow has deployed it, Argo CD replaces the
+   pod, and its init container downloads the model once into the 8 Gi volume. The old file stays
+   there (room for three or four 2 GB models); it is under `/mnt/k3s-data/local-path/` on the VM.
 3. **Measure on the VM,** whose cores are slower than a laptop's (ADR-0017 suggests trying a Q4_0
    file, which llama.cpp repacks for the A1's ARM cores):
 
@@ -481,6 +488,32 @@ saves every summary for reading side by side: numbers can't catch a wrong but we
    choice is an open decision in the brief (§12).
 
 Locally, `LLM_MODEL` in `.env` selects the Ollama model the pipeline uses.
+
+## Changing search ranking or the embedding model
+
+`filings-search-eval` measures search quality (ADR-0011). It runs the labeled queries in
+`config/search_eval.json` through keyword, semantic, and hybrid search with the API's code, and
+prints recall@5, recall@10, MRR, and how much of the top 5 Form 4s take. Run it locally before
+and after changing fusion, the search documents, or the embedding model. Keep the change if the
+numbers improve and no query gets much worse.
+
+```
+make up && make llm-up                      # Postgres, and Ollama with nomic-embed-text
+uv run filings-search-eval --per-query --json data/eval-before.json
+# make the change; then uv run filings-index if it changes the search documents (keywords,
+# fields) or the embedding model (set EMBEDDING_MODEL first)
+uv run filings-search-eval --per-query --json data/eval-after.json
+```
+
+- **Safe next to the running pipeline:** it only reads (read-only transactions). It waits for a
+  busy embedding model instead of falling back to keywords the way the API does.
+- **No embedding model:** without `EMBEDDING_MODEL`, or with the model down, it measures keyword
+  search only and says why.
+- **Other databases:** the labels fit the local database of the October 2026 watchlist run, and
+  the tool lists any labeled filings it can't find. Against another database (production has
+  other filings), relabel first; the label file's `description` says how the labels were made.
+- **Vector size:** an embedding model with another vector size needs a migration first
+  (ADR-0011).
 
 ## Oracle idle reclamation and capacity errors
 

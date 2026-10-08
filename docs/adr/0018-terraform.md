@@ -112,9 +112,10 @@ the first boot, and a bootstrap script (`modules/oci/bootstrap.sh`) that it inst
    the same release tag, which verifies the binary's checksum. Traefik and the service load
    balancer are disabled: cloudflared reaches the `api` Service directly, and nothing listens on
    the VM. Secrets are encrypted at rest in k3s's datastore.
-4. **Argo CD**, from the repository at `git_revision`: `kubectl apply --server-side -k
-   deploy/argocd/install` (Argo CD's own install, which pins its version and trims it for this
-   node), then `kubectl apply -k deploy/argocd` (the project and the Applications). From then on
+4. **Argo CD**, from the repository at `git_revision`: `kubectl apply --server-side
+   --force-conflicts -k deploy/argocd/install` (Argo CD's own install, which pins its version and
+   trims it for this node), then `kubectl apply -k deploy/argocd` (the project and the
+   Applications). From then on
    Argo CD syncs everything else from git: the Sealed Secrets controller from `main`, and the
    application from the `production` branch that the image workflow writes (ADR-0019, since
    2026-10-08), so `git_revision` stays `main`.

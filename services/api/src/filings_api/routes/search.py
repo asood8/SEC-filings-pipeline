@@ -8,18 +8,10 @@ from filings_api.queries import CikFilter, EmbedderDep, SessionDep, filing_selec
 from filings_api.schemas import SearchResponse, SearchResultOut
 from filings_common.db import Filing
 from filings_common.embeddings import Embedder, EmbeddingError
-from filings_common.search import (
-    SearchHit,
-    keyword_search,
-    reciprocal_rank_fusion,
-    semantic_search,
-)
+from filings_common.search import SearchHit, hybrid_search, keyword_search, semantic_search
 
 logger = logging.getLogger(__name__)
 router = APIRouter(tags=["search"])
-
-# How many candidates each method contributes before hybrid fusion.
-HYBRID_CANDIDATES = 50
 
 
 def get_query_embeddings(request: Request) -> QueryEmbeddingCache | None:
@@ -60,7 +52,8 @@ def search(
     cik: CikFilter = None,
     limit: Annotated[int, Query(ge=1, le=50)] = 20,
 ) -> SearchResponse:
-    """Keyword search understands quotes, `OR`, and `-word`. Semantic search matches meaning
+    """Keyword search understands quotes, `OR`, and `-word`, and finds a company's filings by its
+    ticker typed in capitals (`COST`; `costs` is only a word). Semantic search matches meaning
     ("leadership change" finds CEO appointments). Hybrid, the default, combines both. Without a
     working embedding model, semantic and hybrid fall back to keywords (`degraded: true`)."""
     vector = None
@@ -82,16 +75,9 @@ def search(
         )
     else:
         used = "hybrid"
-        keyword = keyword_search(session, q, limit=HYBRID_CANDIDATES, form_type=form_type, cik=cik)
-        semantic = semantic_search(
-            session,
-            vector,
-            model=embedder.model,
-            limit=HYBRID_CANDIDATES,
-            form_type=form_type,
-            cik=cik,
+        hits = hybrid_search(
+            session, q, vector, model=embedder.model, limit=limit, form_type=form_type, cik=cik
         )
-        hits = reciprocal_rank_fusion(keyword, semantic)[:limit]
 
     rows = session.execute(
         filing_select().where(Filing.accession_no.in_([h.accession_no for h in hits]))

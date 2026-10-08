@@ -58,6 +58,17 @@ export const companyQuery = (ticker: string) =>
       unwrap(api.GET('/companies/{ticker}', { params: { path: { ticker } } })),
   })
 
+export const insiderActivityQuery = (ticker: string, days: number) =>
+  queryOptions({
+    queryKey: ['insider-activity', ticker.toUpperCase(), days],
+    queryFn: () =>
+      unwrap(
+        api.GET('/companies/{ticker}/insider-activity', {
+          params: { path: { ticker }, query: { days } },
+        }),
+      ),
+  })
+
 export type SearchMode = 'hybrid' | 'keyword' | 'semantic'
 export type SearchParams = { q: string; mode: SearchMode; formType?: string }
 

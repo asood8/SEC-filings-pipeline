@@ -11,10 +11,18 @@ from filings_api.schemas import (
     FilingDetail,
     FilingOut,
     Form4Details,
+    Form4TransactionOut,
     Page,
     SummaryOut,
 )
-from filings_common.db import Filing, FilingExhibit, Form4Filing, Form8KFiling, Summary
+from filings_common.db import (
+    Filing,
+    FilingExhibit,
+    Form4Filing,
+    Form4Transaction,
+    Form8KFiling,
+    Summary,
+)
 from filings_common.edgar import archive_url
 from filings_common.summaries import FilingSummary
 
@@ -67,6 +75,15 @@ def get_filing(
         .limit(1)
     ).first()
     form4 = session.get(Form4Filing, accession_no)
+    transactions = (
+        session.scalars(
+            sa.select(Form4Transaction)
+            .where(Form4Transaction.accession_no == accession_no)
+            .order_by(Form4Transaction.line)
+        ).all()
+        if form4 is not None
+        else []
+    )
     form8k = session.get(Form8KFiling, accession_no)
     exhibits = session.scalars(
         sa.select(FilingExhibit)
@@ -96,6 +113,7 @@ def get_filing(
                 reporting_owners=form4.reporting_owners,
                 transaction_codes=form4.transaction_codes,
                 is_10b5_1=form4.is_10b5_1,
+                transactions=[Form4TransactionOut.model_validate(t) for t in transactions],
             )
             if form4 is not None
             else None

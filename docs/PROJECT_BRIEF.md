@@ -160,15 +160,15 @@ Each phase ends with something runnable, tests passing, and docs updated. Check 
   - Metrics from §7, Grafana Cloud dashboards and alerts
   - _Done when:_ one trace follows a filing from discovery to alert.
 - [ ] **Phase 7: Production.**
-  - Terraform (OCI VM + network + block volume, Cloudflare tunnel/DNS/R2/Pages, Atlas, Grafana), k3s via cloud-init
-  - Manifests with requests/limits, encrypted secrets, Argo CD
-  - Multi-arch image builds to GHCR, llama.cpp server on arm64
-  - _Done when:_ `terraform apply` plus an Argo CD sync brings up a working system, and a push to `main` deploys automatically.
+  - Terraform (OCI VM + network + block volume, Cloudflare tunnel/DNS/R2/Pages, Atlas, Grafana), k3s via cloud-init. _Written and validated offline (`make tf-check`, ADR-0018); not applied._
+  - Manifests with requests/limits, encrypted secrets, Argo CD. _Written and validated offline (`make k8s-check`, ADR-0017); the SealedSecrets themselves need the cluster's key; not applied._
+  - Multi-arch image builds to GHCR, llama.cpp server on arm64. _Image workflow written and tested offline (ADR-0019; its jobs run only while the repository is public); llama.cpp manifests written; nothing built or run on arm64 yet._
+  - _Done when:_ `terraform apply` plus an Argo CD sync brings up a working system, and a push to `main` deploys automatically. _Pending: needs the accounts, a domain, and a real apply._
 - [ ] **Phase 8: Hardening.**
-  - k6 load test of the API
-  - Local model benchmark (speed vs summary quality across 2–3 small models/quantizations on the A1 VM)
-  - Backups, data retention, runbook
-  - README with architecture diagram and real metrics, ADRs complete
+  - k6 load test of the API. _Done on the laptop (`make loadtest`, numbers in the README); a run against the VM waits for Phase 7._
+  - Local model benchmark (speed vs summary quality across 2–3 small models/quantizations on the A1 VM). _The tool is done (`filings-benchmark`, laptop numbers in the README); the A1 run is pending._
+  - Backups, data retention, runbook. _Done: the nightly backup CronJob and a restore drill (`make backup-drill`), outbox pruning and a retention and capacity analysis (runbook, "Capacity planning"), and the runbook (`docs/runbook.md`). The first production backup and restore drill wait for Phase 7._
+  - README with architecture diagram and real metrics, ADRs complete. _The README has the diagram and the load-test and benchmark numbers; production metrics wait for Phase 7, and ADR-0018 and ADR-0019 are still Proposed._
 
 ## 9. Free-tier facts (checked October 2026; re-verify)
 
@@ -219,9 +219,10 @@ CLAUDE.md
 ## 12. Open decisions (ask before choosing)
 
 - ~~Watchlist: which companies and how many to start with~~ Decided 2026-10-05: 35 large, well-known US companies across sectors (`config/watchlist.toml`)
-- ~~Kustomize vs Helm; Sealed Secrets vs SOPS for production secrets~~ Decided 2026-10-07: Kustomize and Sealed Secrets
-- ~~Local observability viewer~~ Decided 2026-10-07: an optional grafana/otel-lgtm container (Compose profile); production uses Grafana Cloud
-- Which local LLM and embedding model (pick a reasonable default in Phase 2; decide properly with the Phase 8 benchmark)
+- ~~Kustomize vs Helm; Sealed Secrets vs SOPS for production secrets~~ Decided 2026-10-07: Kustomize and Sealed Secrets ([ADR-0017](adr/0017-kubernetes-manifests.md))
+- ~~Local observability viewer~~ Decided 2026-10-07: an optional grafana/otel-lgtm container (Compose profile); production uses Grafana Cloud ([ADR-0016](adr/0016-observability.md))
+- Which local LLM and embedding model (pick a reasonable default in Phase 2; decide properly with the Phase 8 benchmark). Defaults so far: Llama 3.2 3B ([ADR-0010](adr/0010-local-llm-in-compose-and-default-model.md)) and nomic-embed-text v1.5 ([ADR-0011](adr/0011-search-and-public-api.md)); `filings-benchmark` is ready, the run on the A1 VM is pending.
 - ~~Next.js vs a lighter frontend~~ Decided 2026-10-06: Vite + React + TypeScript ([ADR-0015](adr/0015-frontend-stack.md))
-- Project name and domain
+- Project name and domain (the domain is needed before the first `terraform apply`)
+- Production accounts, before the first `terraform apply` ([infra/terraform/README.md](../infra/terraform/README.md#decisions-first-brief-12)): R2 (Cloudflare asks for a payment method even on the free tier) or another S3-compatible store, the Oracle home region, where the Terraform state lives, and whether Pages builds from GitHub or from CI
 - Later form types (10-Q/10-K section changes, 13F)

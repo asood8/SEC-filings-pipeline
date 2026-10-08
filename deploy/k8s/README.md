@@ -2,8 +2,9 @@
 
 The production system on one k3s node (Oracle Cloud Ampere A1: arm64, 2 OCPU, 12 GB), as
 Kustomize directories that Argo CD keeps in sync with git. You edit them on `main`; the
-application is deployed from the `production` branch, which CI moves after each push once the
-images are built and the tests pass ([Deploying](#deploying)). Why it is built this way, the
+application is deployed from the `production` branch, which the image workflow moves after each
+push to `main` that changes the code or the manifests, once the images are built and CI has
+passed ([Deploying](#deploying)). Why it is built this way, the
 resource budget, and the security posture are in
 [ADR-0017](../../docs/adr/0017-kubernetes-manifests.md).
 
@@ -40,9 +41,10 @@ kubectl kustomize deploy/k8s/overlays/production   # print what Argo CD would ap
 
 `make k8s-check` needs no cluster, but it needs the internet: kubeconform downloads the JSON
 schemas (cached in `~/.cache/kubeconform`), and `deploy/argocd/install` fetches Argo CD's release
-manifest. CI runs it on every push. The project's own rules (requests and limits on every
-container, the memory budget, pod security, pinned images, real setting names) are tests in
-`tests/test_k8s_manifests.py`, which `make test` also runs when kubectl is installed.
+manifest. CI runs it on every push to `main` and every pull request. The project's own rules
+(requests and limits on every container, the memory budget, pod security, pinned images, real
+setting names) are tests in `tests/test_k8s_manifests.py`, which `make test` also runs when
+kubectl is installed.
 
 ## Configuration
 
@@ -239,7 +241,7 @@ Every image and upstream manifest is pinned to a version:
 - **kustomize for the deploy job:** `KUSTOMIZE_VERSION` and its checksum in
   `.github/workflows/images.yml`. It must be the version inside the pinned kubectl
   (`kubectl version --client`), which `make k8s-check` renders with; a test checks.
-- **Data stores and tools:** the image tags in `base/` (Postgres and Valkey match
+- **Data stores and tools:** the image tags in `base/` (Postgres, Redpanda, and Valkey match
   `docker-compose.yml`; keep them in step).
 - **llama.cpp and the models:** the image tag in `base/llm.yaml` and `base/embeddings.yaml`; the
   model URLs are pinned to a Hugging Face commit and checked against a SHA-256.

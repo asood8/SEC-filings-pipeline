@@ -1,4 +1,9 @@
-import type { Filing, FilingDetail } from '../api/client'
+import type {
+  Filing,
+  FilingDetail,
+  Form4Transaction,
+  InsiderActivity,
+} from '../api/client'
 
 export function filing(overrides: Partial<Filing> = {}): Filing {
   return {
@@ -34,6 +39,42 @@ export function filingDetail(
     form4: null,
     items: ['5.02', '9.01'],
     exhibits: [],
+    ...overrides,
+  }
+}
+
+/** An open-market sale; override fields for other kinds. */
+export function form4Transaction(
+  overrides: Partial<Form4Transaction> = {},
+): Form4Transaction {
+  return {
+    line: 1,
+    is_derivative: false,
+    security_title: 'Common Stock',
+    transaction_date: '2026-09-08',
+    code: 'S',
+    shares: 720,
+    price_per_share: 77.6,
+    acquired_disposed: 'D',
+    shares_owned_after: 2460,
+    direct_or_indirect: 'D',
+    ...overrides,
+  }
+}
+
+const NO_TRADES = { shares: 0, value: 0, unpriced_shares: 0 }
+
+export function insiderActivity(
+  overrides: Partial<InsiderActivity> = {},
+): InsiderActivity {
+  return {
+    ticker: 'AAPL',
+    days: 90,
+    since: '2026-07-10',
+    bought: NO_TRADES,
+    sold: NO_TRADES,
+    filings: 0,
+    owners: [],
     ...overrides,
   }
 }

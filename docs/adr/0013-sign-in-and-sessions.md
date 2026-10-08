@@ -119,7 +119,8 @@ migration as `sessions`.
   the same domain, e.g. `app.example.com` (a custom domain on Cloudflare Pages) and
   `api.example.com` (the tunnel). The default `*.pages.dev` address won't work: `pages.dev` is on
   the public suffix list, so it counts as a different site. Locally, use `localhost` for both
-  the website and the API; `127.0.0.1` counts as a different site.
+  the website and the API; `127.0.0.1` counts as a different site. (The Terraform code puts them
+  on `app.<domain>` and `api.<domain>`; ADR-0018.)
 - **One database query per authenticated request,** for the session lookup by its unique hash.
 - **Sessions last a fixed 7 days** from sign-in; there is no sliding renewal yet. Expired rows
   of users who never return are not swept; a periodic cleanup can come later if the table grows.

@@ -57,11 +57,16 @@ spec:
           ports:
             - name: http
               containerPort: 8000
+          # Ready only while Postgres answers (GET /readyz gives up after 2 s), so no traffic
+          # reaches a replica without its database and a rollout waits for the new one. Alive
+          # whenever the process answers: a database outage is no reason to restart the API.
           readinessProbe:
             httpGet:
-              path: /healthz
+              path: /readyz
               port: http
             periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 3
           livenessProbe:
             httpGet:
               path: /healthz

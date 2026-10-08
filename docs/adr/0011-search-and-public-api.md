@@ -83,6 +83,8 @@ The top 50 results from each method are merged with **reciprocal rank fusion**: 
   SHA-256 of the query: one vector serves every mode, filter, and page of a query, which the
   URL-keyed response cache can't. Each is 3 KB (32-bit floats, the precision pgvector keeps).
   Like the response cache it fails open, and `API_CACHE_TTL_SECONDS=0` turns it off.
+- **Probes:** `GET /healthz` (liveness: the process answers) and `GET /readyz` (readiness: Postgres
+  answers `SELECT 1` within 2 s, else 503) are never rate limited, cached, or traced (ADR-0017).
 - **Redis failures are fast and fail open.** The API's Redis client has 0.5 s timeouts and no
   retries. After an error, Redis is skipped for 10 s, so an outage costs one timeout, not one per
   request. Before this change, an outage added about 8 s to every request (redis-py retries by

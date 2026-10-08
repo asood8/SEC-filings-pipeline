@@ -8,8 +8,9 @@ from contextlib import asynccontextmanager
 from datetime import timedelta
 
 import redis
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor
 from redis.backoff import NoBackoff
 from redis.retry import Retry
@@ -18,11 +19,13 @@ from sqlalchemy.orm import Session, sessionmaker
 from filings_api.embedding_cache import QueryEmbeddingCache
 from filings_api.google import GoogleIdTokenVerifier, GoogleSigningKeys
 from filings_api.middleware import (
+    PROBE_PATHS,
     CacheMiddleware,
     CsrfMiddleware,
     RateLimitMiddleware,
     RedisBackoff,
 )
+from filings_api.readiness import DatabaseReadiness
 from filings_api.routes import auth, companies, filings, search, subscriptions
 from filings_common.config import (
     ApiSettings,
@@ -74,7 +77,7 @@ def instrument(app: FastAPI) -> None:
     os.environ.setdefault("OTEL_SEMCONV_STABILITY_OPT_IN", "http")  # read when first instrumenting
     FastAPIInstrumentor.instrument_app(
         app,
-        excluded_urls="/healthz",
+        excluded_urls=",".join(sorted(PROBE_PATHS)),
         exclude_spans=["receive", "send"],
         http_capture_headers_sanitize_fields=["cookie", "authorization"],
     )
@@ -158,6 +161,7 @@ def create_app(
     app.state.query_embeddings = None
     app.state.rate_limit = None
     app.state.redis_backoff = RedisBackoff()
+    app.state.readiness = DatabaseReadiness()
     app.state.cache_ttl_seconds = settings.cache_ttl_seconds
     app.state.trust_proxy_headers = settings.trust_proxy_headers
     app.state.session_lifetime = timedelta(days=settings.session_lifetime_days)
@@ -184,7 +188,19 @@ def create_app(
 
     @app.get("/healthz", include_in_schema=False)
     def healthz() -> dict[str, str]:
+        """Liveness: the process answers. Nothing else, so a database outage never gets the API
+        restarted (that is what /readyz is for)."""
         return {"status": "ok"}
+
+    @app.get("/readyz", include_in_schema=False)
+    async def readyz(request: Request) -> JSONResponse:
+        """Readiness: whether this replica can serve, which takes Postgres. While it fails,
+        Kubernetes sends the replica no traffic, and a rollout waits for it."""
+        readiness: DatabaseReadiness = request.app.state.readiness
+        if await readiness.problem(request.app.state.sessions) is not None:
+            # Only the logs say why: /readyz is reachable from outside.
+            return JSONResponse({"status": "unavailable"}, status_code=503)
+        return JSONResponse({"status": "ok"})
 
     app.include_router(filings.router)
     app.include_router(companies.router)

@@ -2,6 +2,7 @@ import json
 import threading
 from collections.abc import Sequence
 from datetime import date, timedelta
+from pathlib import Path
 from typing import Any
 
 import pytest
@@ -13,6 +14,7 @@ from sqlalchemy.engine import Engine
 
 from filings_common.db import OutboxEvent, session_factory
 from filings_common.events import FilingDiscovered, FilingReady, Topic
+from filings_common.health import Heartbeat, check
 from filings_common.outbox import (
     OutboundMessage,
     OutboxPruner,
@@ -305,11 +307,14 @@ def test_a_failed_prune_is_logged_and_retried_at_the_next_run(
         unreachable.dispose()
 
 
-def test_run_relay_prunes_while_idle(clean_db: Engine) -> None:
+def test_run_relay_prunes_while_idle_and_keeps_a_heartbeat(
+    clean_db: Engine, tmp_path: Path
+) -> None:
     old = add_events(clean_db, 2)
     publish_all(clean_db)
     age(clean_db, old, days=8)
     new = add_ready_events(clean_db, 3)
+    heartbeat = Heartbeat(tmp_path / "relay.heartbeat")
     stop = threading.Event()
     worker = threading.Thread(
         target=run_relay,
@@ -318,6 +323,7 @@ def test_run_relay_prunes_while_idle(clean_db: Engine) -> None:
             "batch_size": 2,
             "idle_seconds": 0.05,
             "pruner": OutboxPruner(session_factory(clean_db), timedelta(days=7)),
+            "heartbeat": heartbeat,
         },
     )
     worker.start()
@@ -332,3 +338,4 @@ def test_run_relay_prunes_while_idle(clean_db: Engine) -> None:
     assert not worker.is_alive()
     assert remaining(clean_db) == new  # all published, and only the old rows pruned
     assert unpublished(clean_db) == 0
+    assert check(heartbeat.path) is None

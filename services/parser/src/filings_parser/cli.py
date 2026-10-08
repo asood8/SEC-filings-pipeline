@@ -15,6 +15,7 @@ from filings_common.config import (
 from filings_common.consumer import make_consumer, run_consumer
 from filings_common.db import create_engine, session_factory
 from filings_common.events import Topic
+from filings_common.health import Heartbeat
 from filings_common.kafka import KafkaPublisher
 from filings_common.mongo import ParsedFilingStore
 from filings_common.storage import object_store_from_settings
@@ -22,11 +23,13 @@ from filings_common.telemetry import setup_telemetry
 from filings_parser.forms import PARSERS
 from filings_parser.handler import FilingHandler
 
+PROCESS_NAME = "filings-parser"
 CONSUMER_GROUP = "parser"
 
 
 def main() -> int:
-    telemetry = setup_telemetry("filings-parser")
+    heartbeat = Heartbeat.for_process(PROCESS_NAME)
+    telemetry = setup_telemetry(PROCESS_NAME)
     kafka = KafkaSettings()
     mongo_settings = MongoSettings()
 
@@ -53,6 +56,7 @@ def main() -> int:
             dead_letters,
             stop,
             consumer_group=CONSUMER_GROUP,
+            heartbeat=heartbeat,
         )
     finally:
         dead_letters.close()

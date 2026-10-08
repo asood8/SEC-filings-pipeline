@@ -12,6 +12,7 @@ from filings_common.config import DatabaseSettings, KafkaSettings
 from filings_common.consumer import make_consumer, run_consumer
 from filings_common.db import Channel, create_engine, session_factory
 from filings_common.events import Topic
+from filings_common.health import Heartbeat
 from filings_common.kafka import KafkaPublisher
 from filings_common.telemetry import setup_telemetry
 from filings_notifier.channels import (
@@ -23,6 +24,7 @@ from filings_notifier.channels import (
 )
 from filings_notifier.handler import NotificationHandler
 
+PROCESS_NAME = "filings-notifier"
 CONSUMER_GROUP = "notifier"
 logger = logging.getLogger("filings_notifier")
 
@@ -58,7 +60,8 @@ def email_sender(settings: EmailSettings) -> Sender:
 
 
 def main() -> int:
-    telemetry = setup_telemetry("filings-notifier")
+    heartbeat = Heartbeat.for_process(PROCESS_NAME)
+    telemetry = setup_telemetry(PROCESS_NAME)
     logging.getLogger("httpx2").setLevel(logging.WARNING)
     kafka = KafkaSettings()
     senders: dict[Channel, Sender] = {
@@ -81,6 +84,7 @@ def main() -> int:
             dead_letters,
             stop,
             consumer_group=CONSUMER_GROUP,
+            heartbeat=heartbeat,
         )
     finally:
         dead_letters.close()

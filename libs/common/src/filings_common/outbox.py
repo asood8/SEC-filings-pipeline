@@ -37,6 +37,7 @@ from sqlalchemy.orm import Session, sessionmaker
 from filings_common import metrics, telemetry
 from filings_common.db import OutboxEvent
 from filings_common.events import Event, Topic
+from filings_common.health import Heartbeat
 
 logger = logging.getLogger(__name__)
 tracer = trace.get_tracer(__name__)
@@ -216,12 +217,16 @@ def run_relay(
     batch_size: int = 100,
     idle_seconds: float = 1.0,
     pruner: OutboxPruner | None = None,
+    heartbeat: Heartbeat | None = None,
 ) -> None:
     """Relay until `stop` is set. Failed batches stay unpublished and are retried after a pause.
 
-    The `pruner` runs only when the outbox is empty, between polls."""
+    The `pruner` runs only when the outbox is empty, between polls. The `heartbeat` beats on every
+    pass of the loop (see `health`)."""
     metrics.start_at_zero(metrics.OUTBOX_PUBLISHED, (metrics.topic(t.value) for t in Topic))
     while not stop.is_set():
+        if heartbeat is not None:
+            heartbeat.beat()
         try:
             published = relay_batch(sessions, publisher, batch_size)
         except Exception:

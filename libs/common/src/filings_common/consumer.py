@@ -15,6 +15,10 @@ carry the trace ID) have the details.
 
 Between messages, at most every `offsets_interval` seconds, the loop also measures the group's lag
 on its partitions and how many messages its dead-letter topic holds (`OffsetMonitor`).
+
+Given a `Heartbeat`, the loop beats on every pass, and before each attempt at a message promises
+to beat again within `attempt_seconds`, so the liveness probe tells a long attempt from a hung
+loop (see `health`).
 """
 
 import logging
@@ -31,10 +35,14 @@ from opentelemetry import trace
 from opentelemetry.trace import Span, SpanKind, StatusCode
 
 from filings_common import metrics, telemetry
+from filings_common.health import Heartbeat
 from filings_common.outbox import OutboundMessage, Publisher
 
 logger = logging.getLogger(__name__)
 tracer = trace.get_tracer(__name__)
+
+# librdkafka's default max.poll.interval.ms, in seconds: how long handling one message may take.
+DEFAULT_MAX_POLL_INTERVAL_SECONDS = 300
 
 
 class PermanentError(Exception):
@@ -84,7 +92,10 @@ class MessageSource(Protocol):
 
 
 def make_consumer(
-    bootstrap_servers: str, group_id: str, *, max_poll_interval_seconds: int = 300
+    bootstrap_servers: str,
+    group_id: str,
+    *,
+    max_poll_interval_seconds: int = DEFAULT_MAX_POLL_INTERVAL_SECONDS,
 ) -> Consumer:
     """A consumer that commits manually. Handling one message, retries included, must finish
     within `max_poll_interval_seconds`, or the broker assumes the consumer died and rebalances."""
@@ -111,17 +122,23 @@ def run_consumer(
     poll_timeout: float = 1.0,
     consumer_group: str | None = None,
     offsets_interval: float = 30.0,
+    heartbeat: Heartbeat | None = None,
+    attempt_seconds: float = DEFAULT_MAX_POLL_INTERVAL_SECONDS,
 ) -> None:
     """Consume `topic` until `stop` is set. Closes the source on exit.
 
     `consumer_group` labels the spans and metrics (the source already belongs to its group); lag
-    is measured only when it is given.
+    is measured only when it is given. `attempt_seconds` is the longest one attempt at handling a
+    message may legitimately take; the heartbeat allows that much before each attempt. By default
+    it is the poll interval, past which the broker gives the partition away anyway.
     """
     source.subscribe([topic])
     monitor = OffsetMonitor(source, topic, consumer_group, interval=offsets_interval)
     metrics.DLQ_MESSAGES.add(0, metrics.topic(dead_letter_topic(topic)))
     try:
         while not stop.is_set():
+            if heartbeat is not None:
+                heartbeat.beat()
             monitor.measure_if_due()
             message = source.poll(poll_timeout)
             if message is None:
@@ -140,7 +157,15 @@ def run_consumer(
             )
             with _process_span(received, consumer_group) as span:
                 settled = _settle(
-                    received, handler, dead_letters, stop, max_attempts, backoff_seconds, span
+                    received,
+                    handler,
+                    dead_letters,
+                    stop,
+                    max_attempts,
+                    backoff_seconds,
+                    span,
+                    heartbeat,
+                    attempt_seconds,
                 )
                 if settled:
                     _commit(source, message)
@@ -317,10 +342,14 @@ def _settle(
     max_attempts: int,
     backoff_seconds: float,
     span: Span,
+    heartbeat: Heartbeat | None,
+    attempt_seconds: float,
 ) -> bool:
     """Handle or dead-letter the message. False if stopped first (it will be redelivered)."""
     for attempt in range(1, max_attempts + 1):
         span.set_attribute("filings.attempts", attempt)
+        if heartbeat is not None:
+            heartbeat.beat(busy_for=attempt_seconds)
         try:
             handler(received)
             span.set_attribute(telemetry.OUTCOME, "handled")
@@ -342,6 +371,8 @@ def _settle(
                 exc,
                 delay,
             )
+            if heartbeat is not None:
+                heartbeat.beat(busy_for=delay)
             if stop.wait(delay):
                 span.set_attribute(telemetry.OUTCOME, "stopped")
                 return False

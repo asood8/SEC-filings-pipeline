@@ -93,7 +93,7 @@ from a filing to the poll that found it.
 | LLM failover | `chat <model>` (CLIENT), one per provider tried | `gen_ai.*`: provider, model, token counts; outcome (`ok`, `invalid`, `error`, `rate_limited`); Gemini's rate-limiter wait |
 | Embeddings | `embeddings <model>` (CLIENT) | model, number of inputs |
 | Notifier | `deliver alert`, one per subscription | channel and outcome (`sent`, `failed`, `retry`, `already_settled`) only |
-| API | `<METHOD> <route>` (SERVER), except `/healthz` | method, route, URL with query string, status, user agent, client address |
+| API | `<METHOD> <route>` (SERVER), except `/healthz` and `/readyz` | method, route, URL with query string, status, user agent, client address |
 
 Accession numbers are fine on spans (they are public, and the way to find a filing's trace), but
 must never become metric labels: each is unique.
@@ -201,7 +201,7 @@ the unit, so `filings.sec.rate_limit.wait` becomes `filings_sec_rate_limit_wait_
 | `filings.sec.rate_limit.wait` | histogram, s | none | each SEC request attempt's wait for the shared limiter |
 | `filings.sec.responses` | counter | status class (`2xx`, `4xx`, `5xx`, `error`) | each SEC attempt, retries included |
 | `filings.sec.throttled` | counter | none | SEC 429 responses |
-| `http.server.request.duration` | histogram, s | method, route, status | FastAPI's instrumentation, except `/healthz` |
+| `http.server.request.duration` | histogram, s | method, route, status | FastAPI's instrumentation, except `/healthz` and `/readyz` |
 | `http.server.active_requests` | up-down counter | method, scheme | FastAPI's instrumentation |
 
 The brief's "per hour" figures and the notification success rate (sent / (sent + failed)) are

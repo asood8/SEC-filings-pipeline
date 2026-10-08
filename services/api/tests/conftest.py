@@ -261,7 +261,7 @@ def make_client(
             cookie_secure=overrides.pop("cookie_secure", True),
         )
         app = create_app(
-            session_factory(seeded),
+            overrides.pop("sessions", None) or session_factory(seeded),
             redis_client=overrides.pop("redis_client", redis_client),
             embedder=overrides.pop("embedder", WordHashEmbedder()),
             settings=settings,

@@ -12,13 +12,17 @@ from filings_common.config import (
     OutboxSettings,
 )
 from filings_common.db import create_engine, session_factory
+from filings_common.health import Heartbeat
 from filings_common.kafka import PIPELINE_TOPICS, KafkaPublisher, ensure_topics
 from filings_common.outbox import OutboxPruner, run_relay
 from filings_common.telemetry import setup_telemetry
 
+PROCESS_NAME = "filings-outbox-relay"
+
 
 def main() -> int:
-    telemetry = setup_telemetry("filings-outbox-relay", distribution="filings-common")
+    heartbeat = Heartbeat.for_process(PROCESS_NAME)
+    telemetry = setup_telemetry(PROCESS_NAME, distribution="filings-common")
     kafka = KafkaSettings()
     settings = OutboxRelaySettings()
     retention = timedelta(days=OutboxSettings().retention_days)
@@ -44,6 +48,7 @@ def main() -> int:
             batch_size=settings.batch_size,
             idle_seconds=settings.idle_seconds,
             pruner=OutboxPruner(sessions, retention),
+            heartbeat=heartbeat,
         )
     finally:
         publisher.close()

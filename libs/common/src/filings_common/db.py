@@ -91,7 +91,12 @@ class Company(Base):
 
 class Filing(Base):
     __tablename__ = "filings"
-    __table_args__ = (sa.Index("ix_filings_cik_filed_at", "cik", "filed_at"),)
+    __table_args__ = (
+        # A company's filings, newest first (company pages, the feed filtered by company).
+        sa.Index("ix_filings_cik_filed_at", "cik", "filed_at"),
+        # The feed's order (GET /filings and its cursors): without it, each page sorts every filing.
+        sa.Index("ix_filings_filed_at_accession_no", "filed_at", "accession_no"),
+    )
 
     # The natural key everywhere in the pipeline, e.g. 0000320193-24-000123.
     accession_no: Mapped[str] = mapped_column(primary_key=True)
@@ -177,6 +182,14 @@ class Form4Transaction(Base):
     __table_args__ = (
         sa.CheckConstraint("acquired_disposed IN ('A', 'D')", name="acquired_disposed"),
         sa.CheckConstraint("direct_or_indirect IN ('D', 'I')", name="direct_or_indirect"),
+        # Insider buying and selling (GET /companies/{ticker}/insider-activity): open-market
+        # stock purchases and sales only, the lines it totals, so the planner probes these per
+        # filing instead of scanning every line. Its condition must match that query's.
+        sa.Index(
+            "ix_form4_transactions_trades",
+            "accession_no",
+            postgresql_where=sa.text("code IN ('P', 'S') AND is_derivative IS false"),
+        ),
     )
 
     # Deleting a filing deletes its form4_filings row, and with it these lines.

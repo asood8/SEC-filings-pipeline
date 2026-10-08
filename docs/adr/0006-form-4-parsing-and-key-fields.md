@@ -125,6 +125,31 @@ rows need the latest filing's names as well, which is simpler in Python over one
 and storing display names would freeze today's rules into the data, while computing them per
 request costs microseconds.
 
+### Insider trades across companies (added 2026-10-08)
+
+`GET /insider-trades` and the website's Insider trades page rank the largest recent purchases
+or sales across every company's stock: the "largest insider purchases this week" feature that
+the line table was waiting for.
+
+- **One row per Form 4.** A filing's lines add up to one trade: all its P lines on the purchase
+  side, all its S lines on the sale side (a filing with both appears on each). A joint filing
+  is one row, so its lines count once. Rows aren't grouped by owner: the page is about single
+  trades, and the company page already totals each owner's.
+- **The same rules as insider activity:** stock lines with code P or S, a window of 1 to 365
+  days on transaction dates (each line on its own, so a filing that straddles the window counts
+  only its lines inside it), and value over the priced lines. A company's rows therefore add up
+  to its insider-activity totals. On the local database (90 days: 6 purchase filings, 46 sale
+  filings), all 21 company totals agree to the cent.
+- **Ranking:** by value, largest first. A filing with no price for any line comes last, since
+  its value isn't known, and equal values put the latest trade first.
+- **The issuer's ticker comes from the companies table** (SEC's ticker list), not from the Form
+  4. The filer types its own, which can be "BRK.A" or "LEN, LEN.B"; the companies table's is the
+  one the company pages take. An issuer missing from that table gets no ticker, so no link.
+- **No owner titles yet.** The owners' relationship (director, officer and title, 10% owner) is
+  parsed but stored only in MongoDB. Showing it needs a `form4_filings` column and a
+  `filings-rebuild-key-fields` backfill. Until then, the filing page the row links to has the
+  role in its summary ("Timothy D Cook (Executive Chair, Director) reported ...").
+
 ## Alternatives considered
 
 - **A per-transaction relational table** (`insider_transactions`). It is the natural next step for

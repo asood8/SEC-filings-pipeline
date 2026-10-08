@@ -191,6 +191,14 @@ the production ranking.
   sales (codes P and S) of the company's stock per reporting owner. Both read
   `form4_transactions` (ADR-0006). Reporting owners are objects, `{cik, name, display_name}`:
   the name as filed and a readable one (ADR-0006, "Owner CIKs and readable names").
+- **Insider trades across companies (added 2026-10-08):** `GET /insider-trades?side=buy&days=30`
+  (`side` buy or sell; `days` 1 to 365; `limit` 1 to 50, default 25) lists the largest recent
+  purchases or sales of any company's stock, one row per Form 4, by value. Each row has the
+  issuer (readable name, and its ticker in the companies table, or null), the reporting owners,
+  the shares, value, and average price of the filing's P or S stock lines, the shares without a
+  price, and the 10b5-1 flag. It follows insider activity's rules, so a company's rows add up to
+  its totals there (ADR-0006, "Insider trades across companies"). The website's Insider trades
+  page (`/insiders`) shows it.
 - **Docs:** typed response models generate the OpenAPI docs at `/docs`.
 - **Keyset cursors** encode the last row's sort key, so pages stay correct while new filings
   arrive. Offsets would repeat or skip rows.

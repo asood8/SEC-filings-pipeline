@@ -36,6 +36,17 @@ MAX_INSIDER_OWNERS = 50
 INSIDER_TRADE_CODES = {"bought": "P", "sold": "S"}
 
 
+def trade_lines() -> list[sa.ColumnElement[bool]]:
+    """Open-market stock trades: exactly the condition of the partial index
+    ix_form4_transactions_trades, `code IN ('P', 'S') AND is_derivative IS false`. The codes are
+    sent as literals, not bound parameters, so the index stays usable in a prepared statement's
+    generic plan too (psycopg prepares a query after five runs on a connection)."""
+    codes: sa.BindParameter[list[str]] = sa.bindparam(
+        "trade_codes", sorted(INSIDER_TRADE_CODES.values()), expanding=True, literal_execute=True
+    )
+    return [Form4Transaction.code.in_(codes), Form4Transaction.is_derivative.is_(False)]
+
+
 def _company_out(company: Company) -> CompanyOut:
     return CompanyOut(
         cik=company.cik,
@@ -149,11 +160,14 @@ def get_insider_activity(
                 sa.func.max(traded_on).label("latest_date"),
             )
             .join(form, form.accession_no == line.accession_no)
+            .join(Filing, Filing.accession_no == line.accession_no)
             .where(
                 form.issuer_cik == company.cik,
-                line.code.in_(list(INSIDER_TRADE_CODES.values())),
-                line.is_derivative.is_(False),
+                *trade_lines(),
                 traded_on >= since,
+                # Changes no result (a trade is filed after it happens), but bounds the work by
+                # `days` instead of the issuer's whole history.
+                Filing.filed_at >= since,
             )
             .group_by(form.accession_no)
         )

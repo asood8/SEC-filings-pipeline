@@ -7,7 +7,7 @@ import sqlalchemy as sa
 from fastapi import APIRouter, Query
 
 from filings_api.queries import SessionDep, reporting_owners_out
-from filings_api.routes.companies import INSIDER_TRADE_CODES, MAX_INSIDER_DAYS
+from filings_api.routes.companies import INSIDER_TRADE_CODES, MAX_INSIDER_DAYS, trade_lines
 from filings_api.schemas import InsiderTrade, InsiderTrades, IssuerOut, TradeSide
 from filings_common.db import Company, Filing, Form4Filing, Form4Transaction
 from filings_common.names import company_name
@@ -20,17 +20,6 @@ SIDE_CODES: dict[TradeSide, str] = {
     "buy": INSIDER_TRADE_CODES["bought"],
     "sell": INSIDER_TRADE_CODES["sold"],
 }
-
-
-def trade_lines() -> list[sa.ColumnElement[bool]]:
-    """Open-market stock trades: exactly the condition of the partial index
-    ix_form4_transactions_trades, `code IN ('P', 'S') AND is_derivative IS false`. The codes are
-    sent as literals, not bound parameters, so the index stays usable in a prepared statement's
-    generic plan too (psycopg prepares a query after five runs on a connection)."""
-    codes: sa.BindParameter[list[str]] = sa.bindparam(
-        "trade_codes", sorted(INSIDER_TRADE_CODES.values()), expanding=True, literal_execute=True
-    )
-    return [Form4Transaction.code.in_(codes), Form4Transaction.is_derivative.is_(False)]
 
 
 @router.get("/insider-trades", summary="The largest recent insider purchases or sales")

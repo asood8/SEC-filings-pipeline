@@ -155,7 +155,62 @@ the line table was waiting for.
 - **No owner titles yet.** The owners' relationship (director, officer and title, 10% owner) is
   parsed but stored only in MongoDB. Showing it needs a `form4_filings` column and a
   `filings-rebuild-key-fields` backfill. Until then, the filing page the row links to has the
-  role in its summary ("Timothy D Cook (Executive Chair, Director) reported ...").
+  role in its summary ("Timothy D Cook (Executive Chair, Director) reported ..."). (Added the
+  same day; see "Owner relationships" below.)
+
+### Owner relationships (added 2026-10-08)
+
+The insider pages now say who each insider is to the company: "Mark A Stevens (Director)",
+"Amy Hood (EVP, CFO)", "Berkshire Hathaway Inc (10% owner)".
+
+- **`form4_filings.reporting_owner_relationships`** (JSONB): an array in the order of
+  `reporting_owners`, one object per owner with the Form 4's boxes and texts as filed:
+  `{is_director, is_officer, is_ten_percent_owner, is_other, officer_title, other_text}`
+  (`filings_common.parsed.OwnerRelationship`). A check constraint keeps one per owner
+  (`jsonb_array_length(...) = cardinality(reporting_owners)`, which also rejects a value that
+  isn't an array). The parser writes it with the other key fields; rows saved before have NULL
+  until `filings-rebuild-key-fields --form-type 4` fills them from MongoDB. On a copy of the
+  local database that took about 5 seconds for 261 Form 4s, and a second run left the column
+  byte-for-byte the same.
+- **One JSON array rather than parallel arrays or a table.** An owner's relationship stays in one
+  piece, there is one column to keep in step with the names, and the API validates each object
+  with the same model the parser dumps. Filtering by role stays possible
+  (`reporting_owner_relationships @> '[{"is_officer": true}]'`, which a GIN index can serve when
+  a feature needs it). Six parallel arrays (four of booleans, two of nullable text) would each
+  have to be kept in step. A `form4_reporting_owners` table is the normalized design, but names
+  and CIKs are already arrays here, and every reader wants all of a filing's owners at once:
+  moving all three is a larger change that no feature needs yet.
+- **Stored as filed, labelled per request,** like display names: changing the label needs no
+  backfill. `filings_common.names.relationship_label` builds it: the officer title first, as the
+  Form 4 template's summaries write it, then "Director", "10% owner", and the other text
+  ("President and CEO, Director"); "Officer" or "Other" when the box has no text; null when no
+  box is ticked. `names.officer_title` abbreviates exactly the officer titles that search
+  already treats as synonyms (CEO, CFO, COO, CTO, CAO, EVP, SVP, VP: `search.ABBREVIATIONS` now
+  starts with `names.OFFICER_ABBREVIATIONS`), collapses runs of spaces, and title-cases a title
+  typed in capitals, keeping words of up to three letters or without a vowel as abbreviations
+  ("CEO, UHG"). Anything else stays as typed: filers cut titles at 30 characters ("EVP, Chief
+  Human Resources Off"), and expanding them would be guessing.
+- **API:** every reporting owner object (filing detail, insider activity, insider trades) has
+  `relationship` (the label) and the six fields as filed; all null on a row not yet rebuilt.
+  Insider activity labels a row's owners as on their latest filing, like their names. A
+  relationship belongs to a filing, so to one issuer: Tim Cook (CIK 1214156) is "Executive Chair,
+  Director" on Apple's Form 4s and "Director" on Nike's.
+- **Website:** after each owner's name, the label in muted text, with the officer title as filed
+  on hover when the label shortens it. `OwnerNames` now renders one element, so in the phone
+  layout, where table cells are flex rows, names and labels wrap as one line of text.
+
+On the local data (2026-10-08: 261 Form 4s, 266 owners, 5 joint filings), every owner ticks at
+least one box: 127 are directors only, 107 officers only, 21 both, 10 ten-percent owners only
+(Berkshire Hathaway and Warren Buffett, Bank of America), and 1 all three (Mark Zuckerberg,
+"COB and CEO, Director, 10% owner"); none is "other". Of 129 officer titles (65 distinct),
+`officer_title` changed 56: 18 distinct, such as "Executive Vice President" to "EVP" and
+"Senior Vice President,  CFO" to "SVP, CFO". Before the backfill the API returns every owner
+with null relationship fields and the website shows names alone, as before.
+
+Alternatives considered: storing the label (it would freeze today's wording into the data);
+reading MongoDB from the API (a second datastore on every insider request, as above); dropping
+"Director" when the title already says Chair ("Chair and CEO, Director"): shorter, but not every
+chair title is a board seat, so the label keeps what the filing says.
 
 ## Alternatives considered
 

@@ -1,7 +1,7 @@
 """Add form4_transactions
 
 Revision ID: 60526c3a24c7
-Revises: 023766603346
+Revises: 23e9e08283f1
 Create Date: 2026-10-08 07:35:53.073900
 
 """
@@ -13,7 +13,7 @@ from alembic import op
 
 # revision identifiers, used by Alembic.
 revision: str = "60526c3a24c7"
-down_revision: str | Sequence[str] | None = "023766603346"
+down_revision: str | Sequence[str] | None = "23e9e08283f1"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 

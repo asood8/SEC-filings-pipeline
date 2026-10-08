@@ -6,6 +6,7 @@ import redis
 from fastapi.testclient import TestClient
 
 from filings_api.app import api_redis_client
+from filings_api.embedding_cache import CACHE_PREFIX as EMBEDDING_CACHE_PREFIX
 from filings_api.embedding_cache import TTL_SECONDS, QueryEmbeddingCache, cache_key
 from filings_api.middleware import RedisBackoff
 from filings_common.db import EMBEDDING_DIMENSIONS
@@ -116,7 +117,9 @@ def test_query_embedding_cache_fails_open(
 
 
 def test_cached_query_vectors_are_compact_and_expire(redis_client: redis.Redis) -> None:
-    redis_client.flushdb()  # DB 15 belongs to tests
+    # Only this cache's keys: the test database is shared with other tests and runs.
+    for key in redis_client.scan_iter(match=f"{EMBEDDING_CACHE_PREFIX}*"):
+        redis_client.delete(key)
     cache = QueryEmbeddingCache(redis_client, RedisBackoff())
     vector = [0.1] * EMBEDDING_DIMENSIONS
     cache.put("model-a", "cfo", vector)

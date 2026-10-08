@@ -23,6 +23,7 @@ applying, reaching the cluster, Terraform state).
 - [Pausing Argo CD for hands-on work](#pausing-argo-cd-for-hands-on-work)
 - [Rotating secrets](#rotating-secrets)
 - [Dependency audit fails](#dependency-audit-fails)
+- [Enforce the website's Content-Security-Policy](#enforce-the-websites-content-security-policy)
 - [SEC 429s and fair access](#sec-429s-and-fair-access)
 - [Swapping the local LLM model](#swapping-the-local-llm-model)
 - [Oracle idle reclamation and capacity errors](#oracle-idle-reclamation-and-capacity-errors)
@@ -655,3 +656,12 @@ dashboards.
 If one nears its limit: parsed payloads in MongoDB can be deleted and re-derived from the raw
 filings (`filings-replay discovered`); `backup_retention_days` can be lowered; anything else is a
 design decision for an ADR.
+
+## Enforce the website's Content-Security-Policy
+
+The website's CSP ships as `Content-Security-Policy-Report-Only` (ADR-0015): browsers report
+violations in the console without blocking anything. After the first deploy, open the live site,
+sign in with Google, use search and the alerts page, and check the console for CSP reports. If
+there are none, rename the header to `Content-Security-Policy` in `web/src/lib/securityHeaders.ts`
+and redeploy. If a violation is expected (for example Google changed a domain), add that source to
+the policy first.

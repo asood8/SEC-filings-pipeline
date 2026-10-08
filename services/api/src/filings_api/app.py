@@ -24,6 +24,7 @@ from filings_api.middleware import (
     CsrfMiddleware,
     RateLimitMiddleware,
     RedisBackoff,
+    SecurityHeadersMiddleware,
 )
 from filings_api.readiness import DatabaseReadiness
 from filings_api.routes import auth, companies, filings, search, subscriptions
@@ -185,6 +186,8 @@ def create_app(
         allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE"],
         allow_headers=["Content-Type"],
     )
+    # Outside everything, so even CORS preflights and cached responses carry them.
+    app.add_middleware(SecurityHeadersMiddleware)
 
     @app.get("/healthz", include_in_schema=False)
     def healthz() -> dict[str, str]:

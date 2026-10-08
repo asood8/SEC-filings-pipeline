@@ -111,6 +111,27 @@ def _source_values(source: str) -> list[float]:
     return sorted(values)
 
 
+def figure_value(figure: str) -> float:
+    """The value of one written figure ("£4.242 billion", "16,000,000", "5.6%").
+
+    Raises ValueError unless `figure` holds exactly one number.
+    """
+    numbers = _numbers(figure)
+    if len(numbers) != 1:
+        raise ValueError(f"{figure!r} must hold exactly one number, not {len(numbers)}")
+    return numbers[0].value
+
+
+def states_value(text: str, value: float) -> bool:
+    """Whether `text` states `value`, read the way the grounding check reads a summary: in any
+    spelling ("16 million" for 16,000,000, "twelve" for 12), and rounded from the precision the
+    text states ("$1.3 billion" states 1,324,000,000)."""
+    for number in _numbers(text):
+        if abs(number.value - value) <= number.tolerance + abs(value) * 1e-9:
+            return True
+    return any(_SPELLED[word.lower()] == value for word in _SPELLED_PATTERN.findall(text))
+
+
 def ungrounded_numbers(summary_text: str, source: str) -> list[str]:
     """Numbers in `summary_text` whose value appears nowhere in `source`, in order of appearance."""
     values = _source_values(source)

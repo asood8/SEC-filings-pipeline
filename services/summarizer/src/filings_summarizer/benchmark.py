@@ -1,10 +1,14 @@
 """Benchmark 8-K summarization across models (`filings-benchmark`): speed and checkable quality.
 
 Runs the 8-Ks already collected (parsed payloads from MongoDB) through each model with the exact
-production prompt and schema, and reports per model: latency, failures (errors or answers that
-don't match the schema), and how often a summary contains numbers the filing doesn't (the
-grounding check). Every summary is written to a JSON file, so quality can also be judged by reading
-them side by side; numbers alone can't catch a wrong but well-formed claim.
+production prompt and schema, and reports per model:
+- latency, and failures (errors or answers that don't match the schema);
+- fact recall and forbidden claims, against the labeled set in `config/summary_eval.json`
+  (`quality.py`): the share of the facts a correct summary states that the summary does state, and
+  how often it makes a claim the filing contradicts;
+- how often a summary contains numbers the filing doesn't (the grounding check).
+Every summary, with what it missed and any forbidden claim, is written to a JSON file, so the
+scores can be checked by reading them side by side.
 
 Models are served by the OpenAI-compatible endpoint in LLM_BASE_URL (Ollama locally, llama.cpp on
 the production VM), so the same command compares models on either machine. `--gemini` adds the
@@ -18,7 +22,7 @@ import math
 import statistics
 import sys
 import time
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any
@@ -50,6 +54,15 @@ from filings_summarizer.llm import (
     LlmProvider,
     OpenAICompatibleProvider,
 )
+from filings_summarizer.quality import (
+    DEFAULT_LABELS,
+    FilingLabels,
+    LabelError,
+    QualityScore,
+    load_labels,
+    quality_stats,
+    score_summary,
+)
 from filings_summarizer.summarizers import GEMINI_RATE_LIMIT_KEY
 
 logger = logging.getLogger("filings_summarizer.benchmark")
@@ -70,6 +83,8 @@ class Attempt:
     error: str | None = None
     summary: dict[str, Any] | None = None
     ungrounded: list[str] = field(default_factory=list)
+    # Against the filing's labels; None when it has none.
+    quality: QualityScore | None = None
 
 
 @dataclass
@@ -100,6 +115,10 @@ class ModelResult:
             "summary_words": round(statistics.mean(words)) if words else None,
         }
 
+    def quality_stats(self) -> dict[str, Any]:
+        """Fact recall and forbidden claims over the successful summaries of labeled filings."""
+        return quality_stats(a.quality for a in self.succeeded if a.quality is not None)
+
 
 def _percentile(sorted_values: Sequence[float], q: float) -> float:
     """Nearest-rank percentile of already sorted values."""
@@ -107,8 +126,10 @@ def _percentile(sorted_values: Sequence[float], q: float) -> float:
     return sorted_values[min(index, len(sorted_values) - 1)]
 
 
-def summarize_once(provider: LlmProvider, case: Case) -> Attempt:
-    """One production-identical summary, timed. Never raises: failures are recorded."""
+def summarize_once(
+    provider: LlmProvider, case: Case, labels: FilingLabels | None = None
+) -> Attempt:
+    """One production-identical summary, timed and scored. Never raises: failures are recorded."""
     prompt = form8k_prompt.build_prompt(case.form, case.context)
     started = time.perf_counter()
     try:
@@ -127,14 +148,22 @@ def summarize_once(provider: LlmProvider, case: Case) -> Attempt:
         elapsed,
         summary=summary.model_dump(),
         ungrounded=ungrounded_numbers(summary_text, prompt),
+        quality=score_summary(summary, labels) if labels is not None else None,
     )
 
 
 def run_benchmark(
-    providers: Sequence[LlmProvider], cases: Sequence[Case], *, runs: int = 1, warmup: bool = True
+    providers: Sequence[LlmProvider],
+    cases: Sequence[Case],
+    *,
+    runs: int = 1,
+    warmup: bool = True,
+    labels: Mapping[str, FilingLabels] | None = None,
 ) -> list[ModelResult]:
-    """Every case through every provider, `runs` times each. With `warmup`, one untimed call
-    first loads the model, so the first case isn't charged for it."""
+    """Every case through every provider, `runs` times each, scored against `labels` (by
+    accession number) where a filing has them. With `warmup`, one untimed call first loads the
+    model, so the first case isn't charged for it."""
+    labels = labels or {}
     results = []
     for provider in providers:
         result = ModelResult(provider.name, provider.model)
@@ -142,32 +171,42 @@ def run_benchmark(
             summarize_once(provider, cases[0])
         for case in cases:
             for _ in range(runs):
-                attempt = summarize_once(provider, case)
+                attempt = summarize_once(provider, case, labels.get(case.context.accession_no))
                 result.attempts.append(attempt)
                 logger.info(
                     "%s %s %.1fs %s",
                     provider.model,
                     case.context.accession_no,
                     attempt.seconds,
-                    attempt.error or f"{len(attempt.ungrounded)} ungrounded",
+                    attempt.error or _outcome(attempt),
                 )
         results.append(result)
     return results
 
 
+def _outcome(attempt: Attempt) -> str:
+    outcome = f"{len(attempt.ungrounded)} ungrounded"
+    if attempt.quality is not None:
+        q = attempt.quality
+        outcome += f", facts {q.stated}/{q.facts}, {len(q.forbidden)} forbidden"
+    return outcome
+
+
 def render_table(results: Sequence[ModelResult]) -> str:
     """A Markdown table, one row per model."""
     lines = [
-        "| Model | Runs | Failed | Median s | p95 s | Summaries with ungrounded numbers "
+        "| Model | Runs | Failed | Median s | p95 s | Fact recall "
+        "| Summaries with forbidden claims | Summaries with ungrounded numbers "
         "| Ungrounded per summary | Summary words |",
-        "|---|---|---|---|---|---|---|---|",
+        "|---|---|---|---|---|---|---|---|---|---|",
     ]
     for result in results:
         s = result.stats()
-        share = "n/a" if s["ungrounded_share"] is None else f"{s['ungrounded_share']:.0%}"
+        q = result.quality_stats()
         lines.append(
             f"| {result.provider}: {result.model} | {s['runs']} | {s['failed']} "
-            f"| {_cell(s['median_s'])} | {_cell(s['p95_s'])} | {share} "
+            f"| {_cell(s['median_s'])} | {_cell(s['p95_s'])} | {_share(q['fact_recall'])} "
+            f"| {_share(q['forbidden_share'])} | {_share(s['ungrounded_share'])} "
             f"| {_cell(s['ungrounded_per_summary'])} | {_cell(s['summary_words'])} |"
         )
     return "\n".join(lines)
@@ -177,8 +216,13 @@ def _cell(value: object) -> str:
     return "n/a" if value is None else str(value)
 
 
-def load_cases(limit: int | None) -> list[Case]:
-    """The collected 8-Ks, oldest first: parsed payloads from MongoDB, context from Postgres."""
+def _share(value: float | None) -> str:
+    return "n/a" if value is None else f"{value:.0%}"
+
+
+def load_cases(limit: int | None, accessions: Sequence[str] = ()) -> list[Case]:
+    """The collected 8-Ks (or just `accessions`), oldest first: parsed payloads from MongoDB,
+    context from Postgres."""
     engine = create_engine(DatabaseSettings().database_url.get_secret_value())
     with session_factory(engine)() as session:
         query = (
@@ -187,6 +231,8 @@ def load_cases(limit: int | None) -> list[Case]:
             .where(Filing.form_type == "8-K")
             .order_by(Filing.filed_at, Filing.accession_no)
         )
+        if accessions:
+            query = query.where(Filing.accession_no.in_(accessions))
         rows = session.execute(query).all()
     engine.dispose()
     mongo_settings = MongoSettings()
@@ -225,6 +271,16 @@ def main(argv: Sequence[str] | None = None) -> int:
     )
     parser.add_argument("--gemini", action="store_true", help="also run Gemini (GEMINI_API_KEY)")
     parser.add_argument("--limit", type=int, default=None, help="at most this many 8-Ks")
+    parser.add_argument(
+        "--accession", action="append", default=[], help="only this 8-K (repeat for several)"
+    )
+    parser.add_argument(
+        "--labels",
+        type=Path,
+        default=None,
+        help=f"facts and forbidden claims to score summaries against (default: {DEFAULT_LABELS},"
+        " skipped if it isn't there)",
+    )
     parser.add_argument("--runs", type=int, default=1, help="summaries per 8-K and model")
     parser.add_argument("--out", type=Path, default=None, help="write every summary to this JSON")
     args = parser.parse_args(argv)
@@ -257,13 +313,24 @@ def main(argv: Sequence[str] | None = None) -> int:
         )
     if not providers:
         parser.error("give at least one --model, or --gemini")
+    labels_path: Path | None = args.labels or DEFAULT_LABELS
+    try:
+        labels = load_labels(labels_path) if labels_path is not None else {}
+    except LabelError as exc:
+        if args.labels is not None:
+            parser.error(str(exc))
+        logger.warning("no quality score: %s", exc)
+        labels, labels_path = {}, None
 
-    cases = load_cases(args.limit)
+    cases = load_cases(args.limit, args.accession)
     if not cases:
         print("no parsed 8-Ks found; run the pipeline first", file=sys.stderr)
         return 1
+    unlabeled = sum(c.context.accession_no not in labels for c in cases)
+    if labels and unlabeled:
+        logger.warning("%d 8-K(s) have no labels, so no quality score", unlabeled)
     logger.info("benchmarking %d model(s) on %d 8-K(s)", len(providers), len(cases))
-    results = run_benchmark(providers, cases, runs=args.runs)
+    results = run_benchmark(providers, cases, runs=args.runs, labels=labels)
     print(render_table(results))
     if args.out is not None:
         args.out.parent.mkdir(parents=True, exist_ok=True)
@@ -271,9 +338,14 @@ def main(argv: Sequence[str] | None = None) -> int:
             json.dumps(
                 {
                     "prompt_version": form8k_prompt.PROMPT_VERSION,
+                    "labels": None if labels_path is None else str(labels_path),
                     "results": [
-                        {"provider": r.provider, "model": r.model, "stats": r.stats()}
-                        | {"attempts": [asdict(a) for a in r.attempts]}
+                        {
+                            "provider": r.provider,
+                            "model": r.model,
+                            "stats": r.stats() | r.quality_stats(),
+                            "attempts": [asdict(a) for a in r.attempts],
+                        }
                         for r in results
                     ],
                 },

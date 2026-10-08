@@ -9,6 +9,7 @@ from filings_parser.form8k import parse_form8k
 from filings_summarizer.benchmark import Case, _percentile, render_table, run_benchmark
 from filings_summarizer.form8k_prompt import FilingContext
 from filings_summarizer.llm import LlmError
+from filings_summarizer.quality import FilingLabels
 
 FIXTURES = Path(__file__).parents[3] / "tests" / "fixtures" / "form8k"
 ADOBE = Case(
@@ -84,6 +85,54 @@ def test_runs_repeat_each_case_without_a_warmup() -> None:
     [result] = run_benchmark([model], [ADOBE], runs=3, warmup=False)
     assert model.calls == 3
     assert len(result.attempts) == 3
+
+
+def test_benchmark_scores_summaries_against_labels() -> None:
+    labels = {
+        ADOBE.context.accession_no: FilingLabels.model_validate(
+            {
+                "accession_no": ADOBE.context.accession_no,
+                "company": "Adobe",
+                "facts": [
+                    {"fact": "third-quarter results", "patterns": ["third[- ]quarter"]},
+                    {"fact": "revenue of $6.76 billion", "numbers": ["6.76 billion"]},
+                ],
+                "forbidden": [{"claim": "targets lowered", "patterns": ["lowered"]}],
+            }
+        )
+    }
+    good = FakeModel("good", summary("warmup"), summary("Third-quarter revenue: $6.76 billion."))
+    wrong = FakeModel("wrong", summary("warmup"), summary("Adobe lowered its third-quarter view."))
+    broken = FakeModel("broken", summary("warmup"), "not json")
+
+    results = run_benchmark([good, wrong, broken], [ADOBE], labels=labels)
+
+    assert results[0].quality_stats() == {
+        "scored": 1,
+        "fact_recall": 1.0,
+        "forbidden_share": 0.0,
+        "forbidden_claims": 0,
+    }
+    attempt = results[1].attempts[0]
+    assert attempt.quality is not None
+    assert (attempt.quality.missing, attempt.quality.forbidden) == (
+        ["revenue of $6.76 billion"],
+        ["targets lowered"],
+    )
+    assert results[2].quality_stats()["fact_recall"] is None  # failures aren't scored
+
+    good_row, wrong_row, broken_row = render_table(results).splitlines()[2:]
+    # Fact recall, then summaries with forbidden claims, after the two timing columns.
+    assert good_row.split(" | ")[5:7] == ["100%", "0%"]
+    assert wrong_row.split(" | ")[5:7] == ["50%", "100%"]
+    assert broken_row.split(" | ")[5:7] == ["n/a", "n/a"]
+
+
+def test_filings_without_labels_are_not_scored() -> None:
+    model = FakeModel("m", summary("warmup"), summary("Adobe reported results."))
+    [result] = run_benchmark([model], [ADOBE], labels={})
+    assert result.attempts[0].quality is None
+    assert result.quality_stats()["scored"] == 0
 
 
 def test_percentile_uses_the_nearest_rank() -> None:

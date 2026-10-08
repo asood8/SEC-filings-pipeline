@@ -1,0 +1,474 @@
+{
+  "description": "Labeled 8-K summaries for filings-benchmark's quality score (ADR-0008). Made on 2026-10-08 for the 22 8-Ks in the local database (filed 2026-09-08 to 2026-10-08), by reading the text the summarizer gives the model for each (items and EX-99 exhibits, as form8k_prompt.build_prompt trims them), not the summaries. For each filing, 'facts' are what a correct summary must state: the event, who did it, the main figures. A fact's 'patterns' are regular expressions (any one matching is enough) and its 'numbers' are figures (any one stated is enough, compared by value with the grounding check's normalization, so '$1 billion' states '1.0 billion' and '16 million' states '16,000,000'); a fact with both needs both. 'forbidden' lists claims the filing contradicts: the slips seen in real summaries (Nike 'all proposals passed', Oracle cancelling Ellison's plan, Tesla's '18-month term loan', PepsiCo's year-to-date growth given as the quarter's) and a few others a careless summary would make. Patterns match case-insensitively against the headline, the summary, and each key point separately, after curly quotes and dashes are made plain. Numbers the filing never states (computed totals) are left to the grounding check. All accession numbers and quotes are public SEC data.",
+  "filings": [
+    {
+      "accession_no": "0000731766-26-000205",
+      "company": "UnitedHealth Group",
+      "note": "Item 7.01 only: senior leaders will answer questions in an interview at the Wells Fargo 21st Annual Healthcare Conference on Wednesday, September 9, 2026, 8:00 a.m. ET, with a live audio webcast. No results are reported.",
+      "facts": [
+        {"fact": "the Wells Fargo healthcare conference", "patterns": ["wells fargo"]},
+        {"fact": "on September 9, 2026", "patterns": ["(september|sept\\.?) 9\\b", "2026-09-09", "\\b9/9/(20)?26\\b"]},
+        {"fact": "senior leaders take part (interview or webcast)", "patterns": ["senior leaders", "executives", "management", "leadership", "interview", "webcast"]}
+      ],
+      "forbidden": [
+        {
+          "claim": "reports financial results",
+          "patterns": ["\\b(reports|reported|announces|announced|releases|released) (its )?(\\w+ )?(results|earnings)\\b"],
+          "evidence": "will respond to questions in an interview format, including discussion of the Company's strategy, market positions, recent results and expectations"
+        }
+      ]
+    },
+    {
+      "accession_no": "0000796343-26-000144",
+      "company": "Adobe",
+      "note": "Item 5.02 and press release: on September 2, 2026 the board appointed Anil Chakravarthy President and CEO and a director, effective December 1, 2026; Shantanu Narayen will retire as CEO that day and become Executive Chair. David Wadhwani is stepping down as President, Creativity & Productivity Business, effective September 27, 2026.",
+      "facts": [
+        {"fact": "Chakravarthy becomes CEO", "patterns": ["chakravarthy.{0,120}(chief executive|\\bceo\\b)", "(chief executive|\\bceo\\b).{0,80}chakravarthy"]},
+        {"fact": "Narayen retires as CEO and becomes Executive Chair", "patterns": ["narayen.{0,120}(executive chair|retir)", "(executive chair|retir\\w*).{0,80}narayen"]},
+        {"fact": "effective December 1, 2026", "patterns": ["(december|dec\\.?) 1\\b", "2026-12-01"]},
+        {"fact": "Wadhwani steps down", "patterns": ["wadhwani"]}
+      ],
+      "forbidden": [
+        {
+          "claim": "Narayen leaves Adobe or its board",
+          "patterns": ["narayen (will )?(leave|leaves|depart|departs|resign|resigns|exit|exits) (adobe|the company|the board)"],
+          "evidence": "Shantanu Narayen ... will retire as the Company's Chief Executive Officer and assume the position of Executive Chair of the Board"
+        },
+        {
+          "claim": "Chakravarthy becomes chair",
+          "patterns": ["chakravarthy (will )?(become|becomes|be named|named|appointed)( as)?( the)? (company's )?(executive )?chair"],
+          "evidence": "appointed Anil Chakravarthy ... as the Company's President and Chief Executive Officer and a member of the Board"
+        }
+      ]
+    },
+    {
+      "accession_no": "0001018724-26-000036",
+      "company": "Amazon",
+      "note": "Item 5.02: on September 8, 2026 the board elected Kevin R. Mandia a director and appointed him to the Audit and Security Committees; he received restricted stock units for 4,086 shares. His sister-in-law Kristin Mandia is an employee with a $185,000 salary.",
+      "facts": [
+        {"fact": "Mandia elected to the board", "patterns": ["mandia.{0,80}(director|board)", "(director|board).{0,80}mandia"]},
+        {"fact": "Audit and Security Committees", "patterns": ["audit"]},
+        {"fact": "restricted stock units for 4,086 shares", "numbers": ["4,086"]}
+      ],
+      "forbidden": [
+        {
+          "claim": "the $185,000 salary is Kevin Mandia's",
+          "patterns": ["(kevin|mr\\.?) (r\\. )?mandia'?s? (annual )?(base )?salary", "(kevin|mr\\.?) (r\\. )?mandia (will )?(receive|receives|earn|earns|be paid)[^.]{0,30}185,000"],
+          "evidence": "Kristin Mandia, an employee of the Company, is the sister-in-law of Mr. Mandia. Ms. Mandia's annual salary is $185,000."
+        }
+      ]
+    },
+    {
+      "accession_no": "0000320187-26-000143",
+      "company": "NIKE",
+      "note": "Items 5.02 and 5.07: at the September 8, 2026 annual meeting shareholders approved the amended Employee Stock Purchase Plan (16,000,000 more Class B shares), elected the directors, approved say-on-pay, and ratified PwC. The two shareholder proposals failed: the 8-K gives only vote counts, but they are plain (Proposal 5: For 7,363,988, Against 1,073,903,174; Proposal 6: For 110,862,692, Against 935,451,481). The known slip (ADR-0010): 'all proposals passed'.",
+      "facts": [
+        {"fact": "the annual meeting's votes", "patterns": ["annual (\\w+ )?meeting", "shareholders? (vote|voted)", "votes? (of|by) (the )?shareholders"]},
+        {"fact": "Employee Stock Purchase Plan amendment approved", "patterns": ["employee stock purchase plan", "\\bespp\\b"]},
+        {"fact": "16,000,000 more Class B shares", "numbers": ["16,000,000"]},
+        {"fact": "the shareholder proposals failed", "patterns": ["(shareholder|stockholder) proposals?.{0,80}(fail|reject|defeat|not (pass|approv|adopt)|did not|voted down)", "(fail|reject|defeat|voted down|did not pass|not approved|not adopted)\\w*.{0,80}(shareholder|stockholder) proposals?", "(discrimination|environmental targets?|charitable).{0,80}(fail|reject|defeat|not (pass|approv|adopt))", "(fail|reject|defeat)\\w*.{0,60}(discrimination|environmental targets?|charitable)"]},
+        {"fact": "the auditor ratified", "patterns": ["pricewaterhouse", "\\bpwc\\b", "ratif\\w*.{0,60}(auditor|accounting firm)"]}
+      ],
+      "forbidden": [
+        {
+          "claim": "all proposals passed",
+          "patterns": ["\\ball (of the )?(\\w+ )?(proposals|matters|items|measures)\\b(?:(?!\\bnot\\b|n't)[^.]){0,60}\\b(passed|approved|adopted|ratified|carried)\\b", "\\b(approv|pass|adopt)\\w* all (of the )?(\\w+ )?(proposals|matters|items|measures)\\b", "\\beach (of the )?(\\w+ )?(proposal|matter)s?\\b[^.]{0,40}\\b(passed|was approved|was adopted)\\b"],
+          "evidence": "Proposal 5 - Shareholder Proposal Regarding a Discrimination in Charitable Support Report: For 7,363,988, Against 1,073,903,174. Proposal 6 - Shareholder Proposal Regarding Environmental Targets: For 110,862,692, Against 935,451,481."
+        },
+        {
+          "claim": "shareholders approved a shareholder proposal",
+          "patterns": ["(shareholders|stockholders) (also )?(approved|passed|adopted|supported)(?:(?!reject|against|fail|\\bnot\\b|\\bbut\\b|while)[^.]){0,60}(shareholder proposal|discrimination|environmental targets?|charitable)", "(discrimination|environmental targets?|charitable)[^.]{0,60}\\b(was|were) (approved|passed|adopted)\\b"],
+          "evidence": "Proposal 5: For 7,363,988, Against 1,073,903,174. Proposal 6: For 110,862,692, Against 935,451,481."
+        }
+      ]
+    },
+    {
+      "accession_no": "0000796343-26-000147",
+      "company": "Adobe",
+      "note": "Item 2.02 and press release: record Q3 FY2026 revenue of $6.76 billion (up 13%), diluted EPS $4.62 GAAP and $6.13 non-GAAP, 1 billion monthly active users; full-year revenue and EPS targets raised.",
+      "facts": [
+        {"fact": "third-quarter results", "patterns": ["third[- ]quarter", "\\bq3\\b"]},
+        {"fact": "revenue of $6.76 billion", "numbers": ["6.76 billion"]},
+        {"fact": "diluted EPS ($4.62 GAAP or $6.13 non-GAAP)", "numbers": ["4.62", "6.13"]},
+        {"fact": "full-year targets raised", "patterns": ["rais\\w*.{0,80}(target|guidance|outlook|forecast)", "(target|guidance|outlook|forecast)s?.{0,40}(rais|increas|lift)\\w*"]}
+      ],
+      "forbidden": [
+        {
+          "claim": "targets lowered",
+          "patterns": ["\\b(lower|lowers|lowered|cut|cuts|reduces|reduced)\\b[^.]{0,40}\\b(targets?|guidance|outlook)\\b"],
+          "evidence": "we're raising full year revenue and EPS targets"
+        }
+      ]
+    },
+    {
+      "accession_no": "0001193125-26-387905",
+      "company": "Oracle",
+      "note": "Items 2.02 and 8.01 and press release: Q1 FY27 total revenues up 30% to $19.3 billion, cloud revenues up 62% (IaaS up 121%), GAAP EPS $1.56; dividends of $0.50 per common share and $1,625 per Mandatory Convertible Preferred share. Free cash flow was negative $5 billion.",
+      "facts": [
+        {"fact": "first-quarter results", "patterns": ["\\bq1\\b", "first quarter", "fiscal first"]},
+        {"fact": "revenue of $19.3 billion", "numbers": ["19.3 billion"]},
+        {"fact": "cloud growth", "patterns": ["cloud"]},
+        {"fact": "dividends declared", "patterns": ["dividend"]}
+      ],
+      "forbidden": [
+        {
+          "claim": "positive free cash flow",
+          "patterns": ["free cash flow (was |of |reached |totaled |rose to |grew to )?\\$"],
+          "evidence": "Free cash flow was negative $5 billion for Q1"
+        }
+      ]
+    },
+    {
+      "accession_no": "0001104659-26-107526",
+      "company": "Amazon",
+      "note": "Item 8.01: on September 14, 2026 Amazon closed the sale of four series of sterling notes (£1.25 billion due 2029 and £1 billion each due 2032, 2038, and 2045); aggregate public offering price £4.242 billion, estimated net proceeds about £4.235 billion. The £4.25 billion principal total is computed, not stated (the grounding check flags it).",
+      "facts": [
+        {"fact": "closed a sale of notes", "patterns": ["(sale|sold|offering|issu\\w*|clos\\w*|priced).{0,80}notes", "notes.{0,80}(sale|sold|offering|issu\\w*|clos\\w*)"]},
+        {"fact": "offering price £4.242 billion or net proceeds £4.235 billion", "numbers": ["4.242 billion", "4.235 billion"]},
+        {"fact": "in pounds sterling", "patterns": ["\u00a3", "pound", "sterling", "\\bgbp\\b"]}
+      ],
+      "forbidden": [
+        {
+          "claim": "amounts in US dollars",
+          "patterns": ["\\$ ?\\d", "\\b(us|u\\.s\\.) dollars?\\b"],
+          "evidence": "every amount in the filing is in pounds sterling: '£1,250,000,000 aggregate principal amount of its 5.200% notes due 2029'"
+        }
+      ]
+    },
+    {
+      "accession_no": "0001193125-26-389753",
+      "company": "Oracle",
+      "note": "Item 8.01 and press release: Larry Ellison has cancelled his own 10b5-1 plan to sell Oracle stock; no stock was sold under it and he has no other plans to sell. The known slip (ADR-0010): 'Oracle Corp Cancels Larry Ellison's Plan', the wrong actor.",
+      "facts": [
+        {"fact": "Ellison cancelled his 10b5-1 plan", "patterns": ["ellison.{0,100}(cancel|terminat|withdr|scrap)\\w*"]},
+        {"fact": "no stock was sold under the plan", "patterns": ["no (oracle )?(stock|shares)\\b.{0,40}\\bsold", "(not|never|n't) (sell|sold)\\b", "without (selling|any sales)", "no (sales|shares sold)"]},
+        {"fact": "no other plans to sell", "patterns": ["no (other |further |additional )?plans? to sell"]}
+      ],
+      "forbidden": [
+        {
+          "claim": "Oracle cancelled Ellison's plan",
+          "patterns": ["\\boracle( corp(oration)?)?( inc\\.?)?( has| had)? (cancels|cancelled|canceled|terminates|terminated|ends|ended|halts|halted|scraps|scrapped)\\b", "(plan|10b5-1)[^.]{0,40}(cancelled|canceled|terminated) by (oracle|the company|the board)"],
+          "evidence": "Larry Ellison, Executive Chair of the Board and Chief Technology Officer, has cancelled his 10b5-1 Plan to sell Oracle stock"
+        },
+        {
+          "claim": "Ellison sold or will sell stock",
+          "patterns": ["\\bellison (has |had )?sold\\b", "\\bellison (still )?(will|plans to|intends to) sell\\b"],
+          "evidence": "No Oracle stock was sold under that plan, and he has no other plans to sell any of his Oracle stock."
+        }
+      ]
+    },
+    {
+      "accession_no": "0000320187-26-000170",
+      "company": "NIKE",
+      "note": "Item 5.02 and press release: on September 15, 2026 the board grew to twelve and appointed Alexandre Arnault (Deputy CEO of Moët Hennessy, LVMH) a director, with a $200,000 restricted stock sign-on award. Committee assignments have not been determined.",
+      "facts": [
+        {"fact": "Arnault appointed to the board", "patterns": ["arnault.{0,80}(board|director)", "(board|director).{0,80}arnault"]},
+        {"fact": "board enlarged to twelve", "patterns": ["twelve", "\\b12\\b"]},
+        {"fact": "Moët Hennessy / LVMH background", "patterns": ["mo[e\u00eb]t", "lvmh"]},
+        {"fact": "$200,000 restricted stock award", "numbers": ["200,000"]}
+      ],
+      "forbidden": [
+        {
+          "claim": "a committee assignment",
+          "patterns": ["arnault (was |will be |has been )?(appointed|named|assigned|added|elected) to (the|its|nike's) (\\w+ )+committee", "arnault (will )?(serve|serves|sit|sits|join|joins) on (the|its) (\\w+ )+committee"],
+          "evidence": "Committee assignments for Mr. Arnault have not yet been determined."
+        },
+        {
+          "claim": "CEO of LVMH or Tiffany",
+          "patterns": ["(?<!deputy )\\b(ceo|chief executive officer) of (lvmh|tiffany)"],
+          "evidence": "Deputy Chief Executive Officer of Moët Hennessy ... previously served as the Executive Vice President of Products and Communications at Tiffany & Co."
+        }
+      ]
+    },
+    {
+      "accession_no": "0000077476-26-000042",
+      "company": "PepsiCo",
+      "note": "Item 5.02: on September 17, 2026 the board elected Joaquin Duato (Chairman and CEO of Johnson & Johnson) an independent director and Audit Committee member, effective December 1, 2026.",
+      "facts": [
+        {"fact": "Duato elected to the board", "patterns": ["duato.{0,80}(board|director)", "(board|director).{0,80}duato"]},
+        {"fact": "effective December 1, 2026", "patterns": ["(december|dec\\.?) 1\\b", "2026-12-01"]},
+        {"fact": "Johnson & Johnson chairman and CEO", "patterns": ["johnson (&|and) johnson", "\\bj&j\\b"]},
+        {"fact": "Audit Committee", "patterns": ["audit"]}
+      ],
+      "forbidden": [
+        {
+          "claim": "effective immediately or on September 17",
+          "patterns": ["duato[^.]{0,80}effective (immediately|(september|sept\\.?) 17)", "effective (immediately|(september|sept\\.?) 17)[^.]{0,60}duato"],
+          "evidence": "elected Joaquin Duato as an independent member of the Board, effective December 1, 2026"
+        }
+      ]
+    },
+    {
+      "accession_no": "0001108524-26-000210",
+      "company": "Salesforce",
+      "note": "Item 7.01: the investor presentation from the September 16, 2026 Investor Day (at Dreamforce) was posted and is furnished as Exhibit 99.1. The 8-K was filed September 17. The exhibit's figures are targets (FY30 revenue $63B+), not results.",
+      "facts": [
+        {"fact": "Investor Day", "patterns": ["investor day"]},
+        {"fact": "investor presentation", "patterns": ["presentation"]},
+        {"fact": "on September 16, 2026", "patterns": ["(september|sept\\.?) 16\\b", "2026-09-16"]}
+      ],
+      "forbidden": [
+        {
+          "claim": "the 8-K was filed on September 16",
+          "patterns": ["\\bfil(ed|ing)( it| this| the presentation)?( (on|with|in) (a )?form 8-k)?( date)?:? (on |as of )?(september|sept\\.?) 16\\b"],
+          "evidence": "the filing header: Form 8-K filed 2026-09-17"
+        },
+        {
+          "claim": "reported $63 billion of revenue (an FY30 target)",
+          "patterns": ["\\b(report|post|generat|achiev|record)\\w*[^.]{0,40}\\$ ?63 ?(b\\b|bn|billion)"],
+          "evidence": "FY30 profitable growth framework ... Financial Framework for the Agentic Enterprise $63B+"
+        }
+      ]
+    },
+    {
+      "accession_no": "0000063908-26-000076",
+      "company": "McDonald's",
+      "note": "Item 7.01 and investor release: new targets for the McDonald's > NEXT strategy: +1.5 points of share in chicken and beverages by 2030, operating margin in the low-to-mid 50% range by 2030, about 250 bps of restaurant efficiency, and about $8.5 billion of partnering support through 2036 (about $5 billion through 2030).",
+      "facts": [
+        {"fact": "the McDonald's > NEXT strategy", "patterns": ["next strategy", ">\\s*next", "mcdonald'?s next\\b"]},
+        {"fact": "1.5 points of share in chicken and beverages", "patterns": ["chicken", "beverage"], "numbers": ["1.5"]},
+        {"fact": "operating margin target", "patterns": ["operating margin"]},
+        {"fact": "$8.5 billion of partnering support", "numbers": ["8.5 billion"]}
+      ],
+      "forbidden": [
+        {
+          "claim": "$8.5 billion through 2030 (it is through 2036)",
+          "patterns": ["8\\.5 billion(?:(?!2036)[^.]){0,60}\\b(by|through|until) 2030"],
+          "evidence": "approximately $8.5 billion in total NEXT partnering support through 2036, including approximately $5 billion through 2030"
+        }
+      ]
+    },
+    {
+      "accession_no": "0001403161-26-000121",
+      "company": "Visa",
+      "note": "Item 8.01: on September 18, 2026 Visa authorized a $405 million deposit into its U.S. litigation escrow account, which lowered the conversion rates of class B-1, B-2, and B-3 common stock (the same effect on EPS as a repurchase).",
+      "facts": [
+        {"fact": "$405 million litigation escrow deposit", "patterns": ["escrow"], "numbers": ["405 million"]},
+        {"fact": "conversion rates lowered", "patterns": ["conversion rate"]},
+        {"fact": "class B common stock affected", "patterns": ["class b"]}
+      ],
+      "forbidden": [
+        {
+          "claim": "conversion rates increased",
+          "patterns": ["\\b(increas|rais)\\w*[^.]{0,30}conversion rates?", "conversion rates? (were |was )?(increas|rais|rose|went up)\\w*"],
+          "evidence": "This deposit resulted in the decrease in the conversion rate applicable to the Company's class B-1 common stock from 1.5445 to 1.5400"
+        },
+        {
+          "claim": "Visa repurchased shares",
+          "patterns": ["\\bvisa (has |also )?(repurchased|bought back|buys back|repurchases)\\b"],
+          "evidence": "The conversion rate adjustments have the same effect on earnings per share as repurchasing the Company's class A common stock."
+        }
+      ]
+    },
+    {
+      "accession_no": "0000909832-26-000084",
+      "company": "Costco",
+      "note": "Item 2.02 and press release: Q4 (16 weeks) net sales up 11.2% to $93.9 billion, net income $2.998 billion or $6.75 per diluted share (up from $2.610 billion, $5.87); fiscal 2026 net sales $297.2 billion, net income $9.226 billion or $20.76.",
+      "facts": [
+        {"fact": "fourth-quarter results", "patterns": ["fourth[- ]quarter", "\\bq4\\b"]},
+        {"fact": "Q4 net sales of $93.9 billion", "numbers": ["93.9 billion"]},
+        {"fact": "Q4 net income ($2.998 billion or $6.75 per share)", "numbers": ["2.998 billion", "6.75"]},
+        {"fact": "fiscal-year figures", "numbers": ["297.2 billion", "9.226 billion", "20.76"]}
+      ],
+      "forbidden": [
+        {
+          "claim": "net income fell",
+          "patterns": ["net income[^.]{0,30}\\b(fell|declin\\w*|decreas\\w*|dropped|down)\\b"],
+          "evidence": "Net income for the fourth quarter was $2.998 billion ... compared to $2.610 billion ... last year."
+        }
+      ]
+    },
+    {
+      "accession_no": "0001193125-26-402986",
+      "company": "ExxonMobil Holdings",
+      "note": "Item 8.01: on September 23, 2026 an underwriting agreement for the sale by Exxon Mobil Corporation (the subsidiary) of $185,883,000 of Floating Rate Notes due 2076, guaranteed by ExxonMobil Holdings Corporation (the filer).",
+      "facts": [
+        {"fact": "floating rate notes", "patterns": ["floating[- ]rate"]},
+        {"fact": "$185,883,000 principal", "numbers": ["185,883,000"]},
+        {"fact": "due 2076", "patterns": ["2076"]},
+        {"fact": "guaranteed by the holding company", "patterns": ["guarant"]}
+      ],
+      "forbidden": [
+        {
+          "claim": "ExxonMobil Holdings issued the notes (Exxon Mobil Corporation did; Holdings guarantees them)",
+          "patterns": ["\\bexxonmobil holdings( corp(oration)?)?:? (has )?(issues|issued|sells|sold|prices|priced)\\b"],
+          "evidence": "for the issuance and sale by Exxon Mobil of $185,883,000 aggregate principal amount of its Floating Rate Notes due 2076 (the \"Notes\"), which are to be fully and unconditionally guaranteed by the Company"
+        }
+      ]
+    },
+    {
+      "accession_no": "0000002488-26-000182",
+      "company": "AMD",
+      "note": "Item 3.02: on September 26, 2026 AMD agreed to acquire World Labs Technologies for about $8.2 billion, paid in AMD common stock issued under a registration exemption; the share count is set by the 10-day VWAP ending two trading days before closing. Not yet closed.",
+      "facts": [
+        {"fact": "agreement to acquire World Labs", "patterns": ["(acqui|merger|buy|purchas)\\w*.{0,80}world labs", "world labs.{0,80}(acqui|merger)\\w*"]},
+        {"fact": "about $8.2 billion", "numbers": ["8.2 billion"]},
+        {"fact": "paid in AMD stock", "patterns": ["(paid|payable|pay|payment|consideration)[^.]{0,40}(shares|stock)", "(all-stock|stock deal|stock-for-stock|stock transaction)", "\\bin (amd('s)? )?(common )?(shares|stock)\\b"]},
+        {"fact": "unregistered issuance under an exemption", "patterns": ["exempt", "4\\(a\\)\\(2\\)", "regulation d", "unregistered", "private placement"]}
+      ],
+      "forbidden": [
+        {
+          "claim": "paid in cash",
+          "patterns": ["\\b(in|for|with) cash\\b", "\\bcash (deal|consideration|payment|purchase)"],
+          "evidence": "for a total purchase price of approximately $8.2 billion to be paid in shares of the Company's common stock"
+        },
+        {
+          "claim": "the acquisition is completed",
+          "patterns": ["\\b(completed|closed|finalized|completes|closes) (the|its) (acquisition|merger|purchase|deal)\\b"],
+          "evidence": "entered into an Agreement and Plan of Merger ... the closing date of the Acquisition"
+        },
+        {
+          "claim": "shares priced over the next ten trading days",
+          "patterns": ["\\bnext (10|ten) (consecutive )?trading[- ]days?"],
+          "evidence": "over the ten (10) consecutive trading-day period ending on and including the second trading day immediately preceding the closing date"
+        }
+      ]
+    },
+    {
+      "accession_no": "0001628280-26-063820",
+      "company": "Tesla",
+      "note": "Items 1.01, 1.02, 2.03: on September 29, 2026 Tesla entered a $20.0 billion three-year delayed draw term loan (drawable for 18 months), an $8.0 billion five-year revolver, and a $2.0 billion 364-day revolver; revolving commitments can rise by $4.0 billion to $14.0 billion. Its existing $5.0 billion revolver (January 20, 2023) was terminated. No loans are outstanding. The $30 billion total is computed (the grounding check flags it).",
+      "facts": [
+        {"fact": "$20.0 billion delayed draw term loan", "patterns": ["term loan"], "numbers": ["20.0 billion"]},
+        {"fact": "$8.0 billion five-year revolving facility", "patterns": ["revolv"], "numbers": ["8.0 billion"]},
+        {"fact": "$2.0 billion 364-day revolving facility", "patterns": ["364"], "numbers": ["2.0 billion"]},
+        {"fact": "the existing revolver was terminated", "patterns": ["terminat\\w*.{0,80}(existing|prior|previous|old|former|2023|january 20)", "(existing|prior|previous|old|former|2023|january 20).{0,100}(terminat|replac|ended)\\w*", "replac\\w*.{0,60}(existing|prior|previous|old|former|2023)"]}
+      ],
+      "forbidden": [
+        {
+          "claim": "an 18-month term loan (it is three-year; 18 months is the draw period)",
+          "patterns": ["\\b18[- ]month (senior unsecured )?(delayed[- ]draw )?term loan"],
+          "evidence": "$20.0 billion senior unsecured three-year delayed draw term loan facility ... no more than ten times during the 18-month period following the closing date"
+        },
+        {
+          "claim": "revolving commitments of $14.0 billion (that needs an optional $4.0 billion increase)",
+          "patterns": ["total commitments:? (of )?(up to )?\\$ ?14(\\.0)? billion"],
+          "evidence": "Tesla may increase the total commitments under the Revolving Credit Agreements by up to an additional $4.0 billion ... potentially increasing the Revolving Facilities to $14.0 billion in the aggregate."
+        },
+        {
+          "claim": "Tesla borrowed under the facilities",
+          "patterns": ["\\btesla (has )?(borrowed|drew|drawn down)\\b"],
+          "evidence": "No loans were outstanding under the Facilities as of September 29, 2026."
+        }
+      ]
+    },
+    {
+      "accession_no": "0000320187-26-000184",
+      "company": "NIKE",
+      "note": "Items 2.02 and 2.05 and press release: Q1 FY27 revenues $11.2 billion, down 4%; diluted EPS $0.48. Pace, a multi-year program: about $2.5 billion of cumulative savings and about $1.0 billion of pre-tax charges through fiscal 2031.",
+      "facts": [
+        {"fact": "first-quarter results", "patterns": ["first[- ]quarter", "\\bq1\\b"]},
+        {"fact": "revenues of $11.2 billion", "numbers": ["11.2 billion"]},
+        {"fact": "diluted EPS of $0.48", "numbers": ["0.48"]},
+        {"fact": "the Pace program", "patterns": ["\\bpace\\b"]},
+        {"fact": "Pace savings of about $2.5 billion", "numbers": ["2.5 billion"]},
+        {"fact": "Pace charges of about $1.0 billion", "numbers": ["1.0 billion"]}
+      ],
+      "forbidden": [
+        {
+          "claim": "revenue rose (it fell 4%)",
+          "patterns": ["\\brevenues? (rose|increased|grew|climbed|jumped)\\b", "\\brevenues? (were )?up \\d"],
+          "evidence": "First quarter revenues were $11.2 billion, down 4 percent on a reported basis"
+        },
+        {
+          "claim": "$2.5 billion of charges (that is the savings)",
+          "patterns": ["2\\.5 billion(?:(?!saving)[^.]){0,30}\\b(charges?|costs?)\\b"],
+          "evidence": "NIKE expects Pace to deliver approximately $2.5 billion in cumulative savings through fiscal 2031, with approximately $1.0 billion of pre-tax charges"
+        }
+      ]
+    },
+    {
+      "accession_no": "0001628280-26-064366",
+      "company": "Tesla",
+      "note": "Item 2.02 and press release: Q3 2026 production 464,391 and deliveries 486,532 vehicles ('over 464,000' and 'over 486,000'), 13.7 GWh of storage deployed; financial results come on October 21, 2026. No financial results in this release.",
+      "facts": [
+        {"fact": "deliveries of about 486,000", "numbers": ["486,532", "486,000"]},
+        {"fact": "production of about 464,000", "numbers": ["464,391", "464,000"]},
+        {"fact": "13.7 GWh of storage", "numbers": ["13.7"]},
+        {"fact": "results due October 21", "patterns": ["(october|oct\\.?) 21\\b", "2026-10-21"]}
+      ],
+      "forbidden": [
+        {
+          "claim": "financial results reported",
+          "patterns": ["\\b(revenue|net income|profit|earnings per share)s? (of|was|were|rose|grew|increased|fell|declined) "],
+          "evidence": "Our net income and cash flow results will be announced along with the rest of our financial performance when we announce Q3 earnings."
+        }
+      ]
+    },
+    {
+      "accession_no": "0000093410-26-000188",
+      "company": "Chevron",
+      "note": "Item 5.02: on September 30, 2026 the board elected Jeff B. Gustavson CFO effective January 1, 2027; CFO Eimear P. Bonner becomes President, Oil, Products & Gas; Mark A. Nelson remains Vice Chairman, adding Strategy and Business Development.",
+      "facts": [
+        {"fact": "Gustavson elected CFO", "patterns": ["gustavson.{0,80}(chief financial officer|\\bcfo\\b)", "(chief financial officer|\\bcfo\\b).{0,80}gustavson"]},
+        {"fact": "Bonner becomes President, Oil, Products & Gas", "patterns": ["bonner.{0,120}(president|oil, products)"]},
+        {"fact": "Nelson stays Vice Chairman", "patterns": ["nelson"]},
+        {"fact": "effective January 1, 2027", "patterns": ["(january|jan\\.?) 1,? 2027", "2027-01-01"]}
+      ],
+      "forbidden": [
+        {
+          "claim": "Bonner or Nelson leaves Chevron",
+          "patterns": ["\\b(bonner|nelson) (will )?(retire|retires|resign|resigns|leave|leaves|depart|departs)( from)? (chevron|the company)"],
+          "evidence": "Eimear P. Bonner, currently Chevron's Chief Financial Officer, will become President, Oil, Products & Gas; Mark A. Nelson ... will remain Vice Chairman"
+        },
+        {
+          "claim": "effective immediately or on September 30",
+          "patterns": ["\\b(gustavson|bonner|nelson)[^.]{0,80}effective (immediately|(september|sept\\.?) 30)"],
+          "evidence": "the Board elected Jeff B. Gustavson to the position of Chief Financial Officer of Chevron, effective January 1, 2027"
+        }
+      ]
+    },
+    {
+      "accession_no": "0000093410-26-000192",
+      "company": "Chevron",
+      "note": "Items 7.01 and 8.01 and press release: Chevron will transfer its Hess Midstream interests and DJ Basin crude midstream assets to Hess Midstream for improved Bakken terms (Bakken unit midstream costs down about 50%) and $200 million; it expects a one-time after-tax loss of about $3 to $4 billion; closing expected by year-end 2026.",
+      "facts": [
+        {"fact": "divesting the Hess Midstream interests", "patterns": ["(divest|transfer|sell|sale|exit|dispos)\\w*.{0,80}hess midstream", "hess midstream.{0,80}(divest|transfer|sale|exit|dispos)\\w*"]},
+        {"fact": "DJ Basin midstream assets", "patterns": ["\\bdj basin"]},
+        {"fact": "improved Bakken terms", "patterns": ["bakken"]},
+        {"fact": "after-tax loss of about $3 to $4 billion", "patterns": ["loss"], "numbers": ["4 billion", "3 billion"]}
+      ],
+      "forbidden": [
+        {
+          "claim": "a gain (it is a loss)",
+          "patterns": ["\\b(after-tax|one-time|pre-tax) gain\\b"],
+          "evidence": "Chevron expects to recognize a one-time after-tax loss estimated at approximately $3 to $4 billion"
+        },
+        {
+          "claim": "Chevron acquires Hess Midstream",
+          "patterns": ["\\bchevron (will |is |to )?(acquire|acquires|buy|buys|purchase|purchases)\\b"],
+          "evidence": "Chevron will transfer to Hess Midstream its ownership interests and general partner position in Hess Midstream"
+        },
+        {
+          "claim": "the deal has closed",
+          "patterns": ["\\b(chevron|it|the company) (has )?(completed|closed|finalized) (the|its) (transaction|divestiture|deal|sale)\\b"],
+          "evidence": "is expected to close by year-end 2026"
+        }
+      ]
+    },
+    {
+      "accession_no": "0000077476-26-000050",
+      "company": "PepsiCo",
+      "note": "Item 2.02 and press release: Q3 2026 (12 weeks) net revenue $25,274 million, up 5.6%; organic revenue up 3.1% (2.7% is year to date); EPS $2.23 (up 17%), core EPS $2.34 (up 2%); 2026 guidance updated.",
+      "facts": [
+        {"fact": "third-quarter results", "patterns": ["third[- ]quarter", "\\bq3\\b"]},
+        {"fact": "net revenue up 5.6% ($25,274 million)", "numbers": ["5.6", "25,274 million"]},
+        {"fact": "organic revenue up 3.1%", "patterns": ["organic"], "numbers": ["3.1"]},
+        {"fact": "EPS $2.23 or core EPS $2.34", "numbers": ["2.23", "2.34"]},
+        {"fact": "guidance updated", "patterns": ["guidance", "outlook"]}
+      ],
+      "forbidden": [
+        {
+          "claim": "2.7% organic growth in the quarter (it is year to date)",
+          "patterns": ["2\\.7 ?%,? (in|for|during) (the )?(12 weeks|third[- ]quarter|q3|quarter)\\b", "(third[- ]quarter|\\bq3\\b|12 weeks)(?:(?!year|ytd|respectively|36)[^.]){0,40}\\b2\\.7 ?%"],
+          "evidence": "Organic revenue increased 3.1% and 2.7%, respectively [third quarter and year to date]"
+        },
+        {
+          "claim": "core EPS up 17% (EPS rose 17%, core EPS 2%)",
+          "patterns": ["core (constant currency )?eps(?:(?!\\beps\\b)[^.]){0,30}\\b17 ?%"],
+          "evidence": "Earnings per share (EPS) increased 17% ... Core EPS increased 2%"
+        }
+      ]
+    }
+  ]
+}

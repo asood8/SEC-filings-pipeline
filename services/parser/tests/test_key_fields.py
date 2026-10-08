@@ -145,10 +145,17 @@ def test_derivative_only_joint_and_footnote_priced_filings(
         joint = lines(session, JOINT_PURCHASES)
         footnoted = lines(session, FOOTNOTE_PRICE)
         joint_filing = session.get_one(Form4Filing, JOINT_PURCHASES)
+        award_filing = session.get_one(Form4Filing, DERIVATIVE_ONLY)
+    assert (award_filing.reporting_owners, award_filing.reporting_owner_ciks) == (
+        ["SMITH BRAD D"],
+        [1284323],
+    )
     assert (award["is_derivative"], award["code"], award["shares"]) == (True, "A", 4086)
     assert award["security_title"] == "Restricted Stock Unit Award"
-    # One set of lines however many owners filed it; the owners are on the filing row.
+    # One set of lines however many owners filed it; the owners are on the filing row, their
+    # CIKs in the same order as their names.
     assert joint_filing.reporting_owners == ["BERKSHIRE HATHAWAY INC", "BUFFETT WARREN E"]
+    assert joint_filing.reporting_owner_ciks == [1067983, 315090]
     assert joint_filing.issuer_cik == 920760  # Lennar, not the filer
     assert [line["line"] for line in joint] == list(range(1, 17))
     assert {line["code"] for line in joint} == {"P"}
@@ -235,6 +242,26 @@ def test_rebuild_fills_the_tables_from_stored_payloads_idempotently(
             updated_at
         )
         assert set(session.scalars(sa.select(Filing.status))) == {FilingStatus.NOTIFIED}
+
+
+def test_rebuild_fills_owner_ciks_on_rows_saved_before_they_were_stored(
+    sessions: sessionmaker[Session], mongo_db: Database[dict[str, Any]]
+) -> None:
+    parsed = [JOINT_PURCHASES, EXERCISE_AND_SALE]
+    add_filings(sessions, parsed)
+    for accession_no in parsed:
+        save(sessions, accession_no, payload(accession_no))
+    with sessions.begin() as session:  # as migration 0046b4a4d18b leaves existing rows
+        session.execute(sa.update(Form4Filing).values(reporting_owner_ciks=None))
+
+    assert rebuild_key_fields(sessions, store_payloads(mongo_db, parsed)).rebuilt == 2
+    with sessions() as session:
+        ciks = dict(
+            session.execute(
+                sa.select(Form4Filing.accession_no, Form4Filing.reporting_owner_ciks)
+            ).all()
+        )
+    assert ciks == {JOINT_PURCHASES: [1067983, 315090], EXERCISE_AND_SALE: [1184230]}
 
 
 def test_rebuild_skips_unparsed_filings_missing_payloads_and_other_parser_versions(

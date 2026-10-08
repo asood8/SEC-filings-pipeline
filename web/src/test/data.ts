@@ -3,7 +3,25 @@ import type {
   FilingDetail,
   Form4Transaction,
   InsiderActivity,
+  ReportingOwner,
 } from '../api/client'
+
+// Form 4 reporting owners as the API returns them (real names and CIKs from EDGAR).
+export const COOK: ReportingOwner = {
+  cik: 1214156,
+  name: 'COOK TIMOTHY D',
+  display_name: 'Timothy D Cook',
+}
+export const BERKSHIRE: ReportingOwner = {
+  cik: 1067983,
+  name: 'BERKSHIRE HATHAWAY INC',
+  display_name: 'Berkshire Hathaway Inc',
+}
+export const BUFFETT: ReportingOwner = {
+  cik: 315090,
+  name: 'BUFFETT WARREN E',
+  display_name: 'Warren E Buffett',
+}
 
 export function filing(overrides: Partial<Filing> = {}): Filing {
   return {

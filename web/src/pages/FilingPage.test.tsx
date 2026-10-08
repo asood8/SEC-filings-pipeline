@@ -1,6 +1,11 @@
 import { screen, within } from '@testing-library/react'
 import { describe, expect, it } from 'vitest'
-import { filingDetail, form4Transaction } from '../test/data'
+import {
+  BERKSHIRE,
+  BUFFETT,
+  filingDetail,
+  form4Transaction,
+} from '../test/data'
 import { mockApi, renderRoute } from '../test/render'
 
 describe('FilingPage', () => {
@@ -53,7 +58,7 @@ describe('FilingPage', () => {
             issuer_cik: 920760,
             issuer_name: 'LENNAR CORP',
             issuer_ticker: 'LEN',
-            reporting_owners: ['BERKSHIRE HATHAWAY INC', 'BUFFETT WARREN E'],
+            reporting_owners: [BERKSHIRE, BUFFETT],
             transaction_codes: ['P'],
             is_10b5_1: false,
             transactions: [], // parsed before transaction lines were stored
@@ -69,6 +74,9 @@ describe('FilingPage', () => {
       within(trade).getByRole('link', { name: 'LENNAR CORP' }),
     ).toHaveAttribute('href', '/companies/LEN')
     expect(within(trade).getByText(/filed by BERKSHIRE/)).toBeInTheDocument()
+    expect(
+      within(trade).getByText('Reported by').nextElementSibling,
+    ).toHaveTextContent('Berkshire Hathaway Inc; Warren E Buffett')
     expect(
       within(trade).getByText('Open-market or private purchase'),
     ).toBeInTheDocument()
@@ -91,7 +99,14 @@ describe('FilingPage', () => {
             issuer_cik: 320193,
             issuer_name: 'Apple Inc.',
             issuer_ticker: 'AAPL',
-            reporting_owners: ['BARTON RICHARD N'],
+            // Saved before owner CIKs were stored.
+            reporting_owners: [
+              {
+                cik: null,
+                name: 'BARTON RICHARD N',
+                display_name: 'Richard N Barton',
+              },
+            ],
             transaction_codes: ['M', 'S'],
             is_10b5_1: true,
             transactions: [

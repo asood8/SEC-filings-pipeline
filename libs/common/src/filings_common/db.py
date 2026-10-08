@@ -155,7 +155,10 @@ class Form4Filing(Base):
     issuer_cik: Mapped[int] = mapped_column(sa.BigInteger)
     issuer_name: Mapped[str]
     issuer_ticker: Mapped[str | None]
-    reporting_owners: Mapped[list[str]] = mapped_column(ARRAY(sa.Text()))
+    reporting_owners: Mapped[list[str]] = mapped_column(ARRAY(sa.Text()))  # names, as filed
+    # The owners' CIKs, in the same order as their names. NULL on rows saved before CIKs were
+    # stored, until `filings-rebuild-key-fields` rewrites them.
+    reporting_owner_ciks: Mapped[list[int] | None] = mapped_column(ARRAY(sa.BigInteger()))
     transaction_codes: Mapped[list[str]] = mapped_column(ARRAY(sa.Text()))
     is_10b5_1: Mapped[bool | None]
     updated_at: Mapped[datetime] = mapped_column(

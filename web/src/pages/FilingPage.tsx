@@ -3,6 +3,7 @@ import { Link, useParams } from 'react-router'
 import { isNotFound, type FilingDetail } from '../api/client'
 import { filingQuery } from '../api/queries'
 import { Form4Transactions } from '../components/Form4Transactions'
+import { OwnerNames } from '../components/OwnerNames'
 import { ErrorMessage, Loading } from '../components/QueryStatus'
 import { formatDate, formatDateTime, formLabel } from '../lib/format'
 import { ITEMS_8K, TRANSACTION_CODES } from '../lib/glossary'
@@ -151,7 +152,9 @@ function Form4Section({
           )}
         </dd>
         <dt>Reported by</dt>
-        <dd>{form4.reporting_owners.join('; ')}</dd>
+        <dd>
+          <OwnerNames owners={form4.reporting_owners} />
+        </dd>
         {form4.transactions.length === 0 && (
           // Filings parsed before transaction lines were stored list only their codes.
           <>

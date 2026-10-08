@@ -76,12 +76,31 @@ class Form4TransactionOut(BaseModel):
     )
 
 
+class ReportingOwnerOut(BaseModel):
+    """A person or entity that filed a Form 4."""
+
+    cik: int | None = Field(
+        description=(
+            "SEC's ID for the owner, the same on every filing. Null only for Form 4s saved before "
+            "owner CIKs were stored, until their key fields are rebuilt."
+        )
+    )
+    name: str = Field(description='As filed: "COOK TIMOTHY D", "BERKSHIRE HATHAWAY INC".')
+    display_name: str = Field(
+        description=(
+            'For display: "Timothy D Cook"; an entity keeps its word order ("Berkshire Hathaway '
+            "Inc\"). People's names are reordered by rule, so an unusual name can come out wrong; "
+            "`name` is always as filed."
+        )
+    )
+
+
 class Form4Details(BaseModel):
     period_of_report: date
     issuer_cik: int = Field(description="Whose stock was traded; may differ from `cik`.")
     issuer_name: str
     issuer_ticker: str | None
-    reporting_owners: list[str]
+    reporting_owners: list[ReportingOwnerOut] = Field(description="In the filing's order.")
     transaction_codes: list[str]
     is_10b5_1: bool | None
     transactions: list[Form4TransactionOut]
@@ -121,8 +140,12 @@ class TradeTotals(BaseModel):
 
 
 class OwnerActivity(BaseModel):
-    reporting_owners: list[str] = Field(
-        description="As filed. Joint filers (one Form 4, several owners) share a row."
+    reporting_owners: list[ReportingOwnerOut] = Field(
+        description=(
+            "Who filed: one row per set of owners (by CIK), named as on their latest filing. "
+            "Joint filers (one Form 4, several owners) share a row, so their trades count once; "
+            "an owner who also files alone has a row of their own as well."
+        )
     )
     bought: TradeTotals
     sold: TradeTotals

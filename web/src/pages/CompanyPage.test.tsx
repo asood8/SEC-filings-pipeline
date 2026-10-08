@@ -1,6 +1,6 @@
 import { screen, within } from '@testing-library/react'
 import { describe, expect, it } from 'vitest'
-import { filing, insiderActivity } from '../test/data'
+import { BERKSHIRE, BUFFETT, COOK, filing, insiderActivity } from '../test/data'
 import { mockApi, renderRoute } from '../test/render'
 
 const apple = () => ({
@@ -49,14 +49,14 @@ describe('CompanyPage', () => {
           filings: 3,
           owners: [
             {
-              reporting_owners: ['COOK TIMOTHY D'],
+              reporting_owners: [COOK],
               bought: { shares: 0, value: 0, unpriced_shares: 0 },
               sold: { shares: 1600.5, value: 551000, unpriced_shares: 500.5 },
               filings: 2,
               latest_date: '2026-10-05',
             },
             {
-              reporting_owners: ['BERKSHIRE HATHAWAY INC', 'BUFFETT WARREN E'],
+              reporting_owners: [BERKSHIRE, BUFFETT],
               bought: { shares: 300, value: 144150, unpriced_shares: 0 },
               sold: { shares: 0, value: 0, unpriced_shares: 0 },
               filings: 1,
@@ -77,19 +77,24 @@ describe('CompanyPage', () => {
         .getAllByRole('cell')
         .map((cell) => cell.textContent)
     expect(cells(cook)).toEqual([
-      'COOK TIMOTHY D',
+      'Timothy D Cook',
       '—',
       '$551,000* 1,600.5 shares',
       '2',
       'Oct 5, 2026',
     ])
     expect(cells(berkshire)).toEqual([
-      'BERKSHIRE HATHAWAY INC; BUFFETT WARREN E',
+      'Berkshire Hathaway Inc; Warren E Buffett',
       '$144,150 300 shares',
       '—',
       '1',
       'Oct 3, 2026',
     ])
+    // Readable names, with the names as filed on hover.
+    expect(within(cook).getByText('Timothy D Cook')).toHaveAttribute(
+      'title',
+      'As filed: COOK TIMOTHY D',
+    )
     expect(cells(total).slice(0, 4)).toEqual([
       'All insiders',
       '$144,150 300 shares',

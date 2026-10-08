@@ -152,6 +152,7 @@ def seeded(clean_db: Engine) -> Engine:
                     issuer_name="Apple Inc.",
                     issuer_ticker="AAPL",
                     reporting_owners=["COOK TIMOTHY D"],
+                    reporting_owner_ciks=[1214156],
                     transaction_codes=["S"],
                     is_10b5_1=True,
                 ),

@@ -85,8 +85,9 @@ export interface paths {
         /**
          * Insiders' buying and selling of a company's stock
          * @description Open-market or private purchases (Form 4 code P) and sales (S) of the company's stock in
-         *     the last `days` days, by transaction date, per reporting owner. Grants, option exercises, tax
-         *     withholding, gifts, and derivative trades are left out.
+         *     the last `days` days, by transaction date, per reporting owner: filings by the same owners
+         *     (by CIK) share a row, and joint filers share one. Grants, option exercises, tax withholding,
+         *     gifts, and derivative trades are left out.
          *
          *     Form 4s found under another company count too: what matters is whose stock was traded.
          */
@@ -443,8 +444,11 @@ export interface components {
             issuer_name: string;
             /** Issuer Ticker */
             issuer_ticker: string | null;
-            /** Reporting Owners */
-            reporting_owners: string[];
+            /**
+             * Reporting Owners
+             * @description In the filing's order.
+             */
+            reporting_owners: components["schemas"]["ReportingOwnerOut"][];
             /** Transaction Codes */
             transaction_codes: string[];
             /** Is 10B5 1 */
@@ -534,9 +538,9 @@ export interface components {
         OwnerActivity: {
             /**
              * Reporting Owners
-             * @description As filed. Joint filers (one Form 4, several owners) share a row.
+             * @description Who filed: one row per set of owners (by CIK), named as on their latest filing. Joint filers (one Form 4, several owners) share a row, so their trades count once; an owner who also files alone has a row of their own as well.
              */
-            reporting_owners: string[];
+            reporting_owners: components["schemas"]["ReportingOwnerOut"][];
             bought: components["schemas"]["TradeTotals"];
             sold: components["schemas"]["TradeTotals"];
             /**
@@ -570,6 +574,27 @@ export interface components {
              * @description Pass as `cursor` to get the next page; null on the last page.
              */
             next_cursor: string | null;
+        };
+        /**
+         * ReportingOwnerOut
+         * @description A person or entity that filed a Form 4.
+         */
+        ReportingOwnerOut: {
+            /**
+             * Cik
+             * @description SEC's ID for the owner, the same on every filing. Null only for Form 4s saved before owner CIKs were stored, until their key fields are rebuilt.
+             */
+            cik: number | null;
+            /**
+             * Name
+             * @description As filed: "COOK TIMOTHY D", "BERKSHIRE HATHAWAY INC".
+             */
+            name: string;
+            /**
+             * Display Name
+             * @description For display: "Timothy D Cook"; an entity keeps its word order ("Berkshire Hathaway Inc"). People's names are reordered by rule, so an unusual name can come out wrong; `name` is always as filed.
+             */
+            display_name: string;
         };
         /** SearchResponse */
         SearchResponse: {

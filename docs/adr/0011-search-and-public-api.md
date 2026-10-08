@@ -18,8 +18,25 @@ Redis or the embedding model is down.
 ### What is indexed
 
 - **One search document per filing** (`filing_search`), built from the filing's **current**
-  summary: the headline, the company name and ticker, and the body (summary, key points, and a
+  summary: the headline, the company name, the ticker, and the body (summary, key points, and a
   plain-English form label such as "Form 4 insider trading report", so "insider" finds Form 4s).
+- **Keywords (added 2026-10-08):** other words for what the text says. They are searched, but
+  never embedded or shown.
+  - *Abbreviations both ways:* a document that has only one of "CFO" and "Chief Financial
+    Officer" gets the other. The list holds 12 unambiguous ones, such as CEO, EVP, RSU, and EPS.
+    CIO (information or investment officer?) and CLO are left out. Abbreviations count only in
+    capitals, so the name "Cao" doesn't count as CAO.
+  - *Irregular verbs:* the Form 4 template writes "bought" (code P) and "sold" (code S), which
+    stemming doesn't relate to "buy", "purchase", "sell", or "sale". Those words get added.
+  - *Weight B, like the body:* an alias counts as much as the words it stands for. With weight C,
+    the Chevron 8-K for "CFO appointment" ranked third in hybrid search instead of first. No other
+    labeled query changed.
+  - *Why at index time:* Postgres can also expand queries (`ts_rewrite` with rules). But the verb
+    forms belong to documents anyway, the reverse direction ("chief financial officer" finding
+    "EVP & CFO") needs no phrase rules, and queries stay plain `websearch_to_tsquery`. The cost:
+    changing the lists needs a `filings-index` rebuild, which takes seconds and embeds nothing.
+  - *Why not in the embedded text:* existing embeddings stay valid, so nothing is re-embedded,
+    and the model sees only what the summary says.
 - **Written with every summary.** The summarizer writes the document in the same transaction as
   the summary. `filings-index` rebuilds documents and backfills embeddings, idempotently.
 
@@ -31,8 +48,38 @@ Redis or the embedding model is down.
   work as people expect.
 - **Relaxed fallback.** If a query without that syntax matches nothing with all its words, it is
   retried matching any word, ranked so filings matching more words score higher. Postgres would
-  otherwise return nothing for natural-language queries like "insider selling" (the summaries say
-  "sold").
+  otherwise return nothing for natural-language queries like "CFO appointment" (no filing has
+  both words: Chevron's 8-K says its new CFO was elected).
+- **Tickers are indexed apart from words (added 2026-10-08).** The English configuration indexed
+  Costco's ticker COST as the word "cost". "costs" stems to "cost" too, so "restructuring to cut
+  costs" returned Costco Form 4s first.
+  - *Index:* where the ticker stands alone in capitals in the headline or body, it is blanked out
+    (the Form 4 template writes "100 COST shares"). It is added once as a lexeme in capitals,
+    `'COST'`, with weight A. Normalized words are lowercase, so no word can match that lexeme.
+  - *Query:* a query word shaped like a ticker (up to 5 letters and digits, maybe a class such as
+    BRK-B) also matches tickers through `ts_rewrite`: `'cost'` becomes `'cost' | 'COST'`, which
+    keeps phrases and `-word` working. This happens when the word is typed in capitals (COST,
+    AAPL), or in any case when no filing has it as a word: "aapl", "nvda", and "cat" find Apple,
+    Nvidia, and Caterpillar. "cost" and "costs" stay words. One small query checks the
+    lowercase words first, so the search itself keeps a constant tsquery that Postgres computes
+    once, not once per row. A 135-character query takes 3.7 ms instead of 1.2 ms.
+  - *Alternatives:*
+    - Indexing the ticker with the `simple` configuration doesn't work: the stemmed query word
+      "costs" is "cost", which still matches.
+    - Matching tickers case-insensitively against the companies table would turn everyday words
+      into tickers: it lists 8,016 of them, among them ALL, CAT, COST, and FUN.
+    - Treating a ticker in capitals as only a ticker would need a lookup per query, and would
+      lose the word for a ticker that is also an acronym.
+  - *Limits:*
+    - A ticker that is an English stop word (IT, ALL, T) can't be searched, as before.
+    - Inside quotes, a ticker no longer matches where it stood: `"COST shares"` finds nothing.
+    - The lowercase rule depends on the documents: a lowercase ticker that later appears as a word
+      in some summary stops matching the ticker. In capitals, it still does.
+  - *Schema:* `filing_search` gains `ticker` and `keywords` columns, and `company` holds the name
+    only (migration `23e9e08283f1`; `ALTER COLUMN ... SET EXPRESSION` needs Postgres 17+). The
+    embedded text is unchanged ("name ticker"), so existing embeddings stay valid. Rows written
+    before the migration keep the old behavior until `filings-index` rebuilds them, so a
+    deployment runs it once after the migration.
 
 ### Semantic search
 
@@ -92,6 +139,13 @@ the production ranking.
 - **Use:** run it before and after a ranking change (fusion, document text, embedding model).
   Keep the change if the metrics improve and no query gets much worse. Twenty queries make a smoke
   test, not a benchmark: one query moves a mean by 0.05.
+  - *A change to the search documents* can be measured on a copy of the database without touching
+    the live one: restore a `pg_dump` into a throwaway database, migrate it, run `filings-index`,
+    and point `DATABASE_URL` at it. The embeddings come with the copy, so only a change to the
+    embedded text needs re-embedding.
+  - *One change at a time:* the 2026-10-08 changes were measured separately (each alone moved
+    only the query it targeted), then together. Unlabeled spot checks compared the top 5 before
+    and after: tickers in capitals and in lowercase, company and person names, and Form 4 topics.
 
 ### Degradation instead of failure
 
@@ -171,7 +225,7 @@ the production ranking.
   | semantic | 0.81 | 0.87 | 0.85 | 49% |
   | hybrid | 0.86 | 0.91 | 0.94 | 30% |
 
-  What the per-query rows show, for later work:
+  What the per-query rows showed, for later work:
   - *Keyword search misses other wording.* "CFO appointment" fails because the summaries say
     "Chief Financial Officer". "insider purchase" fails because Form 4s say "bought". Semantic
     search finds both.
@@ -182,6 +236,32 @@ the production ranking.
     returns Costco Form 4s first for "restructuring to cut costs".
   - *Semantic mode on its own still gives Form 4s half the top 5.* The weight applies only to
     hybrid search, the default.
+- **After keywords and separate tickers (2026-10-08)**, on a copy of the same database (278
+  filings, one more 8-K, which no label involves; the "before" numbers are the same on it):
+
+  | Mode | Recall@5 | Recall@10 | MRR | Form 4 share@5 (16 queries) |
+  |---|---|---|---|---|
+  | keyword | 0.72 → 0.86 | 0.72 → 0.87 | 0.83 → 0.94 | 19% → 11% |
+  | semantic | 0.81 | 0.87 | 0.85 | 49% |
+  | hybrid | 0.86 → 0.90 | 0.91 → 0.95 | 0.94 → 1.00 | 30% → 28% |
+
+  Three queries changed, each through the change aimed at it, and no other labeled query moved:
+
+  | Query | Change | Keyword: recall@10, first relevant | Hybrid: recall@10, first relevant |
+  |---|---|---|---|
+  | CFO appointment | abbreviations | 0 → 1.00, none → 4th | 1.00 → 1.00, 5th → 1st |
+  | insider purchase | verb forms | 0 → 1.00, none → 1st | 0.17 → 1.00, 2nd → 1st |
+  | restructuring to cut costs | tickers | 0 → 1.00, 11th → 1st (Form 4s in the top 5: 5 → 0) | 1.00, 1st (Form 4s: 2 → 0) |
+
+  - *Spot checks:* tickers still find their company's filings (AAPL, aapl, NVDA, nvda, COST, META,
+    V, BRK-B), and names find the same filings as before (Apple, Costco, Tim Cook, Warren Buffett,
+    Berkshire). "insider selling" now returns only sales, where it used to mix in grants and
+    Oracle's plan cancellation. "insider buying" returns the open-market purchases, where it used
+    to return option grants ("right to buy"). "cost" no longer returns Costco Form 4s.
+  - *Semantic mode, unchanged:* re-ranking its top 50 the way hybrid weighs Form 4s lowered their
+    share of the top 5 to 35–40% at weights 0.85–0.9. But "insider purchase", a Form 4 query, got
+    worse (recall@5 0.67 → 0.50), and MRR fell at 0.8 and below. Someone choosing semantic mode
+    also asks for plain similarity, so that mode stays as it is.
 - **Changing dimensions needs a migration.** `EMBEDDING_DIMENSIONS` is fixed at 768 by the pgvector
   column, so a model with another size means a migration and a re-embed with `filings-index`.
 - **Production.** The API needs the embedding server at query time, so Phase 7 must run it next to

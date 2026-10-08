@@ -497,7 +497,8 @@ numbers improve and no query gets much worse.
 ```
 make up && make llm-up                      # Postgres, and Ollama with nomic-embed-text
 uv run filings-search-eval --per-query --json data/eval-before.json
-# make the change; for another embedding model: set EMBEDDING_MODEL, then uv run filings-index
+# make the change; then uv run filings-index if it changes the search documents (keywords,
+# fields) or the embedding model (set EMBEDDING_MODEL first)
 uv run filings-search-eval --per-query --json data/eval-after.json
 ```
 

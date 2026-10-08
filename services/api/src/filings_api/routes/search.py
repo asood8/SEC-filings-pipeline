@@ -52,7 +52,8 @@ def search(
     cik: CikFilter = None,
     limit: Annotated[int, Query(ge=1, le=50)] = 20,
 ) -> SearchResponse:
-    """Keyword search understands quotes, `OR`, and `-word`. Semantic search matches meaning
+    """Keyword search understands quotes, `OR`, and `-word`, and finds a company's filings by its
+    ticker typed in capitals (`COST`; `costs` is only a word). Semantic search matches meaning
     ("leadership change" finds CEO appointments). Hybrid, the default, combines both. Without a
     working embedding model, semantic and hybrid fall back to keywords (`degraded: true`)."""
     vector = None

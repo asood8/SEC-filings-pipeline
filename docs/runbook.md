@@ -709,6 +709,7 @@ expect the A1's single Postgres CPU to be about 2 to 3 times slower.
 | Filing detail (Form 4 with lines, 8-K with exhibits) | 11–14 / 14–30 | 0.1 | |
 | Companies: list, watchlist, `q=` | 7–14 / 8–15 | 0.7–7.4 | 8,000 rows, read whole; doesn't grow with history |
 | Insider activity, busiest issuer (8,400 Form 4s), 90 or 365 days | 54 / 61–66 | 43 | fixed: was 87–116 ms; grows with the issuer's history |
+| Insider trades, all companies: purchases 30 days / sales 90 / sales 365 days | 59 / 85 / 217 (p95 79 / 161 / 240) | 52 / 116 / 230 | grows with `days`; reads `form4_filings` whole, see below |
 | Keyword search, a word most documents have (`sold`, `shares`) | 1,290–1,420 / 1,710–2,330 | 1,080–1,480 | **not fixed**, see below |
 | Keyword search, selective (`dividend` on 8-Ks, a relaxed query) | 60–63 / 75–81 | 75–80 | |
 | Keyword search, ticker of the busiest company / company filter | 128–172 / 158–206 | 77–154 | grows with the company's filings |
@@ -731,8 +732,9 @@ What was fixed (median `EXPLAIN ANALYZE`, before and after, on the same data):
   endpoint totals (codes P and S, not derivative). The planner probes the issuer's filings' lines
   instead of scanning all 1 million: 79 → 30 ms (90 days) and 87 → 36 ms (365 days). It still
   reads every Form 4 of the issuer, so it grows with the issuer's history, not with `days`;
-  bounding it needs a condition on `period_of_report` in the query. The index's condition must
-  stay the query's.
+  bounding it needs a window condition in the query: `filings.filed_at`, as insider trades do,
+  not `period_of_report`, which is a filing's earliest trade (a late Form 4 can report year-old
+  lines next to last week's). The index's condition must stay the query's.
 - **Semantic search with a filter**: pgvector's HNSW scan returns its `hnsw.ef_search` (40)
   nearest vectors and filters apply afterwards. So an 8-K filter returned **0 of 20** results
   (Form 4s filled the 40), and hybrid search got 40 semantic candidates instead of 50. Iterative
@@ -757,6 +759,13 @@ Not fixed, for a decision when the watchlist grows:
   "share", "chief"): 35–95 ms here. Options, if it matters: rank only the newest N matches (results change only when an older
   match outranks them), a RUM index (an extension the pgvector image lacks), or a search engine
   (ADR-0011 rejected one for this size).
+- **Insider trades read `form4_filings` whole** (added 2026-10-08, measured on synthetic data
+  made the same way, with fewer embeddings and users, which it doesn't read). The filing-date
+  condition finds the window's filings through the feed's index (3,400 for 30 days), but at the
+  default `random_page_cost` of 4 the planner prefers a parallel scan of all 420,000
+  `form4_filings` rows to 3,400 primary-key probes. With 1.1 (usual for SSDs) it probes: 30 days
+  take 25–44 ms instead of about 50. Responses are cached for 60 s, and on the 35-company
+  watchlist that table stays 13 times smaller, so this is left as is.
 - **Per-company work grows with the company's history**: insider activity (above), and keyword
   search for its ticker or with its filter, which reads all its matching documents (a company
   with 9,400 filings: 77–154 ms).

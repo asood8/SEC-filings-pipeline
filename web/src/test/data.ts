@@ -3,6 +3,7 @@ import type {
   FilingDetail,
   Form4Transaction,
   InsiderActivity,
+  InsiderTrade,
   ReportingOwner,
 } from '../api/client'
 
@@ -93,6 +94,26 @@ export function insiderActivity(
     sold: NO_TRADES,
     filings: 0,
     owners: [],
+    ...overrides,
+  }
+}
+
+/** One Form 4's open-market sales (Tim Cook's, from a real filing); override for others. */
+export function insiderTrade(
+  overrides: Partial<InsiderTrade> = {},
+): InsiderTrade {
+  return {
+    accession_no: '0001140361-26-038674',
+    filed_at: '2026-10-05',
+    transaction_date: '2026-10-02',
+    issuer: { cik: 320193, name: 'Apple Inc.', ticker: 'AAPL' },
+    reporting_owners: [COOK],
+    side: 'sell',
+    shares: 191753,
+    value: 63845841.04,
+    average_price: 332.9588,
+    unpriced_shares: 0,
+    is_10b5_1: true,
     ...overrides,
   }
 }

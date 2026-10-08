@@ -1,0 +1,6 @@
+/* The two sets of choices (purchases or sales, and the period), side by side when they fit. */
+.controls {
+  display: flex;
+  flex-wrap: wrap;
+  column-gap: 1.5rem;
+}

@@ -24,9 +24,9 @@ from filings_common.db import Company, Filing, FilingStatus, Summary
 from filings_common.embeddings import Embedder, EmbeddingError
 from filings_common.events import FilingParsed, FilingReady, Topic
 from filings_common.mongo import ParsedFilingStore
+from filings_common.names import company_name
 from filings_common.outbox import enqueue
 from filings_common.search import SearchDocument, build_document, upsert_document, upsert_embedding
-from filings_summarizer.form4_template import company_name
 from filings_summarizer.form8k_prompt import FilingContext
 from filings_summarizer.summarizers import Summarizer
 

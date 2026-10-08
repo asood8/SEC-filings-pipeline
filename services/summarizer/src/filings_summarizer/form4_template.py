@@ -5,11 +5,11 @@ security), and each group becomes one plain-English sentence. Prices given only 
 unknown; the template never guesses.
 """
 
-import re
 from collections.abc import Sequence
 from dataclasses import dataclass, field
 from datetime import date
 
+from filings_common.names import company_name, display_name
 from filings_common.parsed import Form4, ReportingOwner, Transaction
 from filings_common.summaries import FilingSummary
 
@@ -18,37 +18,6 @@ PROVIDER = "template"
 MODEL = "form4-template"
 
 MAX_GROUP_SENTENCES = 4
-
-# Words that mark a reporting owner as an entity rather than a person.
-_ENTITY_WORDS = frozenset(
-    [
-        "INC",
-        "CORP",
-        "CORPORATION",
-        "CO",
-        "COMPANY",
-        "LLC",
-        "LP",
-        "LLP",
-        "LTD",
-        "PLC",
-        "TRUST",
-        "FUND",
-        "FUNDS",
-        "HOLDINGS",
-        "PARTNERS",
-        "GROUP",
-        "BANK",
-        "BANC",
-        "CAPITAL",
-        "MANAGEMENT",
-        "ADVISORS",
-        "FOUNDATION",
-        "N.A",
-    ]
-)
-_NAME_SUFFIXES = frozenset({"JR", "SR", "II", "III", "IV"})
-_SMALL_WORDS = frozenset({"of", "and", "the", "for", "&"})
 
 # Non-derivative transactions, by SEC transaction code. {qty} is e.g. "1,000 AMZN shares".
 _PHRASES = {
@@ -77,40 +46,6 @@ _DERIVATIVE_PHRASES = {
 _VALUED_AT_MARKET = frozenset({"F", "D", "J"})
 # Which group leads the headline: open-market trades first, then the most telling events.
 _HEADLINE_PRIORITY = ["P", "S", "M", "X", "C", "A", "G", "F", "D", "J"]
-
-
-def _title_case(text: str) -> str:
-    words = text.lower().split()
-    return " ".join(
-        word if i and word in _SMALL_WORDS else re.sub(r"[a-z]+", lambda m: m[0].capitalize(), word)
-        for i, word in enumerate(words)
-    )
-
-
-def display_name(name: str) -> str:
-    """SEC lists people as "LAST FIRST MIDDLE"; show "First Middle Last". Entities keep their name.
-
-    All-caps names are title-cased. A trailing state tag such as "/DE/" is dropped.
-    """
-    cleaned = _strip_state_tag(name)
-    tokens = cleaned.split()
-    if len(tokens) >= 2 and not any(t.upper().strip(".,") in _ENTITY_WORDS for t in tokens):
-        suffixes = [t for t in tokens[1:] if t.upper().rstrip(".") in _NAME_SUFFIXES]
-        given = [t for t in tokens[1:] if t not in suffixes]
-        tokens = [*given, tokens[0], *suffixes]
-    joined = " ".join(tokens)
-    return _title_case(joined) if joined.isupper() else joined
-
-
-def _strip_state_tag(name: str) -> str:
-    # EDGAR conformed names can end in a state or status tag: "BANK OF AMERICA CORP /DE/".
-    return re.sub(r"\s*/[A-Z]{2,3}/?\s*$", "", name.strip())
-
-
-def company_name(name: str) -> str:
-    """An issuer's name for display: without a state tag, and title-cased if all caps."""
-    cleaned = _strip_state_tag(name)
-    return _title_case(cleaned) if cleaned.isupper() else cleaned
 
 
 def _role(owner: ReportingOwner) -> str | None:

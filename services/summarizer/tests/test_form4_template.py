@@ -21,7 +21,7 @@ def test_open_market_sale() -> None:
         s.headline == "Douglas J Herrington sold 1,000 AMZN shares for $251.5K (avg $251.50/share)"
     )
     assert s.summary == (
-        "Douglas J Herrington (CEO Worldwide Amazon Stores) reported 1 transaction in Amazon Com"
+        "Douglas J Herrington (CEO Worldwide Amazon Stores) reported 1 transaction in Amazon.com"
         " Inc (AMZN) securities on Oct 1, 2026. Douglas J Herrington sold 1,000 AMZN shares for"
         " $251.5K (avg $251.50/share). The filing says the trades were made under a Rule 10b5-1"
         " trading plan. Afterwards, the reported holding was 474,681 AMZN shares directly."

@@ -10,8 +10,10 @@ all show names through these two functions, so a name reads the same everywhere:
 
 A name typed in mixed case keeps its spelling ("McLaughlin Edward Grunde" is "Edward Grunde
 McLaughlin"), and so does a mixed-case word in a name in capitals ("ELI LILLY & Co" is "Eli Lilly &
-Co"). `company_name` is idempotent: `company_name(company_name(x)) == company_name(x)`, so callers
-may pass EDGAR's name or one already shown.
+Co"). A few brands have their own spelling ("JPMORGAN CHASE & CO" is "JPMorgan Chase & Co"), and
+"COM" joins the word before it ("AMAZON COM INC" is "Amazon.com Inc"). `company_name` is
+idempotent: `company_name(company_name(x)) == company_name(x)`, so callers may pass EDGAR's name
+or one already shown.
 
 Reordering a person's name is a heuristic: EDGAR doesn't mark where a last name ends. A particle
 starts a longer one ("Di Sibio Carmine" is Carmine Di Sibio), but a two-word last name without one
@@ -93,6 +95,21 @@ _UPPER_WORDS = frozenset(
 )
 # A word of letters around an ampersand: "AT&T", "S&P", "H&R".
 _AMPERSAND_WORD = re.compile(r"[A-Z]+&[A-Z]+")
+# Words with a spelling of their own, which title-casing gets wrong ("JPMORGAN" is JPMorgan, not
+# Jpmorgan), keyed as EDGAR writes them in capitals: well-known brands among large US companies.
+_SPELLINGS = {
+    "ABBVIE": "AbbVie",
+    "BLACKROCK": "BlackRock",
+    "EXXONMOBIL": "ExxonMobil",
+    "FEDEX": "FedEx",
+    "JPMORGAN": "JPMorgan",
+    "MCDONALDS": "McDonald's",
+    "NVIDIA": "NVIDIA",
+    "PAYPAL": "PayPal",
+    "PEPSICO": "PepsiCo",
+    "SAP": "SAP",
+    "UNITEDHEALTH": "UnitedHealth",
+}
 
 
 def company_name(name: str) -> str:
@@ -142,12 +159,20 @@ def _key(token: str) -> str:
 
 
 def _title_case(words: Sequence[str]) -> str:
-    return " ".join(_title_word(word, first=i == 0) for i, word in enumerate(words))
+    shown: list[str] = []
+    for i, word in enumerate(words):
+        if i > 0 and word == "COM":  # EDGAR writes Amazon.com as "AMAZON COM INC"
+            shown[-1] += ".com"
+        else:
+            shown.append(_title_word(word, first=i == 0))
+    return " ".join(shown)
 
 
 def _title_word(word: str, *, first: bool) -> str:
     if word != word.upper():
         return word  # typed in mixed case: "Co" in "ELI LILLY & Co", "3i" in "3i GROUP PLC"
+    if (core := word.strip(".,")) in _SPELLINGS:
+        return word.replace(core, _SPELLINGS[core], 1)
     lower = word.lower()
     if not first and lower in _SMALL_WORDS:
         return lower

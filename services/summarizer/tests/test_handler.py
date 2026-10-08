@@ -180,7 +180,7 @@ def test_new_summaries_are_indexed_for_search(setup: tuple[Engine, ParsedFilingS
     SummaryHandler(session_factory(engine), store, SUMMARIZERS, FakeEmbedder())(parsed_event())
     [document], [embedding] = search_rows(engine)
     assert document.title.startswith("Douglas J Herrington sold")
-    assert (document.company, document.ticker) == ("Amazon Com Inc", "AMZN")
+    assert (document.company, document.ticker) == ("Amazon.com Inc", "AMZN")
     assert document.body.endswith("Form 4 insider trading report")
     assert "sell sale" in document.keywords.splitlines()  # the template says "sold"
     assert (embedding.accession_no, embedding.model) == (ACCESSION, "fake-embed")

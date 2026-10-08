@@ -30,6 +30,7 @@ from filings_common.db import (
     Summary,
 )
 from filings_common.edgar import archive_url
+from filings_common.names import company_name
 from filings_common.summaries import FilingSummary
 
 router = APIRouter(tags=["filings"])
@@ -114,7 +115,7 @@ def get_filing(
             Form4Details(
                 period_of_report=form4.period_of_report,
                 issuer_cik=form4.issuer_cik,
-                issuer_name=form4.issuer_name,
+                issuer_name=company_name(form4.issuer_name),
                 issuer_ticker=form4.issuer_ticker,
                 reporting_owners=reporting_owners_out(
                     form4.reporting_owners, form4.reporting_owner_ciks

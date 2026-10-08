@@ -11,7 +11,7 @@ from sqlalchemy.orm import Session, sessionmaker
 from filings_api.schemas import FilingOut, ReportingOwnerOut
 from filings_common.db import Company, Filing, FilingSearch
 from filings_common.embeddings import Embedder
-from filings_common.names import display_name
+from filings_common.names import company_name, display_name
 
 
 def get_session(request: Request) -> Iterator[Session]:
@@ -44,7 +44,7 @@ def to_filing_out(filing: Filing, ticker: str, name: str, headline: str | None) 
         accession_no=filing.accession_no,
         cik=filing.cik,
         ticker=ticker,
-        company_name=name,
+        company_name=company_name(name),
         form_type=filing.form_type,
         filed_at=filing.filed_at,
         accepted_at=filing.accepted_at,

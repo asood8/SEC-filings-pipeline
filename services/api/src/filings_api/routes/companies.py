@@ -23,6 +23,7 @@ from filings_api.schemas import (
     TradeTotals,
 )
 from filings_common.db import Company, Filing, Form4Filing, Form4Transaction
+from filings_common.names import company_name
 
 router = APIRouter(tags=["companies"])
 
@@ -39,7 +40,7 @@ def _company_out(company: Company) -> CompanyOut:
     return CompanyOut(
         cik=company.cik,
         ticker=company.ticker,
-        name=company.name,
+        name=company_name(company.name),
         exchange=company.exchange,
         on_watchlist=company.on_watchlist,
     )

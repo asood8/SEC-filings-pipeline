@@ -47,6 +47,7 @@ from filings_common.db import (
     Summary,
 )
 from filings_common.events import FilingReady, Topic
+from filings_common.names import company_name
 from filings_common.summaries import FilingSummary
 from filings_common.targets import target_is_valid
 from filings_notifier.channels import Alert, DeliveryError, PermanentDeliveryError, Sender
@@ -116,7 +117,7 @@ class NotificationHandler:
         content = FilingSummary.model_validate(summary.summary)
         alert = Alert(
             accession_no=filing.accession_no,
-            company_name=company.name,
+            company_name=company_name(company.name),
             ticker=company.ticker,
             form_type=filing.form_type,
             filed_at=filing.filed_at,

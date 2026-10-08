@@ -69,7 +69,7 @@ def test_display_name(name: str, shown: str) -> None:
         ("NIKE, Inc.", "NIKE, Inc."),
         ("NETFLIX INC", "Netflix Inc"),
         ("VISA INC.", "Visa Inc."),
-        ("MCDONALDS CORP", "McDonalds Corp"),
+        ("MCDONALDS CORP", "McDonald's Corp"),
         # Capitals except a short word, which keeps its spelling.
         ("ELI LILLY & Co", "Eli Lilly & Co"),
         ("3i GROUP PLC", "3i Group Plc"),
@@ -82,12 +82,19 @@ def test_display_name(name: str, shown: str) -> None:
         # So do Roman numerals and legal forms written in capitals.
         ("PIMCO MUNICIPAL INCOME FUND II", "Pimco Municipal Income Fund II"),
         ("ALLIANCE RESOURCE PARTNERS LP", "Alliance Resource Partners LP"),
-        ("SAP SE", "Sap SE"),
         ("AKZO NOBEL NV", "Akzo Nobel NV"),
         ("3M CO", "3M Co"),
         ("DICK'S SPORTING GOODS, INC.", "Dick's Sporting Goods, Inc."),
         ("MCI INC", "Mci Inc"),  # made up: not a Mc name
-        ("JPMORGAN CHASE & CO", "Jpmorgan Chase & Co"),  # a known limit: no dictionary
+        # Brands with their own spelling, and ".com".
+        ("JPMORGAN CHASE & CO", "JPMorgan Chase & Co"),
+        ("PEPSICO INC", "PepsiCo Inc"),
+        ("UNITEDHEALTH GROUP INC", "UnitedHealth Group Inc"),
+        ("NVIDIA CORP", "NVIDIA Corp"),
+        ("AMAZON COM INC", "Amazon.com Inc"),
+        ("SAP SE", "SAP SE"),
+        ("BOOKING COM", "Booking.com"),
+        ("COM DEV INTERNATIONAL", "Com Dev International"),  # made up: a first word stays one
     ],
 )
 def test_company_name(name: str, shown: str) -> None:

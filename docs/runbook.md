@@ -111,9 +111,12 @@ kubectl -n filings exec redpanda-0 -- rpk group describe <group>   # LAG per par
 - **parser, notifier:** repeated retries in the log point at a dependency: MongoDB Atlas for the
   parser (see the IP note under [Oracle](#oracle-idle-reclamation-and-capacity-errors)), webhook
   or SMTP errors for the notifier.
-- **A stuck consumer:** the consumers have no liveness probe (ADR-0017), so a hung process isn't
-  restarted. Restarting is always safe, because redelivered messages are handled idempotently:
+- **A stuck consumer:** the relay and the consumers keep a heartbeat, and their liveness probe
+  (`filings-healthcheck <process>`) restarts one whose loop stops beating (ADR-0017). A process
+  that is alive but making no progress can still be restarted by hand, which is always safe
+  because redelivered messages are handled idempotently:
   `kubectl -n filings rollout restart deployment/<name>`.
+  To see what the probe sees: `kubectl -n filings exec deploy/<name> -- filings-healthcheck <process>`.
 
 ## Alert: Pipeline service not reporting
 
@@ -133,8 +136,8 @@ Critical, fires at once. A long-running service (`filings-outbox-relay`, `-parse
 
   - `OOMKilled`: it outgrew its memory limit. The limits add up to the 9 GiB budget
     (ADR-0017, enforced by `tests/test_k8s_manifests.py`), so raising one means lowering another.
-  - `ImagePullBackOff`: the tag in `deploy/k8s/overlays/production/kustomization.yaml` doesn't
-    exist in GHCR, or the GHCR package isn't public.
+  - `ImagePullBackOff`: the tag in `deploy/k8s/overlays/production/images/kustomization.yaml`
+    (as deployed) doesn't exist in GHCR, or the GHCR package isn't public.
   - `CrashLoopBackOff` right after start: usually a missing Secret or setting; the log says which.
 - **Stopped on purpose:** it fires for up to a day. Silence it.
 
@@ -334,7 +337,8 @@ unset NEW_PASSWORD
 
 ## Dependency audit fails
 
-CI's "Dependency audit" job (`make audit`) checks every package version in `uv.lock` with
+The "Dependency audit" workflow (`.github/workflows/audit.yml`, on every push, pull request,
+and weekly; locally `make audit`) checks every package version in `uv.lock` with
 pip-audit (PyPI's advisory data) and the website's runtime packages with `npm audit` (high and
 critical only). A new advisory fails it even when nothing in the repository changed.
 

@@ -86,14 +86,28 @@ class Heartbeat:
         self._deadline = deadline
 
 
-def check(path: Path, *, now: float | None = None) -> str | None:
+def container_started_at() -> float:
+    """When this container's first process started. /tmp is an emptyDir that outlives a container
+    restart, so a heartbeat older than this was left by the previous container."""
+    try:
+        return Path("/proc/1").stat().st_mtime
+    except OSError:
+        return 0.0
+
+
+def check(path: Path, *, now: float | None = None, started_at: float | None = None) -> str | None:
     """Why the process that keeps `path` is not live, or None if it is."""
     try:
+        written_at = path.stat().st_mtime
         deadline = float(path.read_text())
     except FileNotFoundError:
         return f"no heartbeat yet ({path})"
     except (OSError, ValueError) as exc:
         return f"unreadable heartbeat {path}: {exc}"
+    # Until the new process removes it, a previous container's file could pass the startup
+    # probe with its old, far-off deadline.
+    if written_at < (container_started_at() if started_at is None else started_at):
+        return f"no heartbeat yet from this container ({path} is older)"
     now = time.time() if now is None else now
     if now > deadline:
         return f"heartbeat overdue by {now - deadline:.0f}s ({path})"

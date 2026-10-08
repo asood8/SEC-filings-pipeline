@@ -53,5 +53,5 @@ def test_sigterm_stops_a_run_but_still_exports_its_telemetry(
     assert exited.value.code == 128 + signal.SIGTERM
     assert time.monotonic() - start < 2
     assert telemetry.shut_down  # the spans buffered so far were exported...
-    # ...and a second SIGTERM couldn't have interrupted that (as PID 1, SIG_DFL ignores it).
-    assert telemetry.sigterm_handler_while_exporting == signal.SIG_DFL
+    # ...and a second SIGTERM couldn't have interrupted that (it is ignored, PID 1 or not).
+    assert telemetry.sigterm_handler_while_exporting == signal.SIG_IGN

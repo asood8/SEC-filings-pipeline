@@ -1,6 +1,7 @@
 import subprocess
 import sys
 import tempfile
+import time
 from pathlib import Path
 
 import pytest
@@ -128,3 +129,14 @@ def test_the_probe_command_is_installed_and_starts_light(tmp_path: Path) -> None
     ).stdout.split()
     heavy = {"sqlalchemy", "confluent_kafka", "opentelemetry", "pydantic"}
     assert [m for m in modules if m.split(".")[0] in heavy] == []
+
+
+def test_a_heartbeat_from_before_this_container_started_is_not_live(tmp_path: Path) -> None:
+    """The emptyDir outlives a restart; the old file must not pass the new startup probe."""
+    path = tmp_path / "summarizer.heartbeat"
+    path.write_text(f"{time.time() + 900:.3f}\n")  # an old, far-off deadline
+    written = path.stat().st_mtime
+    assert health.check(path, started_at=written + 1) == (
+        f"no heartbeat yet from this container ({path} is older)"
+    )
+    assert health.check(path, started_at=written - 1) is None

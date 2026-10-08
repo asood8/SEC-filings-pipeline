@@ -48,7 +48,7 @@ def main(argv: list[str] | None = None) -> int:
         signal.signal(signal.SIGTERM, exit_on_sigterm)
         return _run(args.command)
     finally:
-        signal.signal(signal.SIGTERM, signal.SIG_DFL)  # a late SIGTERM can't cut the export short
+        signal.signal(signal.SIGTERM, signal.SIG_IGN)  # a late SIGTERM can't cut the export short
         telemetry.shutdown()  # a job exits right after: export its spans first
 
 

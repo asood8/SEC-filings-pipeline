@@ -192,6 +192,9 @@ def test_real_form_4_key_fields_land_in_postgres(
         date(2026, 10, 1),
     )
     assert row.reporting_owners == ["Herrington Douglas J"]
+    assert row.reporting_owner_relationships is not None
+    [role] = row.reporting_owner_relationships
+    assert (role["is_officer"], role["officer_title"]) == (True, "CEO Worldwide Amazon Stores")
     assert (row.transaction_codes, row.is_10b5_1) == (["S"], True)
     stored = ParsedFilingStore(mongo_db).get("0001936006-26-000026")
     assert stored is not None

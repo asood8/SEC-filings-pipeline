@@ -22,8 +22,9 @@ On a live run against EDGAR, for a watchlist of 35 large US companies:
   across workers through Redis. Running it again creates no duplicates.
 - **Parsing** turned every Form 4 into structured transactions and split every 8-K into its
   numbered items, plus the text of its EX-99 press releases.
-- **Insider trades** are queryable line by line (646 transactions in 256 Form 4s). A filing's page
-  lists its trades, and a company's page totals 90 days of insider buying and selling by owner:
+- **Insider trades** are queryable line by line (646 transactions in 256 Form 4s), and each
+  insider is shown with their role ("Amy Hood (EVP, CFO)"). A filing's page lists its trades,
+  and a company's page totals 90 days of insider buying and selling by owner:
   Berkshire Hathaway and Warren Buffett bought 7.5 million Lennar shares for $595 million in four
   filings. The Insider trades page ranks the largest open-market purchases and sales across all
   companies: over 90 days, the largest sale was NVIDIA director Mark A Stevens's 1.37 million
@@ -191,9 +192,12 @@ JavaScript origins; no secret needed) in `.env` as `GOOGLE_CLIENT_ID`. Open the 
 The API: `GET /search?q=...` (hybrid by default; `mode=keyword|semantic`), `GET /filings`,
 `GET /filings/{accession_no}` (with a Form 4's transaction lines), `GET /companies`,
 `GET /companies/{ticker}`, `GET /companies/{ticker}/insider-activity?days=90` (insiders'
-purchases and sales per owner, grouped by owner CIK; owners come with the name as filed and a
-readable one, "COOK TIMOTHY D" as "Timothy D Cook"), and `GET /insider-trades?side=buy&days=30`
-(the largest purchases or sales across companies, one row per Form 4). Lists use cursor
+purchases and sales per owner, grouped by owner CIK), and `GET /insider-trades?side=buy&days=30`
+(the largest purchases or sales across companies, one row per Form 4). A Form 4's reporting
+owners come with the name as filed and a readable one ("COOK TIMOTHY D" as "Timothy D Cook"),
+and with who they are to the company: a short `relationship` ("Executive Chair, Director",
+"EVP, CFO", "10% owner") and the filing's boxes and titles as filed (`is_director`,
+`is_officer`, `officer_title`, `is_ten_percent_owner`, `is_other`, `other_text`). Lists use cursor
 pagination, and responses are cached briefly and rate-limited per client through Redis. Signed
 in: `POST /auth/google`, `POST /auth/logout`, `GET`/`DELETE /me`, and alert subscriptions at
 `/subscriptions` (`POST /subscriptions/batch` adds several companies and destinations at once).

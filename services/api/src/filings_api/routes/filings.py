@@ -118,7 +118,9 @@ def get_filing(
                 issuer_name=company_name(form4.issuer_name),
                 issuer_ticker=form4.issuer_ticker,
                 reporting_owners=reporting_owners_out(
-                    form4.reporting_owners, form4.reporting_owner_ciks
+                    form4.reporting_owners,
+                    form4.reporting_owner_ciks,
+                    form4.reporting_owner_relationships,
                 ),
                 transaction_codes=form4.transaction_codes,
                 is_10b5_1=form4.is_10b5_1,

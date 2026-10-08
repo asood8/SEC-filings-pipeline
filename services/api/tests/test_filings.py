@@ -68,7 +68,18 @@ def test_form_4_detail(client: TestClient, ids: Any) -> None:
         "issuer_name": "Apple Inc.",
         "issuer_ticker": "AAPL",
         "reporting_owners": [
-            {"cik": 1214156, "name": "COOK TIMOTHY D", "display_name": "Timothy D Cook"}
+            {
+                "cik": 1214156,
+                "name": "COOK TIMOTHY D",
+                "display_name": "Timothy D Cook",
+                "relationship": "Executive Chair, Director",
+                "is_director": True,
+                "is_officer": True,
+                "officer_title": "Executive Chair",
+                "is_ten_percent_owner": False,
+                "is_other": False,
+                "other_text": None,
+            }
         ],
         "transaction_codes": ["S"],
         "is_10b5_1": True,
@@ -94,13 +105,42 @@ def test_form_4_detail(client: TestClient, ids: Any) -> None:
     assert (detail["items"], detail["exhibits"]) == (None, [])
 
 
+UNKNOWN_RELATIONSHIP = dict.fromkeys(
+    [
+        "relationship",
+        "is_director",
+        "is_officer",
+        "officer_title",
+        "is_ten_percent_owner",
+        "is_other",
+        "other_text",
+    ]
+)
+
+
+def test_form_4_saved_before_owner_relationships_were_stored(
+    client: TestClient, ids: Any, seeded: Engine
+) -> None:
+    with session_factory(seeded).begin() as session:
+        session.get_one(Form4Filing, ids.form4).reporting_owner_relationships = None
+    owners = client.get(f"/filings/{ids.form4}").json()["form4"]["reporting_owners"]
+    assert owners == [
+        {"cik": 1214156, "name": "COOK TIMOTHY D", "display_name": "Timothy D Cook"}
+        | UNKNOWN_RELATIONSHIP
+    ]
+
+
 def test_form_4_saved_before_owner_ciks_were_stored(
     client: TestClient, ids: Any, seeded: Engine
 ) -> None:
     with session_factory(seeded).begin() as session:
-        session.get_one(Form4Filing, ids.form4).reporting_owner_ciks = None
+        form4 = session.get_one(Form4Filing, ids.form4)
+        form4.reporting_owner_ciks = form4.reporting_owner_relationships = None
     owners = client.get(f"/filings/{ids.form4}").json()["form4"]["reporting_owners"]
-    assert owners == [{"cik": None, "name": "COOK TIMOTHY D", "display_name": "Timothy D Cook"}]
+    assert owners == [
+        {"cik": None, "name": "COOK TIMOTHY D", "display_name": "Timothy D Cook"}
+        | UNKNOWN_RELATIONSHIP
+    ]
 
 
 def test_8k_detail_has_items_exhibits_and_grounding_flags(client: TestClient, ids: Any) -> None:

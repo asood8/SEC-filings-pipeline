@@ -1,0 +1,6 @@
+/* Who an owner is to the company, after their name: quieter than the name, even where the name
+ * is bold (a table row's title on phones). */
+.relationship {
+  color: var(--muted);
+  font-weight: normal;
+}

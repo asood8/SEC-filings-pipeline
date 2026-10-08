@@ -55,6 +55,7 @@ def list_insider_trades(
             Company.ticker,
             form.reporting_owners,
             form.reporting_owner_ciks,
+            form.reporting_owner_relationships,
             form.is_10b5_1,
             sa.func.coalesce(sa.func.sum(line.shares), 0.0).label("shares"),
             value.label("value"),
@@ -102,7 +103,9 @@ def list_insider_trades(
                     cik=row.issuer_cik, name=company_name(row.issuer_name), ticker=row.ticker
                 ),
                 reporting_owners=reporting_owners_out(
-                    row.reporting_owners, row.reporting_owner_ciks
+                    row.reporting_owners,
+                    row.reporting_owner_ciks,
+                    row.reporting_owner_relationships,
                 ),
                 side=side,
                 # Rounded like the activity totals: float sums pick up noise.

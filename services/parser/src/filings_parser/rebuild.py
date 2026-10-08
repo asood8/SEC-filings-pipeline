@@ -1,8 +1,8 @@
 """Rebuild Postgres key fields from stored payloads: `filings-rebuild-key-fields`.
 
 Run it after changing what a parser writes to Postgres, so filings parsed before get the change
-too: for example `filings-rebuild-key-fields --form-type 4` after `form4_transactions` or
-`form4_filings.reporting_owner_ciks` was added.
+too: for example `filings-rebuild-key-fields --form-type 4` after `form4_transactions`,
+`form4_filings.reporting_owner_ciks`, or `form4_filings.reporting_owner_relationships` was added.
 It reads the parsed payloads from MongoDB, so it fetches nothing (from SEC or object storage),
 reparses nothing, and publishes no events. Filing statuses are left alone.
 

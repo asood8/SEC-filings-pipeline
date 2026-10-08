@@ -62,7 +62,7 @@ describe('InsiderTradesPage', () => {
     const [, lennar, fund] = within(table).getAllByRole('row')
     expect(cells(lennar)).toEqual([
       'LEN Lennar Corp',
-      'Berkshire Hathaway Inc; Warren E Buffett',
+      'Berkshire Hathaway Inc (10% owner); Warren E Buffett (10% owner)',
       '$212,395,151 2,743,529 shares',
       '$77.42',
       'Sep 19, 2026',
@@ -78,7 +78,7 @@ describe('InsiderTradesPage', () => {
     ).toHaveAttribute('href', '/filings/0001193125-26-397059')
     expect(cells(fund)).toEqual([
       'Example Municipal Fund',
-      'Timothy D Cook',
+      'Timothy D Cook (Executive Chair, Director)',
       '—* 1,000 shares',
       '—',
       'Oct 2, 2026',

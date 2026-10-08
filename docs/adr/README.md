@@ -4,6 +4,9 @@ An ADR is a short document that records one significant decision: its context, w
 the alternatives, and the consequences. Accepted ADRs are not rewritten. When a decision changes,
 a new ADR supersedes the old one, and the old one's status is updated to point at it.
 
+How to operate the production system these decisions describe (alerts, dead letters, deploys,
+secrets, backups, capacity) is in the [runbook](../runbook.md).
+
 To add one, copy [`0000-template.md`](0000-template.md) to the next number, fill it in, and add a
 row below.
 

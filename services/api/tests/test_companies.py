@@ -45,6 +45,21 @@ def test_unknown_company(client: TestClient) -> None:
 MSFT, AAPL = 789019, 320193
 TODAY = datetime.now(UTC).date()
 
+# Reporting owners: (CIK, name as filed, display name). Berkshire Hathaway's and Warren Buffett's
+# are real, from the joint Form 4 fixture 0001193125-26-397059; Nadella's CIK is made up.
+Owner = tuple[int, str, str]
+NADELLA: Owner = (1000001, "NADELLA SATYA", "Satya Nadella")
+BERKSHIRE: Owner = (1067983, "BERKSHIRE HATHAWAY INC", "Berkshire Hathaway Inc")
+BUFFETT: Owner = (315090, "BUFFETT WARREN E", "Warren E Buffett")
+
+
+def shown(*owners: Owner, ciks: bool = True) -> list[dict[str, Any]]:
+    """Owners as the API returns them."""
+    return [
+        {"cik": cik if ciks else None, "name": name, "display_name": display}
+        for cik, name, display in owners
+    ]
+
 
 def trade(
     line: int, code: str, shares: float, price: float | None, days_ago: int, **extra: Any
@@ -69,8 +84,9 @@ def add_form4(
     *,
     found_under: int,
     issuer: int,
-    owners: list[str],
+    owners: list[Owner],
     trades: list[dict[str, Any]],
+    ciks: bool = True,  # False: saved before owner CIKs were stored
 ) -> None:
     session.add(
         Filing(
@@ -90,7 +106,8 @@ def add_form4(
             issuer_cik=issuer,
             issuer_name="MICROSOFT CORP" if issuer == MSFT else "Apple Inc.",
             issuer_ticker="MSFT" if issuer == MSFT else "AAPL",
-            reporting_owners=owners,
+            reporting_owners=[name for _, name, _ in owners],
+            reporting_owner_ciks=[cik for cik, _, _ in owners] if ciks else None,
             transaction_codes=sorted({t["code"] for t in trades}),
             is_10b5_1=None,
         )
@@ -107,7 +124,7 @@ def insider_trades(seeded: Engine) -> None:
             "0000789019-26-000101",
             found_under=MSFT,
             issuer=MSFT,
-            owners=["NADELLA SATYA"],
+            owners=[NADELLA],
             trades=[
                 trade(1, "S", 1000, 500.0, days_ago=10),
                 trade(2, "S", 500.5, None, days_ago=9),  # price only in a footnote
@@ -120,7 +137,7 @@ def insider_trades(seeded: Engine) -> None:
             "0000789019-26-000102",
             found_under=MSFT,
             issuer=MSFT,
-            owners=["NADELLA SATYA"],
+            owners=[NADELLA],
             trades=[trade(1, "S", 100, 510.0, days_ago=3), trade(2, "P", 10, 490.0, days_ago=200)],
         )
         # Found under Apple, but Microsoft stock: counts for Microsoft. Joint filers, one row.
@@ -129,7 +146,7 @@ def insider_trades(seeded: Engine) -> None:
             "0000320193-26-000103",
             found_under=AAPL,
             issuer=MSFT,
-            owners=["BERKSHIRE HATHAWAY INC", "BUFFETT WARREN E"],
+            owners=[BERKSHIRE, BUFFETT],
             trades=[trade(1, "P", 200, 480.25, days_ago=5), trade(2, "P", 100, 481.0, days_ago=5)],
         )
         # Found under Microsoft, but Apple stock: doesn't count for Microsoft.
@@ -138,7 +155,7 @@ def insider_trades(seeded: Engine) -> None:
             "0000789019-26-000104",
             found_under=MSFT,
             issuer=AAPL,
-            owners=["NADELLA SATYA"],
+            owners=[NADELLA],
             trades=[trade(1, "P", 5, 250.0, days_ago=4)],
         )
 
@@ -152,14 +169,14 @@ def test_insider_activity_totals_purchases_and_sales_per_owner(client: TestClien
     assert activity["since"] == (datetime.now(UTC).date() - timedelta(days=90)).isoformat()
     nothing = {"shares": 0.0, "value": 0.0, "unpriced_shares": 0.0}
     nadella = {
-        "reporting_owners": ["NADELLA SATYA"],
+        "reporting_owners": shown(NADELLA),
         "bought": nothing,  # the purchase 200 days ago is outside the window
         "sold": {"shares": 1600.5, "value": 551_000.0, "unpriced_shares": 500.5},
         "filings": 2,
         "latest_date": (TODAY - timedelta(days=3)).isoformat(),
     }
     berkshire = {
-        "reporting_owners": ["BERKSHIRE HATHAWAY INC", "BUFFETT WARREN E"],
+        "reporting_owners": shown(BERKSHIRE, BUFFETT),
         "bought": {"shares": 300.0, "value": 144_150.0, "unpriced_shares": 0.0},
         "sold": nothing,
         "filings": 1,
@@ -180,8 +197,8 @@ def test_insider_activity_window(client: TestClient) -> None:
     week = client.get("/companies/MSFT/insider-activity", params={"days": 7}).json()
     # Only Nadella's latest sale is this recent, so Berkshire's purchases now lead.
     assert [o["reporting_owners"] for o in week["owners"]] == [
-        ["BERKSHIRE HATHAWAY INC", "BUFFETT WARREN E"],
-        ["NADELLA SATYA"],
+        shown(BERKSHIRE, BUFFETT),
+        shown(NADELLA),
     ]
     assert week["sold"] == {"shares": 100.0, "value": 51_000.0, "unpriced_shares": 0.0}
 
@@ -191,8 +208,48 @@ def test_insider_activity_counts_the_issuers_stock_only(client: TestClient) -> N
     # The seeded Apple Form 4 is from 2026-09-29, before any 7-day window the tests run in.
     apple = client.get("/companies/AAPL/insider-activity", params={"days": 7}).json()
     [nadella] = apple["owners"]  # Apple stock, though the Form 4 was found under Microsoft
-    assert nadella["reporting_owners"] == ["NADELLA SATYA"]
+    assert nadella["reporting_owners"] == shown(NADELLA)
     assert nadella["bought"] == {"shares": 5.0, "value": 1250.0, "unpriced_shares": 0.0}
+
+
+def test_insider_activity_groups_filings_by_who_filed_them(
+    seeded: Engine, client: TestClient
+) -> None:
+    buffett_alone: Owner = (BUFFETT[0], "Buffett Warren E", "Warren E Buffett")
+    with session_factory(seeded).begin() as session:
+
+        def add(number: int, owners: list[Owner], line: dict[str, Any], ciks: bool = True) -> None:
+            add_form4(
+                session,
+                f"0000789019-26-000{number}",
+                found_under=MSFT,
+                issuer=MSFT,
+                owners=owners,
+                trades=[line],
+                ciks=ciks,
+            )
+
+        add(201, [BERKSHIRE, BUFFETT], trade(1, "P", 100, 480.0, days_ago=6))
+        # The same owners listed the other way round: one row, named as on the latest filing.
+        add(202, [BUFFETT, BERKSHIRE], trade(1, "P", 50, 482.0, days_ago=2))
+        # Buffett alone, his name typed another way: a row of his own, with the same CIK.
+        add(203, [buffett_alone], trade(1, "P", 20, 485.0, days_ago=4))
+        # Saved before owner CIKs were stored: grouped by name.
+        add(204, [NADELLA], trade(1, "S", 5, 500.0, days_ago=3), ciks=False)
+        add(205, [NADELLA], trade(1, "S", 5, 500.0, days_ago=1), ciks=False)
+
+    activity = client.get("/companies/MSFT/insider-activity").json()
+    rows = [
+        (o["reporting_owners"], o["filings"], o["bought"]["value"], o["sold"]["value"])
+        for o in activity["owners"]
+    ]
+    assert rows == [
+        (shown(BUFFETT, BERKSHIRE), 2, 72_100.0, 0.0),
+        (shown(buffett_alone), 1, 9700.0, 0.0),
+        (shown(NADELLA, ciks=False), 2, 0.0, 5000.0),
+    ]
+    # Joint filings count once, in the totals as in their row.
+    assert (activity["bought"]["shares"], activity["filings"]) == (170.0, 5)
 
 
 def test_insider_activity_with_no_trades_and_bad_requests(client: TestClient) -> None:

@@ -296,7 +296,7 @@ def corpus(clean_db: Engine) -> Engine:
     rebuild_index(sessions, None)
     with sessions.begin() as session:
         for axis, (accession_no, *_) in enumerate(CORPUS):
-            upsert_embedding(session, accession_no, "stub", vector(*[0.0] * axis, 1.0))
+            upsert_embedding(session, accession_no, "stub", vector(*[0.0] * axis, 1.0), text="")
     return clean_db
 
 

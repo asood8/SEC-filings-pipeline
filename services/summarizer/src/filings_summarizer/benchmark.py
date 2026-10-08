@@ -37,6 +37,7 @@ from filings_common.config import (
 )
 from filings_common.db import Company, Filing, create_engine, session_factory
 from filings_common.mongo import ParsedFilingStore
+from filings_common.names import company_name
 from filings_common.parsed import Form8K
 from filings_common.ratelimit import RedisTokenBucket
 from filings_common.summaries import FilingSummary
@@ -202,7 +203,7 @@ def load_cases(limit: int | None) -> list[Case]:
                 FilingContext(
                     accession_no=filing.accession_no,
                     form_type=filing.form_type,
-                    company_name=company.name,
+                    company_name=company_name(company.name),  # as the summarizer has it
                     ticker=company.ticker,
                     filed_at=filing.filed_at,
                 ),

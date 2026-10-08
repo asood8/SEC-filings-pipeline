@@ -3,6 +3,7 @@ import type { TradeTotals } from '../api/client'
 import { insiderActivityQuery } from '../api/queries'
 import { formatDate, formatMoney, formatShares } from '../lib/format'
 import styles from './DataTable.module.css'
+import { OwnerNames } from './OwnerNames'
 import { ErrorMessage, Loading } from './QueryStatus'
 
 const DAYS = 90
@@ -53,8 +54,14 @@ export function InsiderActivity({ ticker }: { ticker: string }) {
               </thead>
               <tbody>
                 {query.data.owners.map((owner) => (
-                  <tr key={owner.reporting_owners.join('|')}>
-                    <td>{owner.reporting_owners.join('; ')}</td>
+                  <tr
+                    key={owner.reporting_owners
+                      .map((o) => o.cik ?? o.name)
+                      .join('|')}
+                  >
+                    <td>
+                      <OwnerNames owners={owner.reporting_owners} />
+                    </td>
                     <td data-label="Bought" className={styles.number}>
                       <Trades totals={owner.bought} />
                     </td>

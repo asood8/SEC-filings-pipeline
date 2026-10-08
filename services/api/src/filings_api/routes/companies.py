@@ -7,7 +7,13 @@ from fastapi import APIRouter, HTTPException, Query
 from sqlalchemy.engine import RowMapping
 
 from filings_api.pagination import decode_cursor, encode_cursor
-from filings_api.queries import SessionDep, company_by_ticker, filing_select, to_filing_out
+from filings_api.queries import (
+    SessionDep,
+    company_by_ticker,
+    filing_select,
+    reporting_owners_out,
+    to_filing_out,
+)
 from filings_api.schemas import (
     CompanyDetail,
     CompanyOut,
@@ -118,8 +124,9 @@ def get_insider_activity(
     days: Annotated[int, Query(ge=1, le=MAX_INSIDER_DAYS)] = 90,
 ) -> InsiderActivity:
     """Open-market or private purchases (Form 4 code P) and sales (S) of the company's stock in
-    the last `days` days, by transaction date, per reporting owner. Grants, option exercises, tax
-    withholding, gifts, and derivative trades are left out.
+    the last `days` days, by transaction date, per reporting owner: filings by the same owners
+    (by CIK) share a row, and joint filers share one. Grants, option exercises, tax withholding,
+    gifts, and derivative trades are left out.
 
     Form 4s found under another company count too: what matters is whose stock was traded.
     """
@@ -129,12 +136,15 @@ def get_insider_activity(
     since = datetime.now(UTC).date() - timedelta(days=days)
     line, form = Form4Transaction, Form4Filing
     traded_on = sa.func.coalesce(line.transaction_date, form.period_of_report)
-    rows = (
+    # One row per filing; filings are then grouped by their owners. A filing's lines count once
+    # however many owners filed it jointly.
+    filings = (
         session.execute(
             sa.select(
+                form.accession_no,
                 form.reporting_owners,
+                form.reporting_owner_ciks,
                 *(c for side, code in INSIDER_TRADE_CODES.items() for c in _trade_sums(side, code)),
-                sa.func.count(sa.distinct(line.accession_no)).label("filings"),
                 sa.func.max(traded_on).label("latest_date"),
             )
             .join(form, form.accession_no == line.accession_no)
@@ -144,35 +154,51 @@ def get_insider_activity(
                 line.is_derivative.is_(False),
                 traded_on >= since,
             )
-            # Joint filers form one group, so shares they report together count once.
-            .group_by(form.reporting_owners)
+            .group_by(form.accession_no)
         )
         .mappings()
         .all()
     )
+    groups: dict[tuple[object, ...], list[RowMapping]] = {}
+    for filing in filings:
+        groups.setdefault(_owners_key(filing), []).append(filing)
     owners = sorted(
-        (
-            OwnerActivity(
-                reporting_owners=row["reporting_owners"],
-                bought=_totals([row], "bought"),
-                sold=_totals([row], "sold"),
-                filings=row["filings"],
-                latest_date=row["latest_date"],
-            )
-            for row in rows
-        ),
+        (_owner_activity(group) for group in groups.values()),
         key=lambda o: (
             -(o.bought.value + o.sold.value),
             -o.latest_date.toordinal(),
-            o.reporting_owners,
+            [owner.name for owner in o.reporting_owners],
         ),
     )
     return InsiderActivity(
         ticker=company.ticker,
         days=days,
         since=since,
-        bought=_totals(rows, "bought"),
-        sold=_totals(rows, "sold"),
-        filings=sum(row["filings"] for row in rows),  # each filing has one group of owners
+        bought=_totals(filings, "bought"),
+        sold=_totals(filings, "sold"),
+        filings=len(filings),
         owners=owners[:MAX_INSIDER_OWNERS],
+    )
+
+
+def _owners_key(filing: RowMapping) -> tuple[object, ...]:
+    """Who filed, whatever the order or spelling of their names: the set of owner CIKs. Rows
+    saved before CIKs were stored fall back to the set of names."""
+    ciks: list[int] | None = filing["reporting_owner_ciks"]
+    if ciks is not None:
+        return ("cik", *sorted(set(ciks)))
+    return ("name", *sorted(set(filing["reporting_owners"])))
+
+
+def _owner_activity(filings: Sequence[RowMapping]) -> OwnerActivity:
+    """One set of owners' totals, named as on their latest filing."""
+    latest = max(filings, key=lambda f: (f["latest_date"], f["accession_no"]))
+    return OwnerActivity(
+        reporting_owners=reporting_owners_out(
+            latest["reporting_owners"], latest["reporting_owner_ciks"]
+        ),
+        bought=_totals(filings, "bought"),
+        sold=_totals(filings, "sold"),
+        filings=len(filings),
+        latest_date=latest["latest_date"],
     )

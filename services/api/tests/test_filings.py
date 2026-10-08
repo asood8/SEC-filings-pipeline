@@ -2,6 +2,9 @@ from typing import Any
 
 import pytest
 from fastapi.testclient import TestClient
+from sqlalchemy.engine import Engine
+
+from filings_common.db import Form4Filing, session_factory
 
 pytestmark = pytest.mark.integration
 
@@ -64,7 +67,9 @@ def test_form_4_detail(client: TestClient, ids: Any) -> None:
         "issuer_cik": 320193,
         "issuer_name": "Apple Inc.",
         "issuer_ticker": "AAPL",
-        "reporting_owners": ["COOK TIMOTHY D"],
+        "reporting_owners": [
+            {"cik": 1214156, "name": "COOK TIMOTHY D", "display_name": "Timothy D Cook"}
+        ],
         "transaction_codes": ["S"],
         "is_10b5_1": True,
         "transactions": [  # by line
@@ -87,6 +92,15 @@ def test_form_4_detail(client: TestClient, ids: Any) -> None:
         ],
     }
     assert (detail["items"], detail["exhibits"]) == (None, [])
+
+
+def test_form_4_saved_before_owner_ciks_were_stored(
+    client: TestClient, ids: Any, seeded: Engine
+) -> None:
+    with session_factory(seeded).begin() as session:
+        session.get_one(Form4Filing, ids.form4).reporting_owner_ciks = None
+    owners = client.get(f"/filings/{ids.form4}").json()["form4"]["reporting_owners"]
+    assert owners == [{"cik": None, "name": "COOK TIMOTHY D", "display_name": "Timothy D Cook"}]
 
 
 def test_8k_detail_has_items_exhibits_and_grounding_flags(client: TestClient, ids: Any) -> None:

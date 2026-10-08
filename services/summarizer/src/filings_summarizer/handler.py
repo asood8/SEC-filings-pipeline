@@ -134,7 +134,13 @@ class SummaryHandler:
             # The newest summary is the current one, so it becomes the search document.
             upsert_document(session, event.accession_no, summary_id, search_document)
             if vector is not None and self._embedder is not None:
-                upsert_embedding(session, event.accession_no, self._embedder.model, vector)
+                upsert_embedding(
+                    session,
+                    event.accession_no,
+                    self._embedder.model,
+                    vector,
+                    text=search_document.text(),
+                )
             moved = session.execute(
                 sa.update(Filing)
                 .where(
@@ -163,7 +169,9 @@ class SummaryHandler:
     def _embed(self, document: SearchDocument, accession_no: str) -> list[float] | None:
         """The document's embedding, or None if embeddings are off or the embedder fails.
 
-        Never fatal: the filing stays keyword-searchable, and `filings-index` embeds it later.
+        Never fatal: the filing stays keyword-searchable, and `filings-index` embeds it later. A
+        vector of an earlier summary, if any, stays until then: its stored hash no longer matches
+        the document's text, so `filings-index` replaces it.
         """
         if self._embedder is None:
             return None

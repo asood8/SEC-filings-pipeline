@@ -23,6 +23,7 @@ from filings_common.db import (
 from filings_common.embeddings import EmbeddingError
 from filings_common.events import FilingParsed, FilingReady, Topic
 from filings_common.mongo import ParsedFilingStore
+from filings_common.search import SearchDocument, rebuild_index, text_sha256
 from filings_common.summaries import FilingSummary
 from filings_parser.form4 import parse
 from filings_summarizer.form8k_prompt import FilingContext
@@ -183,6 +184,23 @@ def test_new_summaries_are_indexed_for_search(setup: tuple[Engine, ParsedFilingS
     assert document.body.endswith("Form 4 insider trading report")
     assert "sell sale" in document.keywords.splitlines()  # the template says "sold"
     assert (embedding.accession_no, embedding.model) == (ACCESSION, "fake-embed")
+    text = SearchDocument(document.title, document.company, document.body, document.ticker).text()
+    assert embedding.text_sha256 == text_sha256(text)
+
+
+def test_the_summarizer_and_filings_index_write_the_same_document(
+    setup: tuple[Engine, ParsedFilingStore],
+) -> None:
+    engine, store = setup
+    sessions = session_factory(engine)
+    SummaryHandler(sessions, store, SUMMARIZERS, FakeEmbedder())(parsed_event())
+    [written], _ = search_rows(engine)
+
+    # The company's name is "AMAZON COM INC" in the companies table, which filings-index reads.
+    assert rebuild_index(sessions, FakeEmbedder()) == (1, 0)  # same text: nothing re-embedded
+    [rebuilt], _ = search_rows(engine)
+    fields = ("title", "company", "ticker", "body", "keywords")
+    assert [getattr(rebuilt, f) for f in fields] == [getattr(written, f) for f in fields]
 
 
 def test_embedding_failure_does_not_block_the_summary(

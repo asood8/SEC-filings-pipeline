@@ -287,6 +287,10 @@ class FilingEmbedding(Base):
     )
     model: Mapped[str] = mapped_column(primary_key=True)
     embedding: Mapped[list[float]] = mapped_column(Vector(EMBEDDING_DIMENSIONS))
+    # Hex SHA-256 of the text that was embedded (SearchDocument.text()), so `filings-index`
+    # re-embeds a document whose text has changed since. NULL for vectors stored before it was
+    # recorded, which are re-embedded once.
+    text_sha256: Mapped[str | None]
     updated_at: Mapped[datetime] = mapped_column(
         server_default=sa.func.now(), onupdate=sa.func.now()
     )

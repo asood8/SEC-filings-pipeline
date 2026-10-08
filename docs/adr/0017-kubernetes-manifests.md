@@ -214,6 +214,18 @@ VM.
   reused for a second, and a check that times out is abandoned in its worker thread, with no new
   check reaching the database until that thread returns. A hung database therefore ties up one
   thread, not one per probe (`filings_api.readiness`).
+- **Grace period: 45 s for every pod that exports telemetry** (the default is 30 s): the five
+  service Deployments and the discovery and load-companies CronJobs. After SIGTERM a service
+  finishes its current step (the API its requests in flight), then flushes its last spans and
+  metrics, which gives up after 30 s with the collector unreachable (ADR-0016). The summarizer
+  doesn't wait for a summary in progress, which can take minutes; it is killed after the grace
+  period, and the filing is redelivered and summarized again.
+- **Discovery now stops on SIGTERM.** As PID 1 without a handler, Python ignored SIGTERM
+  (ADR-0014), so a run that outlived its `activeDeadlineSeconds` was killed at the end of the grace
+  period and its buffered spans were lost, though that run's trace is the one worth reading. It
+  now exits at once through its `finally` blocks: the filing in progress is rolled back, as when
+  killed, and the spans so far are exported. The migrate Job keeps the default grace: it exports
+  no telemetry, and still ignores SIGTERM.
 
 ### Sync order
 
@@ -352,8 +364,8 @@ it a no-op. `BeforeHookCreation` keeps the last run and its logs until the next 
    non-strict schema, since there is no strict one for them;
 4. runs `tests/test_k8s_manifests.py`: requests and limits everywhere, the budget, the restricted
    profile, probes on every long-running container (each worker's on the heartbeat its process
-   writes), pinned images, real setting names, an example for every Secret, and no plain Secrets.
-   `make test` runs these too when kubectl is installed.
+   writes), the grace periods, pinned images, real setting names, an example for every Secret, and
+   no plain Secrets. `make test` runs these too when kubectl is installed.
 
 It needs the internet (schemas, cached; Argo CD's manifest), but no cluster and no cloud account.
 
@@ -421,14 +433,15 @@ under the namespace's restricted profile, and a control Pod without those settin
   features they control stay off or harmless. The tunnel's routing rule and the backups bucket's
   lifecycle rule are Terraform's (ADR-0018).
 - **What the service code could add:**
-  - `filings-discovery`, `filings-replay`, and `filings-index` don't handle SIGTERM (ADR-0014), so
-    a stopped job is killed after the grace period. That is safe, as each filing is one
-    transaction.
+  - `filings-replay` and `filings-index` don't handle SIGTERM (ADR-0014), so a stopped run is
+    killed after the grace period, without its final telemetry export. That is safe, as each
+    filing is one transaction; they run by hand, not in the cluster. (`filings-discovery` stops on
+    SIGTERM since 2026-10-07; see "Probes and shutdown".)
   - The summarizer finishes its current filing before stopping, but an 8-K can take minutes, so
-    an update kills it mid-summary after the 30 s grace period. The filing is redelivered and
+    an update kills it mid-summary after the 45 s grace period. The filing is redelivered and
     summarized again, which is idempotent; only the work is lost.
-  - Liveness and readiness (heartbeat probes, `/readyz`) were added on 2026-10-07; see "Probes and
-    shutdown" above.
+  - Liveness and readiness (heartbeat probes, `/readyz`) and the longer grace periods were added
+    on 2026-10-07; see "Probes and shutdown" above.
 - **With one API replica, a database outage takes the API off the tunnel** (after 30 s of failed
   readiness checks): Cloudflare answers with its own error page instead of the API's 500s, and the
   response cache can't serve anything meanwhile. Every endpoint but `/healthz` needs Postgres, so
@@ -457,7 +470,8 @@ under the namespace's restricted profile, and a control Pod without those settin
   failing gets the container restarted; while a **readiness** probe fails, the pod gets no traffic
   from its Service; a **startup** probe holds the other two off until the container has started.
   A probe is an HTTP request, or (`exec`) a command run inside the container that passes by exiting
-  with 0.
+  with 0. **terminationGracePeriodSeconds** is how long a stopping pod has between SIGTERM and being
+  killed.
 - **NetworkPolicy:** a firewall rule between pods, by label. Once a pod is selected by a policy,
   only the traffic the policy allows can reach it; here a default policy blocks everything and
   each service opens just its port to its clients.

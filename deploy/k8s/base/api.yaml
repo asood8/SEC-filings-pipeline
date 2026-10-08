@@ -36,6 +36,9 @@ spec:
     spec:
       automountServiceAccountToken: false
       enableServiceLinks: false
+      # On SIGTERM uvicorn finishes the requests in flight, then the app flushes its last spans and
+      # metrics (up to 30 s with the collector unreachable, ADR-0016).
+      terminationGracePeriodSeconds: 45
       securityContext:
         runAsNonRoot: true
         runAsUser: 10001

@@ -284,6 +284,23 @@ def test_the_api_is_ready_only_with_its_database(production: list[dict[str, Any]
     assert container["livenessProbe"]["httpGet"]["path"] == "/healthz"
 
 
+def test_our_processes_have_time_to_export_their_last_telemetry(
+    production: list[dict[str, Any]],
+) -> None:
+    # The exporters' final flush gives up after 30 s (ADR-0016); the default grace is also 30 s.
+    # The migrate Job exports no telemetry, and ignores SIGTERM anyway (ADR-0014).
+    exporting = [
+        pod
+        for pod in pods(production)
+        if any("filings-" in c["image"] for c in pod.containers()) and pod.workload != "Job/migrate"
+    ]
+    assert {"CronJob/discovery", "CronJob/load-companies", "Deployment/api"} <= {
+        pod.workload for pod in exporting
+    }
+    for pod in exporting:
+        assert pod.spec.get("terminationGracePeriodSeconds", 30) >= 45, pod.workload
+
+
 def test_images_are_pinned(
     production: list[dict[str, Any]], platform: list[dict[str, Any]]
 ) -> None:

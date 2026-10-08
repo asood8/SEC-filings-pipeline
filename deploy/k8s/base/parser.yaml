@@ -20,6 +20,9 @@ spec:
     spec:
       automountServiceAccountToken: false
       enableServiceLinks: false
+      # SIGTERM stops the loop; then the process flushes its last spans and metrics, which can take
+      # up to 30 s with the collector unreachable (ADR-0016). The default 30 s grace is too tight.
+      terminationGracePeriodSeconds: 45
       securityContext:
         runAsNonRoot: true
         runAsUser: 10001

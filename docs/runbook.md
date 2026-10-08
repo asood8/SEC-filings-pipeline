@@ -50,7 +50,10 @@ kubectl -n filings exec -it postgres-0 -- sh -c 'psql -U "$POSTGRES_USER" -d "$P
   summarizer's pod, which can reach Postgres, MongoDB, the LLM, and the embeddings server:
   `kubectl -n filings exec deploy/summarizer -- <command>`. Pods started any other way are shut
   out by the NetworkPolicies. A command shares the container's 256 Mi memory limit with the
-  running summarizer, so run one at a time.
+  running summarizer, so run one at a time. `filings-rebuild-key-fields` ships with the parser
+  instead: `kubectl -n filings exec deploy/parser -- filings-rebuild-key-fields --form-type 4`
+  rewrites Form 4 key fields and transaction lines from MongoDB, for example after a migration
+  adds a key-field table (it calls nothing at SEC and publishes nothing).
 - **Logs** stay in the cluster (only traces and metrics go to Grafana Cloud), and only the current
   and previous run of each container are kept. Lines logged while a filing or a request is being
   handled end with `trace_id=… span_id=…`; look the trace up in Grafana Cloud's Tempo.

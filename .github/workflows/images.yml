@@ -1,0 +1,299 @@
+# Builds the five service images, publishes them to GHCR, and deploys them to production
+# (docs/adr/0019-image-ci-and-deploy.md).
+#
+# COST GATE: every job has `if: github.event.repository.private == false`. Native arm64 runners
+# and GHCR storage are free only for public repositories; in a private one they would use up the
+# account's free minutes and package storage, and could be billed. While the repository is
+# private, each run starts with every job skipped, so nothing runs and nothing is billed. Making
+# the repository public turns the workflow on with no other change. A new job needs the same
+# condition (tests/test_images_workflow.py checks).
+#
+# On a push to main that changes what goes into an image, or when started by hand:
+#   1. build:  each service on a native runner per architecture (no emulation), pushed to GHCR
+#              by digest, without a tag.
+#   2. merge:  per service, the two builds become one multi-arch image tagged sha-<short commit
+#              SHA> and main.
+#   3. deploy: once CI has passed on the same commit, the production overlay's tags are set to
+#              sha-<short commit SHA> and committed to main. Argo CD then rolls the images out.
+#
+# The deploy commit can't start another run: pushes made with GITHUB_TOKEN start no workflows,
+# it changes only deploy/, which is outside the paths below, and its message has "[skip ci]".
+name: Images
+
+on:
+  push:
+    branches: [main]
+    paths:
+      # What the image build reads (.dockerignore lists it), and this file.
+      - services/**
+      - libs/**
+      - docker/**
+      - pyproject.toml
+      - uv.lock
+      - .dockerignore
+      - config/watchlist.toml
+      - .github/workflows/images.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# One run at a time per branch. A newer push waits instead of cancelling a run halfway through
+# publishing (only the newest waiting run is kept), so deploys land in push order.
+concurrency:
+  group: images-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  # Every image's tags: its commit, which production pins, and "main" for the newest build of
+  # main. The deploy job derives the same sha-<short commit SHA> tag.
+  IMAGE_TAGS: |
+    type=sha,prefix=sha-,format=short
+    type=raw,value=main,enable={{is_default_branch}}
+  DOCKER_METADATA_SHORT_SHA_LENGTH: 7
+
+jobs:
+  build:
+    name: Build ${{ matrix.service }} (${{ matrix.arch }})
+    if: github.event.repository.private == false
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      packages: write
+    strategy:
+      # One service failing on one architecture shouldn't hide whether the others build.
+      fail-fast: false
+      matrix:
+        service: [api, discovery, notifier, parser, summarizer]
+        arch: [amd64, arm64]
+        include:
+          - arch: amd64
+            runner: ubuntu-24.04
+          - arch: arm64
+            runner: ubuntu-24.04-arm
+    env:
+      IMAGE: ghcr.io/asood8/filings-${{ matrix.service }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      # OCI labels (source, revision, created, licenses, ...). The generated title and
+      # description would describe the repository, so these replace them.
+      - name: Image metadata
+        id: meta
+        uses: docker/metadata-action@v6
+        with:
+          images: ${{ env.IMAGE }}
+          tags: ${{ env.IMAGE_TAGS }}
+          labels: |
+            org.opencontainers.image.title=filings-${{ matrix.service }}
+            org.opencontainers.image.description=SEC filings pipeline: the ${{ matrix.service }} service
+
+      - uses: docker/setup-buildx-action@v4
+
+      - uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # The build context is the checkout, so .dockerignore applies. The layer cache is kept in
+      # the Actions cache, one scope per image and architecture. Provenance (how, where, and from
+      # what the image was built) and an SBOM (its package list) are attached to the image.
+      - name: Build and push by digest
+        id: build
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          file: docker/service.Dockerfile
+          build-args: PACKAGE=filings-${{ matrix.service }}
+          platforms: linux/${{ matrix.arch }}
+          labels: ${{ steps.meta.outputs.labels }}
+          tags: ${{ env.IMAGE }}
+          outputs: type=image,push-by-digest=true,name-canonical=true,push=true
+          cache-from: type=gha,scope=filings-${{ matrix.service }}-${{ matrix.arch }}
+          cache-to: type=gha,scope=filings-${{ matrix.service }}-${{ matrix.arch }},mode=max
+          provenance: mode=max
+          sbom: true
+
+      - name: Save the digest for the merge job
+        env:
+          DIGEST: ${{ steps.build.outputs.digest }}
+        run: |
+          mkdir -p "$RUNNER_TEMP/digests"
+          touch "$RUNNER_TEMP/digests/${DIGEST#sha256:}"
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: digests-${{ matrix.service }}-${{ matrix.arch }}
+          path: ${{ runner.temp }}/digests/*
+          if-no-files-found: error
+          retention-days: 1
+
+  merge:
+    name: Publish ${{ matrix.service }}
+    needs: build
+    if: github.event.repository.private == false
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: read  # metadata-action reads the repository's details
+      packages: write
+    strategy:
+      fail-fast: false
+      matrix:
+        service: [api, discovery, notifier, parser, summarizer]
+    env:
+      IMAGE: ghcr.io/asood8/filings-${{ matrix.service }}
+      # GHCR reads a multi-arch image's description from its index.
+      DOCKER_METADATA_ANNOTATIONS_LEVELS: index
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          path: ${{ runner.temp }}/digests
+          pattern: digests-${{ matrix.service }}-*
+          merge-multiple: true
+
+      - name: Image metadata
+        id: meta
+        uses: docker/metadata-action@v6
+        with:
+          images: ${{ env.IMAGE }}
+          tags: ${{ env.IMAGE_TAGS }}
+          annotations: |
+            org.opencontainers.image.title=filings-${{ matrix.service }}
+            org.opencontainers.image.description=SEC filings pipeline: the ${{ matrix.service }} service
+
+      - uses: docker/setup-buildx-action@v4
+
+      - uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # An image index listing both architectures' builds (with their attestations), pushed
+      # under each tag. The registry already has the builds, so nothing is uploaded twice.
+      # (A failing command in `< <(...)` doesn't stop the script, hence the count check.)
+      - name: Create the multi-arch image
+        working-directory: ${{ runner.temp }}/digests
+        run: |
+          mapfile -t tags < <(jq -r '.tags[] | "--tag=" + .' <<<"$DOCKER_METADATA_OUTPUT_JSON")
+          mapfile -t annotations < <(jq -r '.annotations[] | "--annotation=" + .' <<<"$DOCKER_METADATA_OUTPUT_JSON")
+          builds=()
+          for digest in *; do builds+=("$IMAGE@sha256:$digest"); done
+          if [[ ${#tags[@]} -eq 0 || ${#builds[@]} -ne 2 ]]; then
+            echo "::error::Expected tags and one build per architecture; found ${#tags[@]} tags and ${#builds[@]} builds."
+            exit 1
+          fi
+          docker buildx imagetools create "${tags[@]}" "${annotations[@]}" "${builds[@]}"
+
+      - name: Inspect
+        env:
+          VERSION: ${{ steps.meta.outputs.version }}
+        run: docker buildx imagetools inspect "$IMAGE:$VERSION"
+
+  deploy:
+    name: Deploy to production
+    needs: merge
+    if: github.event.repository.private == false && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    permissions:
+      actions: read  # CI's result on this commit
+      contents: write  # push the new tags to main
+    env:
+      IMAGES_FILE: deploy/k8s/overlays/production/images/kustomization.yaml
+    steps:
+      # Production only gets commits that passed CI (ci.yml), which runs alongside the builds.
+      # A failed or cancelled CI run stops the deploy; once CI passes, re-run this job. A run
+      # started by hand on a commit CI skipped (such as a deploy commit) deploys without it.
+      - name: Wait for CI on this commit
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          run=""
+          for _ in {1..10}; do
+            run=$(gh run list --repo "$GITHUB_REPOSITORY" --workflow ci.yml --event push \
+              --commit "$GITHUB_SHA" --limit 1 --json databaseId --jq '.[0].databaseId // empty')
+            [[ -n $run || $GITHUB_EVENT_NAME == workflow_dispatch ]] && break
+            sleep 30
+          done
+          if [[ -z $run && $GITHUB_EVENT_NAME == workflow_dispatch ]]; then
+            echo "::warning::CI didn't run on $GITHUB_SHA; deploying anyway, as this run was started by hand."
+          elif [[ -z $run ]]; then
+            echo "::error::No CI run found for $GITHUB_SHA."
+            exit 1
+          elif ! gh run watch "$run" --repo "$GITHUB_REPOSITORY" --exit-status --compact --interval 30; then
+            echo "::error::CI did not pass on $GITHUB_SHA, so it is not deployed."
+            exit 1
+          fi
+
+      # The branch's newest commit rather than this run's, since main may have moved on, with
+      # its history, to compare commits below.
+      - uses: actions/checkout@v7
+        with:
+          ref: main
+          fetch-depth: 0
+
+      # The kustomize inside kubectl v1.36.5, which `make k8s-check` renders with
+      # (scripts/install-k8s-tools.sh). Versions can render differently: 5.8.2 drops a label
+      # from the StatefulSets' volumeClaimTemplates.
+      - name: Install kustomize
+        env:
+          KUSTOMIZE_VERSION: 5.8.1
+          # kustomize_v5.8.1_linux_amd64.tar.gz, from the release's checksums.txt.
+          KUSTOMIZE_SHA256: 029a7f0f4e1932c52a0476cf02a0fd855c0bb85694b82c338fc648dcb53a819d
+        run: |
+          mkdir -p "$RUNNER_TEMP/bin"
+          curl -fsSL --retry 3 -o "$RUNNER_TEMP/kustomize.tar.gz" \
+            "https://github.com/kubernetes-sigs/kustomize/releases/download/kustomize%2Fv$KUSTOMIZE_VERSION/kustomize_v${KUSTOMIZE_VERSION}_linux_amd64.tar.gz"
+          echo "$KUSTOMIZE_SHA256  $RUNNER_TEMP/kustomize.tar.gz" | sha256sum --check --quiet
+          tar -xzf "$RUNNER_TEMP/kustomize.tar.gz" -C "$RUNNER_TEMP/bin" kustomize
+          echo "$RUNNER_TEMP/bin" >> "$GITHUB_PATH"
+
+      # Every image in the file is one of ours, and all of them were just published. A re-run of
+      # an older run leaves production alone if it already runs a build of a later commit.
+      - name: Point production at the new images
+        id: images
+        run: |
+          tag="sha-${GITHUB_SHA::$DOCKER_METADATA_SHORT_SHA_LENGTH}"
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          deployed=$(sed -n 's/^  newTag: sha-//p' "$IMAGES_FILE" | sort -u)
+          if [[ -n $deployed ]] && deployed=$(git rev-parse --verify --quiet "$deployed^{commit}") &&
+            git merge-base --is-ancestor "$GITHUB_SHA" "$deployed"; then
+            echo "::notice::Production already runs images from $deployed, which is $GITHUB_SHA or a later commit."
+            exit 0
+          fi
+          images=()
+          while read -r name; do images+=("$name=*:$tag"); done < <(sed -n 's/^- name: //p' "$IMAGES_FILE")
+          if [[ ${#images[@]} -eq 0 ]]; then
+            echo "::error::No images found in $IMAGES_FILE."
+            exit 1
+          fi
+          (cd "$(dirname "$IMAGES_FILE")" && kustomize edit set image "${images[@]}")
+          kustomize build deploy/k8s/overlays/production > /dev/null
+
+      - name: Commit and push
+        env:
+          TAG: ${{ steps.images.outputs.tag }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          if git diff --quiet -- "$IMAGES_FILE"; then
+            echo "Nothing to deploy: the production tags didn't change."
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit --quiet --message "Deploy $TAG to production [skip ci]" \
+            --message "Images built from $GITHUB_SHA by $RUN_URL" -- "$IMAGES_FILE"
+          # If main moved since the checkout, replay the commit on top of it. A conflict means
+          # the tags were changed meanwhile; the job then fails rather than overwrite them.
+          for _ in 1 2 3; do
+            git push origin HEAD:main && exit 0
+            git pull --rebase origin main
+          done
+          echo "::error::Could not push to main."
+          exit 1

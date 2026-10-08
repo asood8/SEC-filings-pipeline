@@ -7,13 +7,15 @@ what the project requires on top of that (docs/adr/0017-kubernetes-manifests.md)
 - every pod meets the "restricted" Pod Security Standard that the namespace enforces;
 - every image is pinned to a version;
 - the config uses real setting names, and every Secret a workload reads has an example;
-- no plain Secret is ever deployed from git.
+- no plain Secret is ever deployed from git;
+- the image workflow's deploy job renders with the same kustomize as these tests.
 
 They render with `kubectl kustomize`, so they are skipped when kubectl is missing (install it
 with `make k8s-tools`), unless REQUIRE_K8S_TOOLS=1 (set by `make k8s-check`), which makes them
 fail instead.
 """
 
+import json
 import os
 import re
 import shutil
@@ -265,6 +267,23 @@ def test_images_are_pinned(
         f"ghcr.io/asood8/filings-{service}"
         for service in ("api", "discovery", "parser", "summarizer", "notifier")
     }
+
+
+def test_the_deploy_job_renders_with_the_same_kustomize() -> None:
+    # Before committing new image tags, the deploy job in .github/workflows/images.yml renders
+    # production with a standalone kustomize (docs/adr/0019). Versions can render it differently,
+    # so it must be the one inside kubectl, which these tests and kubeconform check.
+    client = subprocess.run(
+        [_kubectl(), "version", "--client", "--output=json"],
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout
+    workflow = yaml.safe_load((ROOT / ".github" / "workflows" / "images.yml").read_text())
+    install = next(
+        s for s in workflow["jobs"]["deploy"]["steps"] if s.get("name") == "Install kustomize"
+    )
+    assert json.loads(client)["kustomizeVersion"] == f"v{install['env']['KUSTOMIZE_VERSION']}"
 
 
 def _settings_env_names() -> set[str]:

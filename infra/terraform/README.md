@@ -66,9 +66,9 @@ budget alert in each account that has a card on file.
   there. Pick one near you with a reputation for A1 capacity.
 - **Where the state lives** (see [State](#state)).
 - **Pages from GitHub or from CI** (`pages_github_integration`): Cloudflare builds the site on
-  every push (needs the Cloudflare Pages GitHub app on the repository), or a CI job deploys it
-  with Wrangler (needs a Cloudflare token in GitHub's secrets, and a workflow that doesn't exist
-  yet). A project can't switch between the two later.
+  every push to `main` that changes `web/` (needs the Cloudflare Pages GitHub app on the
+  repository), or a CI job deploys it with Wrangler (needs a Cloudflare token in GitHub's
+  secrets, and a workflow that doesn't exist yet). A project can't switch between the two later.
 
 ### Accounts and credentials (manual, once)
 
@@ -93,7 +93,9 @@ service account's list.
 Also made by hand, for the cluster rather than for Terraform (see
 [Secrets into the cluster](#secrets-into-the-cluster)): two **R2 API tokens** (Object Read &
 Write, one per bucket) and a **Grafana Cloud access policy token** for the OpenTelemetry
-Collector (metrics, logs, and traces write).
+Collector (metrics, logs, and traces write). Terraform creates no Grafana contact point: alerts
+go to the stack's default one (email to the account owner) until you add another, such as a
+Discord webhook, in Grafana Cloud.
 
 ### The repository
 
@@ -141,7 +143,9 @@ Nothing listens on the VM's public IP. For maintenance, set `ssh_ingress_cidr` t
 
 ```
 ssh -L 6443:127.0.0.1:6443 ubuntu@$(terraform output -raw vm_public_ip)
-# in another terminal, once: copy /etc/rancher/k3s/k3s.yaml from the VM to ~/.kube/config
+# in another terminal, once: copy the kubeconfig (only root can read it) to ~/.kube/config
+mkdir -p ~/.kube
+ssh ubuntu@$(terraform output -raw vm_public_ip) sudo cat /etc/rancher/k3s/k3s.yaml > ~/.kube/config
 ```
 
 Set `ssh_ingress_cidr` back to null and apply again when done.

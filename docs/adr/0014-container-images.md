@@ -73,7 +73,10 @@ docker build -f docker/service.Dockerfile --build-arg PACKAGE=filings-api -t fil
   also runs the one-off jobs: `load-companies`, `fetch-exhibits`, `filings-replay`,
   `filings-index`, and migrations. Discovery's dependencies are exactly `filings-common`'s (the
   API image adds a web server), it is already the batch-job image, and having one image for
-  pipeline operations means nobody has to guess which one to use.
+  pipeline operations means nobody has to guess which one to use. (In the cluster, `filings-replay`
+  and `filings-index` run in the summarizer's pod instead, the one the NetworkPolicies let reach
+  the LLM and embeddings servers; ADR-0017. The discovery image runs the relay, the migrations,
+  `load-companies`, and `fetch-exhibits`.)
 - **Migrations** run from the discovery image with
   `python -c "from filings_common.db import run_migrations; run_migrations()"`, reading
   `DATABASE_URL`. The migration scripts ship inside the `filings_common` package, and
@@ -191,10 +194,11 @@ decoy files present, and by searching each built image for tests, fixtures, and 
   don't. Python running as PID 1 ignores an unhandled SIGTERM, so Kubernetes kills those after the
   grace period. That is safe: each filing's writes are one transaction, and re-runs are idempotent.
   If faster shutdown ever matters, add a SIGTERM handler or a tiny init process such as tini.
+  (`filings-discovery` stops on SIGTERM since 2026-10-07; ADR-0017.)
 - **Not yet proven on arm64 or as a full pipeline.** The first real arm64 builds happen in
-  Phase 7's CI, and containerized services first run together on k3s. Per the wheel check, the
-  risk is low. App services stay out of `docker-compose.yml` on purpose: during development they
-  run on the host (ADR-0003).
+  Phase 7's CI (ADR-0019), and containerized services first run together on k3s. Per the wheel
+  check, the risk is low. App services stay out of `docker-compose.yml` on purpose: during
+  development they run on the host (ADR-0003).
 - **The Dockerfile frontend is fetched.** The `# syntax=docker/dockerfile:1` line has BuildKit
   fetch the current stable 1.x Dockerfile frontend (cached). The file relies on newer features:
   `COPY --parents` and `${PACKAGE#filings-}`.

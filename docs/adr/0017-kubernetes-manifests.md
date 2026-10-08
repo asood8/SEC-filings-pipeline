@@ -374,9 +374,10 @@ under the namespace's restricted profile, and a control Pod without those settin
   `LLM_MODEL`.
 - **The sealing key must be backed up** (`deploy/k8s/README.md`). Without it, a rebuilt cluster
   can't decrypt the SealedSecrets in git, and every secret must be sealed again.
-- **Deploying a new version is a commit.** The production overlay pins image tags; Phase 7's
-  image-build CI must update them (or Argo CD Image Updater must) for a push to `main` to deploy
-  automatically.
+- **Deploying a new version is a commit.** The production overlay pins image tags. The image
+  workflow ([ADR-0019](0019-image-ci-and-deploy.md)) commits new ones after it builds `main` and
+  CI passes, so a push to `main` deploys automatically; the tags moved to their own file,
+  `overlays/production/images/kustomization.yaml`, for that.
 - **Placeholders wait on the real accounts:** the website's origin (`API_CORS_ORIGINS`, a
   Terraform output), `GOOGLE_CLIENT_ID`, the SMTP settings, and the SealedSecrets. Until then the
   features they control stay off or harmless. The tunnel's routing rule and the backups bucket's

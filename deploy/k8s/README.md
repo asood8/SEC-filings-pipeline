@@ -12,8 +12,9 @@ Phase 7. Everything renders and validates without one.
 deploy/
   k8s/
     base/                  the whole application, environment-neutral (namespace "filings")
-    overlays/production/   image registry and tags, replica counts, production settings,
-                           and (Phase 7) the SealedSecrets in sealed-secrets/
+    overlays/production/   replica counts, production settings, and (Phase 7) the SealedSecrets
+                           in sealed-secrets/
+      images/              the service images' registry and tags, which CI updates on each deploy
     platform/sealed-secrets/   the Sealed Secrets controller (vendored upstream release)
     secrets-example/       EXAMPLE Secrets with placeholder values: the list of every secret
     secrets-local/         your filled-in copies before sealing (gitignored; never commit)
@@ -45,8 +46,10 @@ container, the memory budget, pod security, pinned images, real setting names) a
   content, so changing a setting rolls out the pods that use it.
 - **`DATABASE_URL`** is assembled in each workload from `POSTGRES_DB` (config) and the postgres
   Secret, so the password has one source.
-- **Images** are `ghcr.io/asood8/filings-<service>`, multi-arch (ADR-0014). The production overlay
-  pins their tag; the GHCR packages must be public (free) or the cluster needs a pull secret.
+- **Images** are `ghcr.io/asood8/filings-<service>`, multi-arch (ADR-0014), built by CI. The
+  production overlay pins their tag in `overlays/production/images/kustomization.yaml`, which CI
+  updates ([Deploying](#deploying)). The GHCR packages must be public (free), or the cluster needs
+  a pull secret.
 
 ## Secrets
 
@@ -113,7 +116,8 @@ the Secret. A SealedSecret only decrypts under its own name and namespace (kubes
 ## First install (Phase 7)
 
 The VM's first-boot bootstrap (`infra/terraform/modules/oci/bootstrap.sh`, ADR-0018) does the
-first three steps; the rest are by hand.
+first three steps; the rest are by hand. The service images must exist by then: CI has to have
+published and deployed them once ([Deploying](#deploying)), or the services can't start.
 
 1. **k3s**, pinned, without the bundled Traefik ingress controller and service load balancer
    (Cloudflare Tunnel replaces both, and they cost RAM), with local-path volumes on the block
@@ -137,6 +141,36 @@ first three steps; the rest are by hand.
 Argo CD's web UI is not exposed. To look at it:
 `kubectl -n argocd port-forward svc/argocd-server 8080:443`, then sign in as `admin` with the
 password from `kubectl -n argocd get secret argocd-initial-admin-secret -o jsonpath='{.data.password}' | base64 -d`.
+
+## Deploying
+
+A push to `main` that changes the services deploys itself
+([ADR-0019](../../docs/adr/0019-image-ci-and-deploy.md)):
+
+1. `.github/workflows/images.yml` builds the five images natively for amd64 and arm64 and
+   publishes them to GHCR, tagged `sha-<short commit SHA>` and `main`. It runs when `services/`,
+   `libs/`, `docker/`, `pyproject.toml`, `uv.lock`, `.dockerignore`, or
+   `config/watchlist.toml` change.
+2. Once CI has passed on the same commit, it sets that tag in
+   `overlays/production/images/kustomization.yaml` and commits it to `main` as
+   `github-actions[bot]`: "Deploy sha-... to production [skip ci]".
+3. Argo CD sees the commit within 3 minutes and rolls the services out.
+
+`main` on GitHub is then a commit ahead of your checkout: pull before pushing again.
+
+- **Not active yet:** the workflow's jobs run only while the repository is public, because
+  that is when its arm64 runners and GHCR storage are free. Until the first deploy, the tags are
+  a placeholder (`0.1.0`) that doesn't exist in GHCR.
+- **After the first run,** make each of the five GHCR packages public (the package's
+  **Package settings → Change visibility**), if it isn't already.
+- **Deploy by hand:** **Actions → Images → Run workflow** on `main`. If a deploy job failed
+  because CI did, re-run CI on that commit, then the failed deploy job.
+- **Roll back:** revert the bot's deploy commit (`git revert <commit>`), or set an older `sha-`
+  tag in `overlays/production/images/kustomization.yaml`, and push. The next build of `main`
+  deploys normally again.
+- **Check a published image:**
+  `docker buildx imagetools inspect ghcr.io/asood8/filings-api:sha-<short commit SHA>` lists
+  both architectures, plus the build's provenance and SBOM attestations.
 
 ## One-off commands
 
@@ -166,7 +200,11 @@ rows, which the outbox relay then publishes.
 
 Every image and upstream manifest is pinned to a version:
 
-- **Our services:** the tags in `overlays/production/kustomization.yaml`.
+- **Our services:** CI sets their tags in `overlays/production/images/kustomization.yaml` on
+  every deploy ([Deploying](#deploying)).
+- **kustomize for the deploy job:** `KUSTOMIZE_VERSION` and its checksum in
+  `.github/workflows/images.yml`. It must be the version inside the pinned kubectl
+  (`kubectl version --client`), which `make k8s-check` renders with; a test checks.
 - **Data stores and tools:** the image tags in `base/` (Postgres and Valkey match
   `docker-compose.yml`; keep them in step).
 - **llama.cpp and the models:** the image tag in `base/llm.yaml` and `base/embeddings.yaml`; the

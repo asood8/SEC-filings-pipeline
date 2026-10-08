@@ -21,6 +21,20 @@ repos:
       - id: check-added-large-files
       - id: detect-private-key
 
+  # Shell scripts: scripts/, the VM bootstrap, the model download, the free-tier check.
+  - repo: https://github.com/shellcheck-py/shellcheck-py
+    rev: v0.11.0.1
+    hooks:
+      - id: shellcheck
+
+  # GitHub Actions workflows: syntax, expressions, and action inputs. With shellcheck installed
+  # next to it, actionlint also checks the scripts in `run:` steps.
+  - repo: https://github.com/Mateusz-Grzelinski/actionlint-py
+    rev: v1.7.12.25
+    hooks:
+      - id: actionlint
+        additional_dependencies: [shellcheck-py==0.11.0.1]
+
   - repo: local
     hooks:
       - id: ruff-check

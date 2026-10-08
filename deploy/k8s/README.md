@@ -8,6 +8,9 @@ resource budget, and the security posture are in
 Nothing here has been applied to a cluster yet: the cluster and the cloud accounts are created in
 Phase 7. Everything renders and validates without one.
 
+Operating it (alerts, dead letters, deploys and rollbacks, rotating secrets, backups and restores,
+capacity) is in the [runbook](../../docs/runbook.md).
+
 ```
 deploy/
   k8s/

@@ -1,5 +1,5 @@
 .DEFAULT_GOAL := help
-.PHONY: help setup sync up down ps logs llm-up llm-down obs-up obs-down migrate api pipeline images lint fmt test web-install web web-types web-check loadtest api-loadtest tf-check tf-fmt k8s-tools k8s-check
+.PHONY: help setup sync up down ps logs llm-up llm-down obs-up obs-down migrate backup-drill api pipeline images lint fmt test audit web-install web web-types web-check loadtest api-loadtest tf-check tf-fmt k8s-tools k8s-check
 
 help: ## List targets
 	@grep -E '^[a-z0-9-]+:.*## ' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*## "} {printf "  %-12s %s\n", $$1, $$2}'
@@ -45,6 +45,9 @@ obs-down: ## Stop the local viewer (its data is kept)
 migrate: ## Apply database migrations to DATABASE_URL
 	uv run alembic upgrade head
 
+backup-drill: ## Dump the local database, restore it into a throwaway one, and check every table matches
+	scripts/backup-drill.sh
+
 api: ## Run the API locally with auto-reload on http://127.0.0.1:8000 (docs at /docs)
 	uv run uvicorn --factory filings_api.app:create_app --reload
 
@@ -71,6 +74,17 @@ fmt: ## Auto-fix lint issues and format code (reports what it can't fix)
 
 test: ## Run all tests
 	uv run pytest
+
+PIP_AUDIT_VERSION := 2.10.1
+
+# pip-audit checks every package version in uv.lock (dev tools too, our own packages excepted)
+# against PyPI's vulnerability data, without installing anything. bash's pipefail makes a failed
+# export fail the target instead of auditing an empty list.
+audit: ## Check the locked Python and website dependencies for known vulnerabilities (needs the internet)
+	bash -o pipefail -c 'uv export --frozen --all-packages --all-groups --all-extras --no-emit-workspace \
+	  --format requirements.txt --quiet \
+	  | uvx pip-audit==$(PIP_AUDIT_VERSION) --disable-pip --require-hashes --progress-spinner off -r /dev/stdin'
+	npm --prefix web audit --omit=dev --audit-level=high
 
 web-install: ## Install the website's dependencies (Node.js 24, see web/.nvmrc)
 	npm --prefix web ci

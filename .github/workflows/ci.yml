@@ -40,7 +40,8 @@ jobs:
           path: ~/.cache/pre-commit
           key: pre-commit-${{ hashFiles('.pre-commit-config.yaml') }}
 
-      # Same hooks as local commits: file hygiene, ruff, mypy, and the lockfile check.
+      # Same hooks as local commits: file hygiene, shellcheck, actionlint, ruff, mypy, and the
+      # lockfile check.
       - name: Pre-commit hooks
         run: uv run pre-commit run --all-files --show-diff-on-failure
 
@@ -50,6 +51,29 @@ jobs:
         run: |
           docker compose up -d --wait postgres valkey redpanda mongodb
           make test
+
+  # A job of its own, so a newly published advisory shows up as a failed audit, not as a failed
+  # build of whatever change happened to run next.
+  audit:
+    name: Dependency audit
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: astral-sh/setup-uv@v10
+        with:
+          enable-cache: true
+
+      # npm audit reads web/package-lock.json; it needs npm, not the installed packages.
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: web/.nvmrc
+
+      # pip-audit on every package in uv.lock, and npm audit on the website's runtime packages
+      # (high and critical advisories).
+      - name: Known vulnerabilities in the locked dependencies
+        run: make audit
 
   web:
     name: Website

@@ -368,6 +368,40 @@ def test_semantic_search_orders_by_similarity(indexed: Engine) -> None:
         assert semantic_search(session, query, model="another-model") == []
 
 
+def test_semantic_search_through_the_index_fills_the_limit_despite_filters(
+    clean_db: Engine,
+) -> None:
+    """The HNSW index scan stops at hnsw.ef_search candidates and filters apply afterwards, so a
+    filter could leave fewer results than exist, or none (seen at volume: an 8-K filter returned
+    nothing once Form 4s filled the 40 nearest). Iterative scans keep going."""
+    form4s = [
+        (f"0000000001-26-{n:06d}", 1, "4", date(2026, 9, 1), f"Insider {n} sold shares", "Sold.")
+        for n in range(1, 31)
+    ]
+    form8ks = [
+        (f"0000000001-26-{n:06d}", 1, "8-K", date(2026, 9, 2), f"Acme item {n}", "Board news.")
+        for n in range(31, 36)
+    ]
+    add_filings(clean_db, [(1, "ACME", "Acme Corp")], form4s + form8ks)
+    assert rebuild_index(session_factory(clean_db), WordHashEmbedder()) == (35, 35)
+    query = WordHashEmbedder().embed_query("insider sold shares")
+    with session_factory(clean_db)() as session:
+        # Make this tiny table take the index path that big ones take, with few candidates.
+        for setting in ("enable_seqscan = off", "enable_sort = off", "hnsw.ef_search = 10"):
+            session.execute(sa.text(f"SET LOCAL {setting}"))
+        plan = session.execute(
+            sa.text(
+                "EXPLAIN SELECT accession_no FROM filing_embeddings"
+                " ORDER BY embedding <=> CAST(:q AS vector) LIMIT 20"
+            ),
+            {"q": str(query)},
+        ).scalars()
+        assert any("ix_filing_embeddings_embedding_hnsw" in line for line in plan)
+        eight_ks = semantic_search(session, query, model="word-hash", limit=5, form_type="8-K")
+        assert sorted(accessions(eight_ks)) == [f[0] for f in form8ks]
+        assert len(semantic_search(session, query, model="word-hash", limit=20)) == 20
+
+
 def test_embedded_text_includes_the_ticker(indexed: Engine) -> None:
     query = WordHashEmbedder().embed_query("GLOB")
     with session_factory(indexed)() as session:

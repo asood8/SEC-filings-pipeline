@@ -53,6 +53,13 @@ mean reciprocal rank went from 0.83 to 0.94 once it learned other words for what
 ticker COST for "costs"; "stock" for "shares" took "stock gift" from one of seven gifts to all
 seven ([ADR-0011](docs/adr/0011-search-and-public-api.md)).
 
+**Query plans at volume** (`scripts/synthetic_data.py` and `scripts/measure_queries.py`, on
+synthetic data for 500 companies over 10 years: 452,000 filings, 13 times what the watchlist
+gathers in a decade): every page of the feed takes under 2 ms of SQL after an index fix (it used
+to sort all filings: 249 ms), and filtered semantic search fills its pages (an 8-K filter returned
+nothing at that volume). Keyword search for a word most documents contain still takes 1–2 s there
+([runbook, "Capacity planning"](docs/runbook.md#capacity-planning)).
+
 Example headlines from that run (public filings):
 
 - *Douglas J Herrington sold 1,000 AMZN shares for $251.5K (avg $251.50/share)* (Form 4)
@@ -224,6 +231,8 @@ uv run filings-rebuild-key-fields --form-type 4  # refill Form 4 key fields from
 | `uv run filings-search-eval` | Score keyword, semantic, and hybrid search against labeled queries (`config/search_eval.json`) |
 | `uv run filings-replay discovered --accession <no>` | Reprocess one filing (also `--form-type`, `--status`, or `parsed`) |
 | `uv run filings-rebuild-key-fields --form-type 4` | Rewrite parsed filings' Postgres key fields (Form 4 owner CIKs and transaction lines too) from their MongoDB payloads, after a key-field change; no SEC calls, no events |
+| `uv run python scripts/synthetic_data.py --create --database-url <throwaway>` | Fill a throwaway database with years of synthetic, production-shaped data (resumes if interrupted; `--drop` deletes it) |
+| `uv run python scripts/measure_queries.py --database-url <throwaway>` | Time and explain every regular query on it, flagging sequential scans of large tables |
 | `uv run filings-healthcheck <process>` | The workers' liveness check (e.g. `filings-parser`): exits 1 if its loop stopped beating |
 
 ## Local services
@@ -254,7 +263,8 @@ docs/PROJECT_BRIEF.md spec, architecture, and build plan
 docs/adr/             architecture decision records
 docs/runbook.md       operating the production system: alerts, deploys, secrets, backups
 docker/               the Dockerfile for the service images
-scripts/              helpers for `make pipeline`, `backup-drill`, `k8s-tools`, and `k8s-check`
+scripts/              helpers for `make pipeline`, `backup-drill`, `k8s-tools`, and `k8s-check`;
+                      synthetic data and query measurements at volume
 deploy/               Kubernetes manifests (Kustomize, Sealed Secrets, Argo CD), and Grafana
                       dashboards and alert rules
 .github/workflows/    CI, image builds and deploys, the dependency audit

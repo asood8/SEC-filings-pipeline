@@ -55,7 +55,7 @@ Example headlines from that run (public filings):
 | 5. Frontend | React site (Vite + TypeScript) on Cloudflare Pages | Done |
 | 6. Observability | OpenTelemetry traces, metrics, Grafana dashboards and alerts | Done |
 | 7. Production | Terraform, k3s on Oracle Cloud's free tier, Argo CD, multi-arch images | In progress: images, Kubernetes manifests, and Terraform written and validated offline; needs cloud accounts to apply |
-| 8. Hardening | Load tests, local-model benchmark, backups, runbook | Started: k6 load test and the model benchmark tool |
+| 8. Hardening | Load tests, local-model benchmark, backups, runbook | In progress: k6 load test, model benchmark tool, runbook, backup restore drill, dependency audit; the benchmark on the production VM is still to do |
 
 The full plan is in the [project brief](docs/PROJECT_BRIEF.md#8-build-plan).
 
@@ -192,8 +192,11 @@ uv run filings-replay parsed --form-type 4 # re-summarize history (also: discove
 | `make k8s-tools` / `make k8s-check` | Install kubectl and kubeconform (checksums verified) / render and validate the Kubernetes manifests |
 | `make obs-up` / `make obs-down` | Start / stop the optional local trace and metrics viewer (Grafana on :3001) |
 | `make loadtest` | Load-test a running API with k6 (`make api-loadtest` runs the API with rate limits raised) |
+| `make backup-drill` | Dump the local database, restore it into a throwaway database, and check every table matches |
+| `make audit` | Check the locked Python and website dependencies for known vulnerabilities |
 | `uv run filings-benchmark --model <name>` | Compare 8-K summarization across models: latency, failures, grounding |
 | `uv run filings-replay discovered --accession <no>` | Reprocess one filing (also `--form-type`, `--status`, or `parsed`) |
+| `uv run filings-healthcheck <process>` | The workers' liveness check (e.g. `filings-parser`): exits 1 if its loop stopped beating |
 
 ## Local services
 

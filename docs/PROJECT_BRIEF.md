@@ -148,7 +148,7 @@ Each phase ends with something runnable, tests passing, and docs updated. Check 
   - Postgres full-text search, embeddings into pgvector, hybrid search endpoint
   - Company endpoints, pagination, OpenAPI docs, Redis caching + rate limiting
   - _Done when:_ keyword and semantic search both return sensible, tested results.
-- [ ] **Phase 4: Users + alerts.**
+- [x] **Phase 4: Users + alerts.**
   - Google OIDC sign-in, subscriptions CRUD, notifier consumer
   - Discord/Slack webhooks + email, retries with backoff, DLQ, one-alert-per-subscription guarantee
   - _Done when:_ a test subscription receives exactly one alert per new filing, even after a replay.

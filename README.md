@@ -36,6 +36,10 @@ On a live run against EDGAR, for a watchlist of 35 large US companies:
   mid-run moved the remaining work to Gemini automatically, and the local model took over again
   once it was back. A grounding check flags any number in an LLM summary that doesn't appear in
   the filing.
+- **Alerts** reached a real Discord channel: on 2026-10-08 SEC accepted an Apple Form 4 at
+  18:30:32 ET; discovery found it at 18:38:44 (it polls every 10 minutes), and the alert reached
+  Discord at 18:39:05, 8½ minutes after acceptance. Replaying that filing from discovery and from
+  summarization sent nothing more: one alert per subscription, exactly once.
 
 **Load test** (k6, `make loadtest`, on the development laptop with the whole stack running):
 8,627 requests in 2¼ minutes, browsing rising to 100 requests/s plus 5 searches/s, with no errors.
@@ -82,7 +86,7 @@ Example headlines from that run (public filings):
 | 1. Thin vertical slice | EDGAR client, discovery, outbox relay, Form 4 parser, `GET /filings` | Done |
 | 2. Summarization | 8-K items and exhibits, Form 4 template, LLM failover, replay | Done |
 | 3. Search and API | Full-text and semantic search (pgvector), caching, rate limiting | Done |
-| 4. Users and alerts | Google sign-in, subscriptions, Discord/Slack/email alerts | In progress: all built; waiting for a real new filing to reach Discord |
+| 4. Users and alerts | Google sign-in, subscriptions, Discord/Slack/email alerts | Done |
 | 5. Frontend | React site (Vite + TypeScript) on Cloudflare Pages | Done |
 | 6. Observability | OpenTelemetry traces, metrics, Grafana dashboards and alerts | Done |
 | 7. Production | Terraform, k3s on Oracle Cloud's free tier, Argo CD, multi-arch images | In progress: images and their CI build and deploy, Kubernetes manifests (sealed secrets, Argo CD), and Terraform written and validated offline; nothing applied yet (needs cloud accounts and a domain) |

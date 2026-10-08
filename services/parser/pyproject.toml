@@ -7,6 +7,7 @@ dependencies = ["filings-common"]
 
 [project.scripts]
 filings-parser = "filings_parser.cli:main"
+filings-rebuild-key-fields = "filings_parser.rebuild:main"
 
 [tool.uv.sources]
 filings-common = { workspace = true }

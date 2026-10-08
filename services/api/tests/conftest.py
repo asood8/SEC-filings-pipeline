@@ -48,6 +48,7 @@ class WordHashEmbedder:
 
     def __init__(self, *, fail: bool = False) -> None:
         self.fail = fail
+        self.queries: list[str] = []  # every query it was asked to embed
 
     def _vector(self, text: str) -> list[float]:
         vector = [0.0] * EMBEDDING_DIMENSIONS
@@ -62,6 +63,7 @@ class WordHashEmbedder:
         return [self._vector(t) for t in texts]
 
     def embed_query(self, text: str) -> list[float]:
+        self.queries.append(text)
         if self.fail:
             raise EmbeddingError("down")
         return self._vector(text)
@@ -259,7 +261,7 @@ def make_client(
             cookie_secure=overrides.pop("cookie_secure", True),
         )
         app = create_app(
-            session_factory(seeded),
+            overrides.pop("sessions", None) or session_factory(seeded),
             redis_client=overrides.pop("redis_client", redis_client),
             embedder=overrides.pop("embedder", WordHashEmbedder()),
             settings=settings,

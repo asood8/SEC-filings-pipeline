@@ -1,6 +1,7 @@
 import threading
 import uuid
 from collections.abc import Sequence
+from pathlib import Path
 from typing import Any, Literal
 
 import pytest
@@ -22,6 +23,7 @@ from filings_common.consumer import (
     run_consumer,
     topic_depth,
 )
+from filings_common.health import Heartbeat
 from filings_common.kafka import KafkaPublisher, ensure_topics
 from filings_common.outbox import OutboundMessage
 from filings_common.telemetry import current_trace_context, kafka_headers
@@ -205,6 +207,38 @@ def test_stopping_during_backoff_leaves_the_message_uncommitted() -> None:
     run_consumer(source, TOPIC, handler, RecordingPublisher(), stop, backoff_seconds=10)
     assert source.commits == []
     assert source.closed
+
+
+def test_the_heartbeat_allows_each_attempt_its_limit_then_shrinks_back(tmp_path: Path) -> None:
+    start = 1_000_000.0
+    now = [start]
+    heartbeat = Heartbeat(tmp_path / "c.heartbeat", window=60, clock=lambda: now[0])
+    deadlines_seen: list[float] = []
+
+    def slow(received: Received) -> None:
+        deadlines_seen.append(float(heartbeat.path.read_text()))
+        now[0] += 500  # a long attempt, such as summarizing an 8-K
+        if len(deadlines_seen) == 1:
+            raise ConnectionError("LLM restarting")
+
+    stop = threading.Event()
+    source = FakeSource(stop, message(0, "a"))
+    run_consumer(
+        source,
+        TOPIC,
+        slow,
+        RecordingPublisher(),
+        stop,
+        backoff_seconds=0.001,
+        heartbeat=heartbeat,
+        attempt_seconds=720,
+    )
+    # Each attempt was promised its limit (plus the window) from when it started, so the
+    # liveness probe would not have restarted the consumer while it worked...
+    assert deadlines_seen == [start + 720 + 60, start + 500 + 720 + 60]
+    assert source.commits == [0]
+    # ...and the loop's next pass brought the deadline back to one window.
+    assert float(heartbeat.path.read_text()) == now[0] + 60
 
 
 def test_broker_errors_are_skipped() -> None:

@@ -186,6 +186,8 @@ kubectl -n filings exec deploy/summarizer -- filings-replay discovered --status 
 kubectl -n filings exec deploy/summarizer -- filings-index
 # Run discovery now instead of waiting for the schedule.
 kubectl -n filings create job --from=cronjob/discovery discovery-now
+# Is a worker's loop alive? Its liveness probe runs this (ADR-0017); it prints why not.
+kubectl -n filings exec deploy/parser -- filings-healthcheck filings-parser
 # Download missing 8-K exhibits: a discovery job with a different command.
 kubectl -n filings create job --from=cronjob/discovery fetch-exhibits --dry-run=client -o json \
   | jq '.spec.template.spec.containers[0].args = ["filings-discovery", "fetch-exhibits"]' \

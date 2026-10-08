@@ -1,4 +1,7 @@
 import json
+import threading
+import time
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 import httpx2
 import pytest
@@ -6,6 +9,7 @@ from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanE
 from opentelemetry.trace import SpanKind, StatusCode
 
 from filings_common.config import EmbeddingSettings
+from filings_common.db import EMBEDDING_DIMENSIONS
 from filings_common.embeddings import (
     EmbeddingError,
     OpenAICompatibleEmbedder,
@@ -96,3 +100,85 @@ def test_embedding_calls_are_spans_without_the_texts(spans: InMemorySpanExporter
     assert failed.status.status_code is StatusCode.ERROR
     for span in (ok, failed):
         assert "acme" not in span.to_json()
+
+
+class SlowEmbeddingServer:
+    """A real HTTP server on localhost that answers /embeddings after `delay` seconds, as a model
+    busy with other work would. (MockTransport can't show a network timeout.)"""
+
+    def __init__(self, delay: float) -> None:
+        delay_seconds = delay
+
+        class Handler(BaseHTTPRequestHandler):
+            def do_POST(self) -> None:
+                self.rfile.read(int(self.headers["Content-Length"]))
+                time.sleep(delay_seconds)
+                body = json.dumps(
+                    {"data": [{"index": 0, "embedding": [0.0] * EMBEDDING_DIMENSIONS}]}
+                ).encode()
+                try:
+                    self.send_response(200)
+                    self.send_header("Content-Type", "application/json")
+                    self.send_header("Content-Length", str(len(body)))
+                    self.end_headers()
+                    self.wfile.write(body)
+                except OSError:  # the client gave up first
+                    pass
+
+            def log_message(self, format: str, *args: object) -> None:
+                pass
+
+        self._server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+        self._thread = threading.Thread(target=self._server.serve_forever, daemon=True)
+
+    @property
+    def url(self) -> str:
+        host, port = self._server.server_address[:2]
+        return f"http://{host!s}:{port}/v1"
+
+    def __enter__(self) -> "SlowEmbeddingServer":
+        self._thread.start()
+        return self
+
+    def __exit__(self, *exc: object) -> None:
+        self._server.shutdown()
+        self._server.server_close()
+
+
+def test_queries_give_up_after_their_own_shorter_timeout() -> None:
+    with SlowEmbeddingServer(delay=1.0) as server:
+        settings = EmbeddingSettings(
+            _env_file=None,
+            base_url=server.url,
+            model="slow",
+            timeout_seconds=10,
+            query_timeout_seconds=0.2,
+        )
+        slow = embedder_from_settings(settings)
+        assert slow is not None
+        start = time.monotonic()
+        with pytest.raises(EmbeddingError, match="Timeout"):
+            slow.embed_query("insider selling")
+        assert time.monotonic() - start < 0.9  # the search falls back to keywords quickly
+        # Documents can wait: the summarizer and filings-index keep the long timeout.
+        assert len(slow.embed_documents(["an 8-K summary"])[0]) == EMBEDDING_DIMENSIONS
+
+
+def test_without_a_query_timeout_queries_use_the_timeout() -> None:
+    assert EmbeddingSettings(_env_file=None).query_timeout_seconds == 2.0  # the setting's default
+    requests: list[httpx2.Request] = []
+
+    def handler(request: httpx2.Request) -> httpx2.Response:
+        requests.append(request)
+        return vectors([1, 0, 0])
+
+    e = OpenAICompatibleEmbedder(
+        base_url="http://llm/v1",
+        model="m",
+        timeout=30,
+        dimensions=3,
+        transport=httpx2.MockTransport(handler),
+    )
+    e.embed_query("q")
+    e.embed_documents(["d"])
+    assert [r.extensions["timeout"]["read"] for r in requests] == [30, 30]

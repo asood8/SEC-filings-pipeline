@@ -36,6 +36,9 @@ spec:
     spec:
       automountServiceAccountToken: false
       enableServiceLinks: false
+      # On SIGTERM uvicorn finishes the requests in flight, then the app flushes its last spans and
+      # metrics (up to 30 s with the collector unreachable, ADR-0016).
+      terminationGracePeriodSeconds: 45
       securityContext:
         runAsNonRoot: true
         runAsUser: 10001
@@ -57,11 +60,16 @@ spec:
           ports:
             - name: http
               containerPort: 8000
+          # Ready only while Postgres answers (GET /readyz gives up after 2 s), so no traffic
+          # reaches a replica without its database and a rollout waits for the new one. Alive
+          # whenever the process answers: a database outage is no reason to restart the API.
           readinessProbe:
             httpGet:
-              path: /healthz
+              path: /readyz
               port: http
             periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 3
           livenessProbe:
             httpGet:
               path: /healthz

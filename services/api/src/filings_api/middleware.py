@@ -21,8 +21,11 @@ from filings_common.ratelimit import RedisRateLimit
 
 logger = logging.getLogger(__name__)
 
-UNLIMITED_PATHS = frozenset({"/healthz"})
-UNCACHED_PATHS = frozenset({"/healthz", "/openapi.json", "/docs", "/redoc"})
+# The Kubernetes probes: never rate limited (they come from the node, often) or cached (they must
+# see the current state). Not traced either (`app.instrument`).
+PROBE_PATHS = frozenset({"/healthz", "/readyz"})
+UNLIMITED_PATHS = PROBE_PATHS
+UNCACHED_PATHS = PROBE_PATHS | {"/openapi.json", "/docs", "/redoc"}
 # Per-user responses: never cached here, and marked no-store so browsers and proxies don't either.
 PRIVATE_PATH_PREFIXES = ("/auth", "/me", "/subscriptions")
 CACHE_PREFIX = "api-cache:v1"

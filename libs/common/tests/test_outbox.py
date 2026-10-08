@@ -1,7 +1,8 @@
 import json
 import threading
 from collections.abc import Sequence
-from datetime import date
+from datetime import date, timedelta
+from pathlib import Path
 from typing import Any
 
 import pytest
@@ -13,7 +14,15 @@ from sqlalchemy.engine import Engine
 
 from filings_common.db import OutboxEvent, session_factory
 from filings_common.events import FilingDiscovered, FilingReady, Topic
-from filings_common.outbox import OutboundMessage, enqueue, relay_batch, run_relay
+from filings_common.health import Heartbeat, check
+from filings_common.outbox import (
+    OutboundMessage,
+    OutboxPruner,
+    enqueue,
+    prune_published,
+    relay_batch,
+    run_relay,
+)
 from filings_common.telemetry import MESSAGING_DESTINATION as DESTINATION
 from filings_common.telemetry import context_from_headers
 
@@ -191,3 +200,142 @@ def test_failed_publish_marks_the_publish_spans_failed(
     [send] = spans.get_finished_spans()
     assert send.status.status_code is StatusCode.ERROR
     assert send.status.description == "RuntimeError: broker unavailable"
+
+
+# --- Pruning published rows -----------------------------------------------------------------
+
+
+def add_ready_events(engine: Engine, count: int) -> list[str]:
+    """More events, with accession numbers that don't collide with add_events'."""
+    accessions = [f"0000789019-26-{n:06d}" for n in range(1, count + 1)]
+    with session_factory(engine).begin() as session:
+        for accession_no in accessions:
+            event = FilingReady(
+                accession_no=accession_no, cik=789019, form_type="8-K", summary_id=1
+            )
+            enqueue(session, Topic.FILINGS_READY, event)
+    return accessions
+
+
+def publish_all(engine: Engine) -> None:
+    while relay_batch(session_factory(engine), RecordingPublisher()):
+        pass
+
+
+def age(engine: Engine, accessions: Sequence[str], days: int) -> None:
+    """Pretend these rows were published `days` ago."""
+    with engine.begin() as conn:
+        conn.execute(
+            sa.update(OutboxEvent)
+            .where(OutboxEvent.key.in_(accessions))
+            .values(published_at=sa.func.now() - timedelta(days=days))
+        )
+
+
+def remaining(engine: Engine) -> list[str]:
+    with engine.connect() as conn:
+        return list(conn.execute(sa.select(OutboxEvent.key).order_by(OutboxEvent.id)).scalars())
+
+
+def test_pruning_deletes_only_rows_published_before_the_retention(clean_db: Engine) -> None:
+    accessions = add_events(clean_db, 4)
+    publish_all(clean_db)
+    age(clean_db, accessions[:2], days=8)
+    age(clean_db, accessions[2:3], days=6)
+    unpublished_rows = add_ready_events(clean_db, 1)  # never pruned, however old
+
+    sessions = session_factory(clean_db)
+    assert prune_published(sessions, older_than=timedelta(days=7)) == 2
+    assert remaining(clean_db) == accessions[2:] + unpublished_rows
+    assert prune_published(sessions, older_than=timedelta(days=7)) == 0
+
+
+def test_pruning_deletes_in_batches_oldest_first(clean_db: Engine) -> None:
+    accessions = add_events(clean_db, 5)
+    publish_all(clean_db)
+    age(clean_db, accessions, days=30)
+    sessions = session_factory(clean_db)
+    deleted = [prune_published(sessions, older_than=timedelta(days=7), batch_size=2)]
+    assert remaining(clean_db) == accessions[2:]
+    while deleted[-1]:
+        deleted.append(prune_published(sessions, older_than=timedelta(days=7), batch_size=2))
+    assert deleted == [2, 2, 1, 0]
+
+
+def test_the_pruner_catches_up_then_runs_hourly(clean_db: Engine) -> None:
+    accessions = add_events(clean_db, 3)
+    publish_all(clean_db)
+    age(clean_db, accessions, days=8)
+    now = [0.0]
+    pruner = OutboxPruner(
+        session_factory(clean_db),
+        timedelta(days=7),
+        batch_size=2,
+        interval=3600,
+        clock=lambda: now[0],
+    )
+    assert pruner.prune_if_due() == 2  # a full batch: more may be waiting
+    assert pruner.prune_if_due() == 1  # caught up: the next run is an hour away
+
+    more = add_ready_events(clean_db, 1)
+    publish_all(clean_db)
+    age(clean_db, more, days=8)
+    now[0] = 3599
+    assert pruner.prune_if_due() == 0
+    assert remaining(clean_db) == more
+    now[0] = 3600
+    assert pruner.prune_if_due() == 1
+    assert remaining(clean_db) == []
+
+
+def test_a_failed_prune_is_logged_and_retried_at_the_next_run(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    unreachable = sa.create_engine("postgresql+psycopg://u:p@127.0.0.1:1/db")  # nothing listens
+    now = [0.0]
+    pruner = OutboxPruner(
+        session_factory(unreachable), timedelta(days=7), interval=3600, clock=lambda: now[0]
+    )
+    try:
+        assert pruner.prune_if_due() == 0
+        assert "pruning the outbox failed" in caplog.text
+        caplog.clear()
+        now[0] = 3599
+        assert pruner.prune_if_due() == 0
+        assert caplog.text == ""  # not retried before the next run
+    finally:
+        unreachable.dispose()
+
+
+def test_run_relay_prunes_while_idle_and_keeps_a_heartbeat(
+    clean_db: Engine, tmp_path: Path
+) -> None:
+    old = add_events(clean_db, 2)
+    publish_all(clean_db)
+    age(clean_db, old, days=8)
+    new = add_ready_events(clean_db, 3)
+    heartbeat = Heartbeat(tmp_path / "relay.heartbeat")
+    stop = threading.Event()
+    worker = threading.Thread(
+        target=run_relay,
+        args=(session_factory(clean_db), RecordingPublisher(), stop),
+        kwargs={
+            "batch_size": 2,
+            "idle_seconds": 0.05,
+            "pruner": OutboxPruner(session_factory(clean_db), timedelta(days=7)),
+            "heartbeat": heartbeat,
+        },
+    )
+    worker.start()
+    try:
+        for _ in range(100):
+            if unpublished(clean_db) == 0 and remaining(clean_db) == new:
+                break
+            stop.wait(0.05)
+    finally:
+        stop.set()
+        worker.join(timeout=5)
+    assert not worker.is_alive()
+    assert remaining(clean_db) == new  # all published, and only the old rows pruned
+    assert unpublished(clean_db) == 0
+    assert check(heartbeat.path) is None

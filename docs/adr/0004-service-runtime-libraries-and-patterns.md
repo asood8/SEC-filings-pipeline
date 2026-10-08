@@ -71,6 +71,13 @@ Valkey's clock, so every worker agrees on time.
 - **Topics.** The relay creates missing topics at startup: each pipeline topic plus its `.dlq`,
   3 partitions, replication factor 1 (one node). Retention is unlimited: events are small, and
   keeping them lets replay re-read history by resetting a consumer group.
+- **Pruning (added 2026-10-07).** Once Kafka has an event, its outbox row is only history (replays
+  enqueue new rows), so the relay deletes rows published more than `OUTBOX_RETENTION_DAYS` ago
+  (default 7, kept for debugging). It deletes 500 at a time, oldest first, only when a poll finds
+  nothing to publish, so publishing never waits for it; a full batch means more may be waiting, and
+  the next idle pass deletes another, otherwise the next run is an hour away. A failed prune is
+  logged and retried an hour later. Unpublished rows are never deleted. The primary key finds the
+  oldest rows (rows are published in id order), so no index on `published_at` is needed.
 
 ### Integration tests
 

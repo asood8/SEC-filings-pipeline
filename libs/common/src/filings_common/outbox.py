@@ -12,14 +12,21 @@ Each row also stores the trace context of the transaction that wrote it. The rel
 row under a short span that continues that trace, and sends the span's context in the message
 headers, so a filing's trace carries on through Kafka to the next stage (see `telemetry`). The
 `filings.outbox.published` metric counts relayed rows by topic.
+
+Published rows are only history once Kafka has them (topics keep every event, and replays enqueue
+new rows), so the relay deletes those published more than a retention period ago
+(`OutboxPruner`): a small batch at a time, only while the outbox is empty, and at most about once
+an hour once caught up, so pruning never delays publishing.
 """
 
 import json
 import logging
 import threading
+import time
 from collections import Counter
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
+from datetime import timedelta
 from typing import Any, Protocol
 
 import sqlalchemy as sa
@@ -30,11 +37,15 @@ from sqlalchemy.orm import Session, sessionmaker
 from filings_common import metrics, telemetry
 from filings_common.db import OutboxEvent
 from filings_common.events import Event, Topic
+from filings_common.health import Heartbeat
 
 logger = logging.getLogger(__name__)
 tracer = trace.get_tracer(__name__)
 
 ERROR_BACKOFF_SECONDS = 5.0
+# Pruning: rows deleted per transaction, and the pause between runs once caught up.
+PRUNE_BATCH_SIZE = 500
+PRUNE_INTERVAL_SECONDS = 3600.0
 
 
 @dataclass(frozen=True)
@@ -129,6 +140,75 @@ def _publish_span(row: OutboxEvent, batch_size: int) -> Span:
     )
 
 
+def prune_published(
+    sessions: sessionmaker[Session], *, older_than: timedelta, batch_size: int = PRUNE_BATCH_SIZE
+) -> int:
+    """Delete up to `batch_size` of the oldest rows published more than `older_than` ago. Returns
+    how many. Unpublished rows are never touched.
+
+    Rows are published in id order, so the oldest published rows have the lowest ids, and the
+    primary key finds them without an index on `published_at`.
+    """
+    with sessions.begin() as session:
+        oldest = (
+            sa.select(OutboxEvent.id)
+            .where(OutboxEvent.published_at < sa.func.now() - older_than)
+            .order_by(OutboxEvent.id)
+            .limit(batch_size)
+        )
+        deleted = session.scalars(
+            sa.delete(OutboxEvent)
+            .where(OutboxEvent.id.in_(oldest.scalar_subquery()))
+            .returning(OutboxEvent.id)
+        ).all()
+    return len(deleted)
+
+
+class OutboxPruner:
+    """Deletes published rows older than `retention`, one batch per call to `prune_if_due`. While
+    a batch comes back full there may be more, so the next call deletes another; otherwise the
+    next run is `interval` seconds away. The first call prunes."""
+
+    def __init__(
+        self,
+        sessions: sessionmaker[Session],
+        retention: timedelta,
+        *,
+        batch_size: int = PRUNE_BATCH_SIZE,
+        interval: float = PRUNE_INTERVAL_SECONDS,
+        clock: Callable[[], float] = time.monotonic,
+    ) -> None:
+        self._sessions = sessions
+        self._retention = retention
+        self._batch_size = batch_size
+        self._interval = interval
+        self._clock = clock
+        self._due = clock()
+
+    def prune_if_due(self) -> int:
+        """Delete one batch if a run is due. Returns how many rows were deleted. A failure is
+        logged and retried at the next run: old rows can wait."""
+        now = self._clock()
+        if now < self._due:
+            return 0
+        try:
+            deleted = prune_published(
+                self._sessions, older_than=self._retention, batch_size=self._batch_size
+            )
+        except Exception:
+            logger.exception("pruning the outbox failed; retrying in %.0fs", self._interval)
+            deleted = 0
+        else:
+            if deleted:
+                logger.info(
+                    "deleted %d outbox events published over %d days ago",
+                    deleted,
+                    self._retention.days,
+                )
+        self._due = now if deleted >= self._batch_size else now + self._interval
+        return deleted
+
+
 def run_relay(
     sessions: sessionmaker[Session],
     publisher: Publisher,
@@ -136,10 +216,17 @@ def run_relay(
     *,
     batch_size: int = 100,
     idle_seconds: float = 1.0,
+    pruner: OutboxPruner | None = None,
+    heartbeat: Heartbeat | None = None,
 ) -> None:
-    """Relay until `stop` is set. Failed batches stay unpublished and are retried after a pause."""
+    """Relay until `stop` is set. Failed batches stay unpublished and are retried after a pause.
+
+    The `pruner` runs only when the outbox is empty, between polls. The `heartbeat` beats on every
+    pass of the loop (see `health`)."""
     metrics.start_at_zero(metrics.OUTBOX_PUBLISHED, (metrics.topic(t.value) for t in Topic))
     while not stop.is_set():
+        if heartbeat is not None:
+            heartbeat.beat()
         try:
             published = relay_batch(sessions, publisher, batch_size)
         except Exception:
@@ -149,4 +236,6 @@ def run_relay(
         if published:
             logger.info("published %d outbox events", published)
         else:
+            if pruner is not None:
+                pruner.prune_if_due()
             stop.wait(idle_seconds)

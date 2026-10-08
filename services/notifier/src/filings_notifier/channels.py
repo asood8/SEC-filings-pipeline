@@ -180,10 +180,23 @@ class SmtpEmailSender:
             raise DeliveryError(f"SMTP failed: {exc!r}") from exc
 
 
+def mask_email(address: str) -> str:
+    """The address with all but the first character of its local part hidden: a***@example.com.
+    Enough to tell recipients apart in a log without writing anyone's address into it."""
+    local, _, domain = address.rpartition("@")
+    return f"{local[:1]}***@{domain}"
+
+
 class LogEmailSender:
-    """Development stand-in: logs the email instead of sending it."""
+    """Development stand-in: logs the email instead of sending it, with the recipient masked
+    (logs are kept and shipped where personal addresses don't belong)."""
 
     def send(self, target: str, alert: Alert) -> None:
         if not target_is_valid(Channel.EMAIL, target):
             raise PermanentDeliveryError("not a valid email address")
-        logger.info("email (not sent: EMAIL_BACKEND=log) to %s: %s", target, alert.headline)
+        logger.info(
+            "email (not sent: EMAIL_BACKEND=log) to %s about %s: %s",
+            mask_email(target),
+            alert.accession_no,
+            alert.headline,
+        )

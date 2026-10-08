@@ -93,7 +93,7 @@ from a filing to the poll that found it.
 | LLM failover | `chat <model>` (CLIENT), one per provider tried | `gen_ai.*`: provider, model, token counts; outcome (`ok`, `invalid`, `error`, `rate_limited`); Gemini's rate-limiter wait |
 | Embeddings | `embeddings <model>` (CLIENT) | model, number of inputs |
 | Notifier | `deliver alert`, one per subscription | channel and outcome (`sent`, `failed`, `retry`, `already_settled`) only |
-| API | `<METHOD> <route>` (SERVER), except `/healthz` | method, route, URL with query string, status, user agent, client address |
+| API | `<METHOD> <route>` (SERVER), except `/healthz` and `/readyz` | method, route, URL with query string, status, user agent, client address |
 
 Accession numbers are fine on spans (they are public, and the way to find a filing's trace), but
 must never become metric labels: each is unique.
@@ -153,7 +153,7 @@ session token, an API key, or LLM prompt or answer text.
 - **Tracing never blocks the pipeline.** Spans are exported in the background; if the endpoint is
   down, they are dropped. Only shutdown waits for the last export: each attempt gives up after the
   exporter's timeout (10 s by default), and the whole flush after 30 s. Phase 7's pods need a grace
-  period that allows for it.
+  period that allows for it: 45 s on every pod that exports, since 2026-10-07 (ADR-0017).
 - **Traces show waiting.** Gaps between stages are real time: the relay's polling interval and
   consumer lag. A long `process` span means retries (it includes their backoff).
 - **The OTLP exporter brings `requests`** as a transitive dependency for its own HTTP. Our code
@@ -170,9 +170,10 @@ session token, an API key, or LLM prompt or answer text.
 - **Follow-ups (Phase 7):** the production headers secret (a Sealed Secret); Terraform for the
   dashboards (`grafana_dashboard`) and rules (`grafana_rule_group`, substituting the data source
   UID), plus a contact point (Discord, its webhook a secret) and notification policy; the pods'
-  `service.instance.id` (the pod name) and a shutdown grace period for the last export; and
-  whether to export straight to Grafana Cloud or through an in-cluster collector (the brief's
-  budget reserves ~0.2 GB for one).
+  `service.instance.id` (the pod name) and a shutdown grace period for the last export (done
+  2026-10-07: 45 s, and discovery now stops on SIGTERM so a run killed at its deadline still
+  exports its spans; ADR-0017); and whether to export straight to Grafana Cloud or through an
+  in-cluster collector (the brief's budget reserves ~0.2 GB for one).
 
 ## Metrics
 
@@ -201,7 +202,7 @@ the unit, so `filings.sec.rate_limit.wait` becomes `filings_sec_rate_limit_wait_
 | `filings.sec.rate_limit.wait` | histogram, s | none | each SEC request attempt's wait for the shared limiter |
 | `filings.sec.responses` | counter | status class (`2xx`, `4xx`, `5xx`, `error`) | each SEC attempt, retries included |
 | `filings.sec.throttled` | counter | none | SEC 429 responses |
-| `http.server.request.duration` | histogram, s | method, route, status | FastAPI's instrumentation, except `/healthz` |
+| `http.server.request.duration` | histogram, s | method, route, status | FastAPI's instrumentation, except `/healthz` and `/readyz` |
 | `http.server.active_requests` | up-down counter | method, scheme | FastAPI's instrumentation |
 
 The brief's "per hour" figures and the notification success rate (sent / (sent + failed)) are

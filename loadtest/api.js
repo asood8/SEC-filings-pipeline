@@ -59,7 +59,9 @@ export const options = {
     http_req_failed: ['rate<0.01'],
     'http_req_duration{kind:list}': ['p(95)<300'],
     'http_req_duration{kind:detail}': ['p(95)<300'],
-    'http_req_duration{kind:search}': ['p(95)<2000'],
+    // An uncached search waits at most EMBEDDING_QUERY_TIMEOUT_SECONDS (2 s) for the embedding
+    // model, then answers from keywords alone; the rest of the request is fast.
+    'http_req_duration{kind:search}': ['p(95)<2500'],
   },
   summaryTrendStats: ['avg', 'med', 'p(95)', 'p(99)', 'max'],
 }

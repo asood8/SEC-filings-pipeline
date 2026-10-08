@@ -1,0 +1,130 @@
+{
+  "description": "Labeled queries for filings-search-eval (ADR-0011). Made on 2026-10-08 for the local database of the watchlist run: 277 filings (256 Form 4, 21 8-K) filed 2026-09-08 to 2026-10-06. Relevance was judged by reading every 8-K's stored summary and every Form 4's headline and transaction codes (form4_filings), not from search results: a filing is relevant when someone typing the query would want it on the first page. Each query lists all the filings judged relevant, so recall can be measured; a query with more than 5 relevant filings can't reach recall@5 = 1. Queries cover the examples ADR-0011 tested, plain words that summaries don't use, names, and Form 4 topics. All accession numbers are public SEC data.",
+  "queries": [
+    {
+      "query": "CFO appointment",
+      "relevant": ["0000093410-26-000188"],
+      "note": "Chevron elects Jeff Gustavson chief financial officer. The summary says 'elected' and 'Chief Financial Officer', never 'CFO' or 'appointment'."
+    },
+    {
+      "query": "trading plan cancelled",
+      "relevant": ["0001193125-26-389753"],
+      "note": "Oracle: Larry Ellison cancelled his 10b5-1 plan. Form 4s made 'under a Rule 10b5-1 trading plan' share the words but are not cancellations."
+    },
+    {
+      "query": "debt offering",
+      "relevant": ["0001104659-26-107526", "0001193125-26-402986"],
+      "note": "Amazon's £4.25 billion note offering and Exxon Mobil's floating rate notes. Tesla's credit facilities are bank loans, not an offering (see 'credit facility')."
+    },
+    {
+      "query": "insider purchase",
+      "relevant": [
+        "0001193125-26-397059",
+        "0001193125-26-403089",
+        "0001193125-26-409451",
+        "0001193125-26-414744",
+        "0001108524-26-000212",
+        "0001341439-26-000099"
+      ],
+      "note": "Every Form 4 with an open-market purchase (transaction code P): Berkshire Hathaway and Warren Buffett buying Lennar (4), a Salesforce director, an Oracle director. Grants and option exercises are not purchases."
+    },
+    {
+      "query": "quarterly results",
+      "relevant": [
+        "0001193125-26-387905",
+        "0000796343-26-000147",
+        "0000909832-26-000084",
+        "0000320187-26-000184"
+      ],
+      "note": "Earnings releases: Oracle Q1 FY27, Adobe Q3 FY26, Costco Q4 FY26, Nike Q1 FY27. Tesla's production and deliveries report has no financial results (see 'electric vehicle deliveries')."
+    },
+    {
+      "query": "leadership change",
+      "relevant": ["0000796343-26-000144", "0000093410-26-000188"],
+      "note": "Executive changes: Adobe's new CEO and executive chair, Chevron's officer changes and new CFO. New directors have their own query ('new board member')."
+    },
+    {
+      "query": "share repurchase",
+      "relevant": ["0000796343-26-000147"],
+      "note": "Adobe's Q3 results, the only filing that mentions buying back its own shares (9.5 million in the quarter). Berkshire buying Lennar shares is an investment, not a repurchase."
+    },
+    {
+      "query": "Warren Buffett",
+      "relevant": [
+        "0001193125-26-397059",
+        "0001193125-26-403089",
+        "0001193125-26-409451",
+        "0001193125-26-414744"
+      ],
+      "note": "The four Form 4s filed jointly by Berkshire Hathaway and Warren E Buffett (Lennar purchases). Ajit Jain's Berkshire Form 4 doesn't involve Buffett."
+    },
+    {
+      "query": "acquisition",
+      "relevant": ["0000002488-26-000182"],
+      "note": "AMD agrees to acquire World Labs for $8.2 billion. Chevron's Hess Midstream deal is a divestiture."
+    },
+    {
+      "query": "new board member",
+      "relevant": ["0001018724-26-000036", "0000320187-26-000170", "0000077476-26-000042"],
+      "note": "Director appointments: Kevin Mandia at Amazon, Alexandre Arnault at Nike, Joaquin Duato at PepsiCo. Form 4s of directors' stock grants don't announce appointments."
+    },
+    {
+      "query": "CEO succession",
+      "relevant": ["0000796343-26-000144"],
+      "note": "Adobe: Anil Chakravarthy succeeds Shantanu Narayen as CEO."
+    },
+    {
+      "query": "credit facility",
+      "relevant": ["0001628280-26-063820"],
+      "note": "Tesla's $30 billion of credit facilities with Citibank and Wells Fargo."
+    },
+    {
+      "query": "dividend declared",
+      "relevant": ["0001193125-26-387905"],
+      "note": "Oracle's Q1 release, which declares common and preferred dividends; no other filing declares one."
+    },
+    {
+      "query": "litigation",
+      "relevant": ["0001403161-26-000121"],
+      "note": "Visa deposits $405 million into its U.S. litigation escrow account."
+    },
+    {
+      "query": "restructuring to cut costs",
+      "relevant": ["0000320187-26-000184"],
+      "note": "Nike's Pace transformation: about $2.5 billion of savings, $1.0 billion of charges, severance. McDonald's NEXT strategy is about growth, not cost cutting."
+    },
+    {
+      "query": "investor presentation",
+      "relevant": ["0001108524-26-000210", "0000731766-26-000205"],
+      "note": "Salesforce's Investor Day presentation and UnitedHealth's presentation at the Wells Fargo healthcare conference."
+    },
+    {
+      "query": "electric vehicle deliveries",
+      "relevant": ["0001628280-26-064366"],
+      "note": "Tesla's Q3 2026 production and deliveries. The summary never says 'electric'."
+    },
+    {
+      "query": "shareholder vote",
+      "relevant": ["0000320187-26-000143"],
+      "note": "Nike's annual meeting results: shareholders approved the amended employee stock purchase plan and voted on directors and the auditor."
+    },
+    {
+      "query": "stock gift",
+      "relevant": [
+        "0002032089-26-000004",
+        "0000789019-26-000188",
+        "0001197649-26-000012",
+        "0001140361-26-038674",
+        "0000002488-26-000178",
+        "0001104659-26-110983",
+        "0000320187-26-000159"
+      ],
+      "note": "Every Form 4 reporting a gift (transaction code G), alone or with other transactions: Eli Lilly, Microsoft, Nvidia, Apple, AMD, Broadcom, Nike insiders."
+    },
+    {
+      "query": "Jensen Huang",
+      "relevant": ["0001197649-26-000012"],
+      "note": "Nvidia's CEO files as 'Jen Hsun Huang': the one Form 4 he filed (a gift of 438,000 shares). Keyword search matches only 'Huang', through its any-word fallback."
+    }
+  ]
+}

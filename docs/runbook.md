@@ -25,6 +25,7 @@ applying, reaching the cluster, Terraform state).
 - [Dependency audit fails](#dependency-audit-fails)
 - [SEC 429s and fair access](#sec-429s-and-fair-access)
 - [Swapping the local LLM model](#swapping-the-local-llm-model)
+- [Changing search ranking or the embedding model](#changing-search-ranking-or-the-embedding-model)
 - [Oracle idle reclamation and capacity errors](#oracle-idle-reclamation-and-capacity-errors)
 - [Backups and restores](#backups-and-restores)
 - [Capacity planning](#capacity-planning)
@@ -484,6 +485,31 @@ saves every summary for reading side by side: numbers can't catch a wrong but we
    choice is an open decision in the brief (§12).
 
 Locally, `LLM_MODEL` in `.env` selects the Ollama model the pipeline uses.
+
+## Changing search ranking or the embedding model
+
+`filings-search-eval` measures search quality (ADR-0011). It runs the labeled queries in
+`config/search_eval.json` through keyword, semantic, and hybrid search with the API's code, and
+prints recall@5, recall@10, MRR, and how much of the top 5 Form 4s take. Run it locally before
+and after changing fusion, the search documents, or the embedding model. Keep the change if the
+numbers improve and no query gets much worse.
+
+```
+make up && make llm-up                      # Postgres, and Ollama with nomic-embed-text
+uv run filings-search-eval --per-query --json data/eval-before.json
+# make the change; for another embedding model: set EMBEDDING_MODEL, then uv run filings-index
+uv run filings-search-eval --per-query --json data/eval-after.json
+```
+
+- **Safe next to the running pipeline:** it only reads (read-only transactions). It waits for a
+  busy embedding model instead of falling back to keywords the way the API does.
+- **No embedding model:** without `EMBEDDING_MODEL`, or with the model down, it measures keyword
+  search only and says why.
+- **Other databases:** the labels fit the local database of the October 2026 watchlist run, and
+  the tool lists any labeled filings it can't find. Against another database (production has
+  other filings), relabel first; the label file's `description` says how the labels were made.
+- **Vector size:** an embedding model with another vector size needs a migration first
+  (ADR-0011).
 
 ## Oracle idle reclamation and capacity errors
 

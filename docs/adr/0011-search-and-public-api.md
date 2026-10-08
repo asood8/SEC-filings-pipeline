@@ -49,6 +49,50 @@ Redis or the embedding model is down.
 The top 50 results from each method are merged with **reciprocal rank fusion**: each list adds
 1/(60 + rank) per result. RRF needs no calibration between BM25-style ranks and cosine scores.
 
+- **A Form 4's semantic rank counts half (added 2026-10-08):** it adds 0.5/(60 + rank).
+  - *Why:* Form 4 documents come from one template and are 92% of the filings, so they fill the
+    semantic top 50 for almost any query. Any of them that also matched a keyword got both
+    contributions and outranked the 8-K being looked for.
+  - *Measured* with `filings-search-eval` (below): MRR went from 0.90 to 0.94, recall@10 from
+    0.89 to 0.91, and the Form 4 share of the top 5 from 54% to 30%. No labeled query got worse.
+    A weight of 0.75 also helps; 0.25 starts to hurt. Spot checks of 14 unlabeled queries (names,
+    and Form 4 topics such as "insider selling" and "phantom stock") changed a slot or two at
+    most, and Form 4s stayed on top where they were what the query asked for.
+  - *Filters:* a `form_type` filter turns the weight off. With one form left, it would only
+    tilt keyword results against semantic ones.
+- **One implementation:** `hybrid_search` lives in filings-common, so the API and the evaluation
+  run the same code.
+
+### Measuring search quality (added 2026-10-08)
+
+`filings-search-eval` runs a labeled query set, `config/search_eval.json`, through keyword,
+semantic, and hybrid search. It uses the API's own search functions, so the measured ranking is
+the production ranking.
+
+- **Metrics, per mode:**
+  - *Recall@5 and recall@10:* the share of a query's relevant filings that appear in its top 5 or
+    top 10.
+  - *MRR (mean reciprocal rank):* 1 if the first relevant filing is ranked first, 1/2 if second,
+    and so on, averaged over queries. It counts 0 if no relevant filing is in the top 20, the
+    API's default page.
+  - *Form 4 share@5:* how many of the top 5 slots Form 4s take, counted only for queries that look
+    for other forms.
+- **Output:** a Markdown table. `--per-query` adds one row per query, and `--json` saves the top
+  10 of every query so two runs can be compared.
+- **Read-only:** it opens read-only transactions. Without a working embedding model, it skips the
+  semantic and hybrid modes and still measures keyword search.
+- **How the labels were made:** 20 queries, judged against the local database (277 filings filed
+  2026-09-08 to 2026-10-06). The judging read every 8-K's stored summary, and every Form 4's
+  headline and transaction codes; search results were not used. Each query lists every filing
+  judged relevant, with a note saying why.
+  - The queries cover the examples tested below, words the summaries don't use ("CFO",
+    "purchase", "electric"), names, and Form 4 topics.
+  - The labels fit that database only. Run against another one, the tool lists the labeled filings
+    it can't find.
+- **Use:** run it before and after a ranking change (fusion, document text, embedding model).
+  Keep the change if the metrics improve and no query gets much worse. Twenty queries make a smoke
+  test, not a benchmark: one query moves a mean by 0.05.
+
 ### Degradation instead of failure
 
 - **No embedder:** without a working embedder, semantic and hybrid requests fall back to keywords,
@@ -118,6 +162,26 @@ The top 50 results from each method are merged with **reciprocal rank fusion**: 
   model nearly flat scores (0.53–0.55 for "debt offering"), and with 255 of 275 documents being
   Form 4s, those crowd the semantic results. Some hybrid results after the first few are weak
   ("leadership change" → an ESPP amendment).
+- **Measured on 2026-10-08** with `filings-search-eval` (277 filings, `nomic-embed-text:v1.5`,
+  the Form 4 weight in place):
+
+  | Mode | Recall@5 | Recall@10 | MRR | Form 4 share@5 (16 queries) |
+  |---|---|---|---|---|
+  | keyword | 0.72 | 0.72 | 0.83 | 19% |
+  | semantic | 0.81 | 0.87 | 0.85 | 49% |
+  | hybrid | 0.86 | 0.91 | 0.94 | 30% |
+
+  What the per-query rows show, for later work:
+  - *Keyword search misses other wording.* "CFO appointment" fails because the summaries say
+    "Chief Financial Officer". "insider purchase" fails because Form 4s say "bought". Semantic
+    search finds both.
+  - *Hybrid can be worse than semantic alone.* For "insider purchase", hybrid's recall@10 is 0.17
+    against semantic's 0.83: wrong keyword matches, such as Nike's employee stock *purchase* plan,
+    outweigh the right semantic ones.
+  - *Tickers collide with words.* Costco's ticker COST stems like "costs", so keyword search
+    returns Costco Form 4s first for "restructuring to cut costs".
+  - *Semantic mode on its own still gives Form 4s half the top 5.* The weight applies only to
+    hybrid search, the default.
 - **Changing dimensions needs a migration.** `EMBEDDING_DIMENSIONS` is fixed at 768 by the pgvector
   column, so a model with another size means a migration and a re-embed with `filings-index`.
 - **Production.** The API needs the embedding server at query time, so Phase 7 must run it next to

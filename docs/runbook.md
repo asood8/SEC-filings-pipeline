@@ -690,6 +690,91 @@ If one nears its limit: parsed payloads in MongoDB can be deleted and re-derived
 filings (`filings-replay discovered`); `backup_retention_days` can be lowered; anything else is a
 design decision for an ADR.
 
+### Query speed at volume (measured 2026-10-08)
+
+Every query the system runs regularly, timed at **13 times the volume the 35-company watchlist
+reaches in 10 years**: synthetic, production-shaped data for 500 watchlist companies over 10 years
+(`scripts/synthetic_data.py`, 8.7 minutes to generate; 2.3 GB): 451,860 filings (93% Form 4s),
+1.0 million Form 4 transaction lines, 452,000 summaries and search documents, the newest 50,000
+filings embedded, 8,000 companies, 1,000 users with 5,700 subscriptions and 786,000 notifications,
+and 462,000 outbox rows (a full replay two days before). `scripts/measure_queries.py` runs the
+real code (API endpoints through FastAPI's test client, pipeline handlers in rolled-back
+transactions) with production's planner settings, and explains each statement. Laptop numbers:
+expect the A1's single Postgres CPU to be about 2 to 3 times slower.
+
+| Query | API p50 / p95 ms | Slowest SQL ms | |
+|---|---|---|---|
+| Feed, any page or cursor, with or without a form filter | 7–8 / 8–9 | 0.5–1.3 | fixed: was 35–280 ms of SQL |
+| Feed or page of one company | 8–9 / 9–16 | 0.4–1.8 | |
+| Filing detail (Form 4 with lines, 8-K with exhibits) | 11–14 / 14–30 | 0.1 | |
+| Companies: list, watchlist, `q=` | 7–14 / 8–15 | 0.7–7.4 | 8,000 rows, read whole; doesn't grow with history |
+| Insider activity, busiest issuer (8,400 Form 4s), 90 or 365 days | 54 / 61–66 | 43 | fixed: was 87–116 ms; grows with the issuer's history |
+| Keyword search, a word most documents have (`sold`, `shares`) | 1,290–1,420 / 1,710–2,330 | 1,080–1,480 | **not fixed**, see below |
+| Keyword search, selective (`dividend` on 8-Ks, a relaxed query) | 60–63 / 75–81 | 75–80 | |
+| Keyword search, ticker of the busiest company / company filter | 128–172 / 158–206 | 77–154 | grows with the company's filings |
+| Semantic search: none / company / 8-K filter | 13 / 17 / 247 (p95 14 / 21 / 270) | 1.5 / 11 / 240 | fixed: the 8-K filter returned nothing |
+| Hybrid search: none / company / 8-K filter | 106 / 24 / 284 (p95 116 / 35 / 315) | 48 / 9 / 236 | |
+| `/me`; `/subscriptions` of the most-subscribed user (25) | 5 / 10 (p95 6 / 11) | 0.3 | |
+| Discovery: one run, 499 companies, nothing new | 1,800 / 1,890 | 0.6 | 456 statements; the time is parsing the fake SEC answers |
+| Parser (Form 4); summarizer (Form 4 with embedding) | 11 / 19 (p95 13 / 24) | 3.8 | |
+| Notifier: a Form 4 with 72 matching subscriptions | 255 / 321 | 0.2 | one transaction per alert, by design (ADR-0012) |
+| Relay: a batch of 100; pruning a due batch / nothing due | 10 / 6 / 5 (p95 14 / 7 / 8) | 0.6 / 1.6 / 0.2 | fixed: nothing due read the whole outbox |
+| Sign-in (start a session) | 5 / 7 | 0.2 | |
+
+What was fixed (median `EXPLAIN ANALYZE`, before and after, on the same data):
+
+- **Feed** (`GET /filings`): an index on `filings (filed_at, accession_no)`, the feed's order.
+  Every page used to sort all filings, partly on disk: first page 249 → 0.4 ms, five years back
+  121 → 0.4 ms, 8-Ks only 35 → 0.5 ms. A rare form type (none today) would still walk the index
+  until it finds a page of them.
+- **Insider activity**: a partial index on `form4_transactions (accession_no)` for the lines the
+  endpoint totals (codes P and S, not derivative). The planner probes the issuer's filings' lines
+  instead of scanning all 1 million: 79 → 30 ms (90 days) and 87 → 36 ms (365 days). It still
+  reads every Form 4 of the issuer, so it grows with the issuer's history, not with `days`;
+  bounding it needs a condition on `period_of_report` in the query. The index's condition must
+  stay the query's.
+- **Semantic search with a filter**: pgvector's HNSW scan returns its `hnsw.ef_search` (40)
+  nearest vectors and filters apply afterwards. So an 8-K filter returned **0 of 20** results
+  (Form 4s filled the 40), and hybrid search got 40 semantic candidates instead of 50. Iterative
+  scans (`hnsw.iterative_scan = strict_order`, set per transaction in `semantic_search`) keep going
+  until the limit is met: 20 of 20, 50 of 50. The cost is up to `hnsw.max_scan_tuples` (20,000)
+  vectors visited: 184–265 ms with these random vectors, where each form forms a tight cluster
+  and the query sits nearer the Form 4s; hybrid's 8-K search got 45 of 50 before that cap. Real
+  8-K queries sit nearer 8-Ks. Small tables don't use the index (the 278 live embeddings are
+  compared exactly), so nothing changed there yet.
+- **Outbox pruning**: asking for "the oldest rows published over 7 days ago" read the whole outbox
+  whenever none were (after a replay, 460,000 rows for a week, hourly): 91 → 0.2 ms by looking
+  only at the oldest batch, since rows are published in id order (ADR-0004).
+
+Not fixed, for a decision when the watchlist grows:
+
+- **Keyword search ranks every matching document.** Postgres computes `ts_rank_cd` for each match
+  from the row itself (no index can rank), so the cost follows the number of matches: `sold`
+  (171,000 matches) 1.1–1.7 s, `shares` (434,000) 1.3–2.3 s, including 40–170 ms of JIT
+  compilation. Template Form 4s tie on rank, so these return the newest matches. On the 35-company
+  watchlist after 10 years (35,000 documents) the worst word stays under about 0.3 s. The ticker
+  check before a query (`_ticker_words`) also reads every match of a short lowercase word ("sold",
+  "share", "chief"): 35–95 ms here. Options, if it matters: rank only the newest N matches (results change only when an older
+  match outranks them), a RUM index (an extension the pgvector image lacks), or a search engine
+  (ADR-0011 rejected one for this size).
+- **Per-company work grows with the company's history**: insider activity (above), and keyword
+  search for its ticker or with its filter, which reads all its matching documents (a company
+  with 9,400 filings: 77–154 ms).
+
+To measure again (a throwaway database; never the `filings` one):
+
+```
+uv run python scripts/synthetic_data.py --create \
+    --database-url postgresql+psycopg://filings:filings-local-dev@localhost:5432/synthetic_scale
+uv run python scripts/measure_queries.py --plans-dir plans \
+    --database-url postgresql+psycopg://filings:filings-local-dev@localhost:5432/synthetic_scale
+uv run python scripts/synthetic_data.py --drop --database-url ...
+```
+
+The generator resumes where it stopped if interrupted (rerun the same command); `--companies`,
+`--years`, `--embeddings`, and `--users` scale it. The measurement flags statements that scan a
+large table sequentially, sort on disk, or spend time on JIT; `--only` picks scenarios.
+
 ## Enforce the website's Content-Security-Policy
 
 The website's CSP ships as `Content-Security-Policy-Report-Only` (ADR-0015): browsers report

@@ -196,6 +196,36 @@ the production ranking.
   request. Before this change, an outage added about 8 s to every request (redis-py retries by
   default).
 
+### Indexes and query plans at volume (added 2026-10-08)
+
+Every API query was explained at 13 times the 35-company watchlist's 10-year volume (synthetic
+data: 500 companies, 10 years, 452,000 filings; runbook, "Capacity planning", has the numbers).
+
+- **The feed has an index in its order**, `filings (filed_at, accession_no)`. Without it, every
+  page of `GET /filings` (cursor or not, form filter or not) sorted all filings: 249 ms for the
+  first page, 0.4 ms with it. Keyset cursors only pay off with an index on the sort key.
+- **Insider activity has a partial index**, `form4_transactions (accession_no)` where the code is
+  P or S and the line isn't derivative: exactly the lines the endpoint totals. The planner then
+  probes the issuer's filings' lines instead of hash-joining all of them: 87 → 36 ms for an
+  issuer with 8,400 Form 4s. Its condition must change with the query's. The work still grows
+  with the issuer's whole history, not with `days`.
+- **Semantic search scans the HNSW index iteratively** (`hnsw.iterative_scan = strict_order`, set
+  for the transaction). An HNSW scan returns its `hnsw.ef_search` (40) nearest vectors and filters
+  apply afterwards, so at volume an 8-K filter returned nothing once Form 4s filled those 40, and
+  hybrid search got 40 semantic candidates instead of 50. Iterative scans continue in distance
+  order until the limit is met or `hnsw.max_scan_tuples` (20,000) vectors were visited, which
+  bounds the worst case (about 250 ms with clustered synthetic vectors). Small tables, such as the
+  live one, are compared exactly and never used the index.
+  - *Not chosen:* a higher `ef_search` (fixes only the unfiltered case), `relaxed_order` (results
+    come slightly out of order, while the plan trusts the index's order and only sorts ties), or
+    exact search under every filter (a Form 4 filter would compute nearly every distance).
+- **Keyword search's cost follows its matches.** `ts_rank_cd` reads each matching row, and no
+  Postgres index can rank, so a word in most documents takes 1–2 s at that volume (under about
+  0.3 s at the watchlist's 10-year volume). Left as it is, with the options listed in the runbook,
+  until a larger watchlist makes it matter.
+- **No index on `companies (ticker)`.** Ticker lookups and the companies list read the 8,000-row
+  ticker map whole in under 2 ms, and it doesn't grow with history.
+
 ## Alternatives considered
 
 - **A dedicated search engine (OpenSearch, Meilisearch).** Another always-on service on a 12 GB VM,

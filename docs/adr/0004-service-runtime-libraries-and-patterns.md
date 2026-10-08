@@ -78,6 +78,13 @@ Valkey's clock, so every worker agrees on time.
   the next idle pass deletes another, otherwise the next run is an hour away. A failed prune is
   logged and retried an hour later. Unpublished rows are never deleted. The primary key finds the
   oldest rows (rows are published in id order), so no index on `published_at` is needed.
+  - *Only the oldest batch is looked at (2026-10-08).* Asking for "up to 500 rows published over
+    7 days ago, oldest first" read the whole outbox whenever there were none, which is every
+    hourly run once caught up: after a full replay, 460,000 rows for a week, 91 ms each on the
+    laptop (measured on synthetic data; runbook, "Capacity planning"). The query now takes the
+    500 oldest published rows and deletes those old enough: 0.2 ms. Since published_at grows with
+    the id, none old enough among them means none at all. A row that committed late, and so was
+    published after rows with higher ids, waits for a later run.
 
 ### Integration tests
 

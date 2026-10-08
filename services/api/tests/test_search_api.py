@@ -2,7 +2,13 @@ from collections.abc import Callable
 from typing import Any
 
 import pytest
+import redis
 from fastapi.testclient import TestClient
+
+from filings_api.app import api_redis_client
+from filings_api.embedding_cache import TTL_SECONDS, QueryEmbeddingCache, cache_key
+from filings_api.middleware import RedisBackoff
+from filings_common.db import EMBEDDING_DIMENSIONS
 
 pytestmark = pytest.mark.integration
 
@@ -56,6 +62,71 @@ def test_falls_back_to_keywords_without_a_working_embedder(
     body = search(make_client(embedder=embedder), q="chief financial officer")
     assert (body["mode"], body["degraded"]) == ("keyword", True)
     assert hits(body) == [ids.apple_8k]
+
+
+def test_a_fallback_from_a_failing_model_is_not_cached(
+    make_client: Callable[..., TestClient], make_embedder: Callable[..., Any]
+) -> None:
+    # The model is likely just busy: the next request should try it again.
+    client = make_client(embedder=make_embedder(fail=True), cache_ttl_seconds=60)
+    responses = [client.get("/search", params={"q": "cfo"}) for _ in range(2)]
+    assert [r.json()["degraded"] for r in responses] == [True, True]
+    assert all(r.headers["Cache-Control"] == "no-store" for r in responses)
+    assert all("X-Cache" not in r.headers for r in responses)
+    # Without any model, keyword results are all there is, and they are cached as usual.
+    unconfigured = make_client(embedder=None, cache_ttl_seconds=60)
+    responses = [unconfigured.get("/search", params={"q": "cfo"}) for _ in range(2)]
+    assert [r.headers["X-Cache"] for r in responses] == ["MISS", "HIT"]
+
+
+def test_query_embeddings_are_cached_across_modes_and_filters(
+    make_client: Callable[..., TestClient], make_embedder: Callable[..., Any], ids: Any
+) -> None:
+    embedder = make_embedder()
+    client = make_client(embedder=embedder, cache_ttl_seconds=60)
+    assert hits(search(client, q="record revenue guidance", mode="semantic"))[0] == ids.msft_8k
+    search(client, q="record revenue guidance")  # hybrid: another URL, the same query
+    search(client, q="record revenue guidance", form_type="8-K")
+    assert embedder.queries == ["record revenue guidance"]
+
+    # A busy model doesn't matter for a query embedded recently.
+    busy = make_client(embedder=make_embedder(fail=True), cache_ttl_seconds=60)
+    body = search(busy, q="record revenue guidance", mode="semantic", limit=1)
+    assert (body["mode"], body["degraded"]) == ("semantic", False)
+    assert hits(body) == [ids.msft_8k]
+
+
+def test_query_embeddings_are_cached_only_with_caching_on(
+    make_client: Callable[..., TestClient], make_embedder: Callable[..., Any]
+) -> None:
+    embedder = make_embedder()
+    client = make_client(embedder=embedder, cache_ttl_seconds=0)
+    search(client, q="cfo", mode="semantic")
+    search(client, q="cfo", mode="semantic")
+    assert embedder.queries == ["cfo", "cfo"]
+
+
+def test_query_embedding_cache_fails_open(
+    make_client: Callable[..., TestClient], make_embedder: Callable[..., Any]
+) -> None:
+    dead = api_redis_client("redis://localhost:1/0")  # nothing listens on port 1
+    client = make_client(redis_client=dead, cache_ttl_seconds=60)
+    body = search(client, q="record revenue guidance", mode="semantic")
+    assert (body["mode"], body["degraded"]) == ("semantic", False)
+
+
+def test_cached_query_vectors_are_compact_and_expire(redis_client: redis.Redis) -> None:
+    redis_client.flushdb()  # DB 15 belongs to tests
+    cache = QueryEmbeddingCache(redis_client, RedisBackoff())
+    vector = [0.1] * EMBEDDING_DIMENSIONS
+    cache.put("model-a", "cfo", vector)
+    assert cache.get("model-a", "cfo") == pytest.approx(vector)
+    assert cache.get("model-b", "cfo") is None  # vectors of different models never mix
+    key = cache_key("model-a", "cfo")
+    assert len(redis_client.get(key) or b"") == 4 * EMBEDDING_DIMENSIONS
+    assert 0 < redis_client.ttl(key) <= TTL_SECONDS
+    redis_client.set(key, b"garbage")
+    assert cache.get("model-a", "cfo") is None
 
 
 def test_query_is_validated(client: TestClient) -> None:

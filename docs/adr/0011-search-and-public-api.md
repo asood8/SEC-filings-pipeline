@@ -53,6 +53,15 @@ The top 50 results from each method are merged with **reciprocal rank fusion**: 
 
 - **No embedder:** without a working embedder, semantic and hybrid requests fall back to keywords,
   and the response says `"degraded": true`.
+- **A slow embedder (added 2026-10-07):** a k6 smoke test saw 7 s searches while the CPU model was
+  busy embedding documents. A query embedding now waits at most `EMBEDDING_QUERY_TIMEOUT_SECONDS`
+  (default 2 s; well under a second on an idle model), then the search answers with keyword results
+  (`degraded: true`). httpx2 applies the timeout to connecting and to each read, and the model
+  sends its answer in one piece, so it bounds the wait for the answer. Documents (the summarizer,
+  `filings-index`) keep `EMBEDDING_TIMEOUT_SECONDS` (60 s). A fallback caused by a failing model is
+  sent with `Cache-Control: no-store`, so the response cache doesn't keep serving it after the
+  model recovers; with no embedder configured, keyword results are all there is and are cached as
+  usual.
 - **Embedding failure in the summarizer:** this never blocks a summary. The filing stays
   keyword-searchable and `filings-index` embeds it later.
 
@@ -70,6 +79,10 @@ The top 50 results from each method are merged with **reciprocal rank fusion**: 
   `API_TRUST_PROXY_HEADERS` is set, because otherwise clients could spoof it.
 - **Caching:** successful JSON GETs are cached for 60 s. New filings arrive minutes apart, so a
   short TTL needs no invalidation.
+- **Query embeddings are cached too** (added 2026-10-07), for 10 minutes, keyed by the model and a
+  SHA-256 of the query: one vector serves every mode, filter, and page of a query, which the
+  URL-keyed response cache can't. Each is 3 KB (32-bit floats, the precision pgvector keeps).
+  Like the response cache it fails open, and `API_CACHE_TTL_SECONDS=0` turns it off.
 - **Redis failures are fast and fail open.** The API's Redis client has 0.5 s timeouts and no
   retries. After an error, Redis is skipped for 10 s, so an outage costs one timeout, not one per
   request. Before this change, an outage added about 8 s to every request (redis-py retries by

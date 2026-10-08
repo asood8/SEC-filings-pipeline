@@ -15,6 +15,7 @@ from redis.backoff import NoBackoff
 from redis.retry import Retry
 from sqlalchemy.orm import Session, sessionmaker
 
+from filings_api.embedding_cache import QueryEmbeddingCache
 from filings_api.google import GoogleIdTokenVerifier, GoogleSigningKeys
 from filings_api.middleware import (
     CacheMiddleware,
@@ -103,6 +104,11 @@ def create_app(
         app.state.embedder = emb
         app.state.google_verifier = verifier
         app.state.cache = client
+        app.state.query_embeddings = (
+            QueryEmbeddingCache(client, app.state.redis_backoff)
+            if client is not None and settings.cache_ttl_seconds > 0
+            else None
+        )
         app.state.rate_limit = (
             RedisRateLimit(
                 client,
@@ -149,6 +155,7 @@ def create_app(
     app.state.embedder = None
     app.state.google_verifier = None
     app.state.cache = None
+    app.state.query_embeddings = None
     app.state.rate_limit = None
     app.state.redis_backoff = RedisBackoff()
     app.state.cache_ttl_seconds = settings.cache_ttl_seconds

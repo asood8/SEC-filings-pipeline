@@ -46,11 +46,19 @@ summarized, median 28 s, p95 49 s, no numbers that the filing doesn't contain.
 
 **Search quality** (`filings-search-eval`, 20 labeled queries over the local filings): hybrid
 search (the default) ranks a relevant filing first for every query (mean reciprocal rank 1.00)
-and finds 95% of the relevant filings in its top 10. Weighting Form 4s' semantic matches at half
+and finds 97% of the relevant filings in its top 10. Weighting Form 4s' semantic matches at half
 cut their share of the top 5, for queries about other forms, from 54% to 30%. Keyword search's
 mean reciprocal rank went from 0.83 to 0.94 once it learned other words for what summaries say
 ("CFO" for "Chief Financial Officer", "purchase" for "bought") and stopped matching Costco's
-ticker COST for "costs" ([ADR-0011](docs/adr/0011-search-and-public-api.md)).
+ticker COST for "costs"; "stock" for "shares" took "stock gift" from one of seven gifts to all
+seven ([ADR-0011](docs/adr/0011-search-and-public-api.md)).
+
+**Query plans at volume** (`scripts/synthetic_data.py` and `scripts/measure_queries.py`, on
+synthetic data for 500 companies over 10 years: 452,000 filings, 13 times what the watchlist
+gathers in a decade): every page of the feed takes under 2 ms of SQL after an index fix (it used
+to sort all filings: 249 ms), and filtered semantic search fills its pages (an 8-K filter returned
+nothing at that volume). Keyword search for a word most documents contain still takes 1–2 s there
+([runbook, "Capacity planning"](docs/runbook.md#capacity-planning)).
 
 Example headlines from that run (public filings):
 
@@ -177,10 +185,11 @@ JavaScript origins; no secret needed) in `.env` as `GOOGLE_CLIENT_ID`. Open the 
 The API: `GET /search?q=...` (hybrid by default; `mode=keyword|semantic`), `GET /filings`,
 `GET /filings/{accession_no}` (with a Form 4's transaction lines), `GET /companies`,
 `GET /companies/{ticker}`, and `GET /companies/{ticker}/insider-activity?days=90` (insiders'
-purchases and sales per owner). Lists use cursor pagination, and responses are cached briefly and
-rate-limited per client through Redis. Signed in: `POST /auth/google`, `POST /auth/logout`,
-`GET`/`DELETE /me`, and alert subscriptions at `/subscriptions` (`POST /subscriptions/batch` adds
-several companies and destinations at once).
+purchases and sales per owner, grouped by owner CIK; owners come with the name as filed and a
+readable one, "COOK TIMOTHY D" as "Timothy D Cook"). Lists use cursor pagination, and responses
+are cached briefly and rate-limited per client through Redis. Signed in: `POST /auth/google`,
+`POST /auth/logout`, `GET`/`DELETE /me`, and alert subscriptions at `/subscriptions`
+(`POST /subscriptions/batch` adds several companies and destinations at once).
 
 8-K summaries need an LLM: set `GEMINI_API_KEY` (free from Google AI Studio, no billing needed)
 and/or a local model. `make llm-up` runs Ollama in Docker and pulls `llama3.2:3b` and the
@@ -190,7 +199,7 @@ and/or a local model. `make llm-up` runs Ollama in Docker and pulls `llama3.2:3b
 ```sh
 uv run filings-discovery fetch-exhibits    # download EX-99 exhibits for 8-Ks found before exhibits
 uv run filings-replay parsed --form-type 4 # re-summarize history (also: discovered, to reparse)
-uv run filings-rebuild-key-fields --form-type 4  # refill Form 4 transaction lines from MongoDB
+uv run filings-rebuild-key-fields --form-type 4  # refill Form 4 key fields from MongoDB
 ```
 
 ## Commands
@@ -221,7 +230,9 @@ uv run filings-rebuild-key-fields --form-type 4  # refill Form 4 transaction lin
 | `uv run filings-benchmark --model <name>` | Compare 8-K summarization across models: latency, failures, grounding |
 | `uv run filings-search-eval` | Score keyword, semantic, and hybrid search against labeled queries (`config/search_eval.json`) |
 | `uv run filings-replay discovered --accession <no>` | Reprocess one filing (also `--form-type`, `--status`, or `parsed`) |
-| `uv run filings-rebuild-key-fields --form-type 4` | Rewrite parsed filings' Postgres key fields (Form 4 transaction lines too) from their MongoDB payloads, after a key-field change; no SEC calls, no events |
+| `uv run filings-rebuild-key-fields --form-type 4` | Rewrite parsed filings' Postgres key fields (Form 4 owner CIKs and transaction lines too) from their MongoDB payloads, after a key-field change; no SEC calls, no events |
+| `uv run python scripts/synthetic_data.py --create --database-url <throwaway>` | Fill a throwaway database with years of synthetic, production-shaped data (resumes if interrupted; `--drop` deletes it) |
+| `uv run python scripts/measure_queries.py --database-url <throwaway>` | Time and explain every regular query on it, flagging sequential scans of large tables |
 | `uv run filings-healthcheck <process>` | The workers' liveness check (e.g. `filings-parser`): exits 1 if its loop stopped beating |
 
 ## Local services
@@ -252,7 +263,8 @@ docs/PROJECT_BRIEF.md spec, architecture, and build plan
 docs/adr/             architecture decision records
 docs/runbook.md       operating the production system: alerts, deploys, secrets, backups
 docker/               the Dockerfile for the service images
-scripts/              helpers for `make pipeline`, `backup-drill`, `k8s-tools`, and `k8s-check`
+scripts/              helpers for `make pipeline`, `backup-drill`, `k8s-tools`, and `k8s-check`;
+                      synthetic data and query measurements at volume
 deploy/               Kubernetes manifests (Kustomize, Sealed Secrets, Argo CD), and Grafana
                       dashboards and alert rules
 .github/workflows/    CI, image builds and deploys, the dependency audit

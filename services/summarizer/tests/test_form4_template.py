@@ -6,7 +6,7 @@ import pytest
 
 from filings_common.summaries import FilingSummary
 from filings_parser.form4 import parse_form4
-from filings_summarizer.form4_template import company_name, display_name, summarize_form4
+from filings_summarizer.form4_template import summarize_form4
 
 FIXTURES = Path(__file__).parents[3] / "tests" / "fixtures" / "form4"
 
@@ -15,41 +15,13 @@ def summary(accession_no: str) -> FilingSummary:
     return summarize_form4(parse_form4((FIXTURES / f"{accession_no}.xml").read_bytes()))
 
 
-@pytest.mark.parametrize(
-    ("name", "shown"),
-    [
-        ("HUANG JEN HSUN", "Jen Hsun Huang"),
-        ("Herrington Douglas J", "Douglas J Herrington"),
-        ("SMITH JOHN A JR", "John A Smith Jr"),
-        ("O'BRIEN MARY", "Mary O'Brien"),
-        ("BERKSHIRE HATHAWAY INC", "Berkshire Hathaway Inc"),
-        ("BANK OF AMERICA CORP /DE/", "Bank of America Corp"),
-        ("Banc of America Preferred Funding Corp", "Banc of America Preferred Funding Corp"),
-    ],
-)
-def test_display_name_reorders_people_and_keeps_entities(name: str, shown: str) -> None:
-    assert display_name(name) == shown
-
-
-@pytest.mark.parametrize(
-    ("name", "shown"),
-    [
-        ("LENNAR CORP /NEW/", "Lennar Corp"),
-        ("Tesla, Inc.", "Tesla, Inc."),
-        ("NETFLIX INC", "Netflix Inc"),
-    ],
-)
-def test_company_name(name: str, shown: str) -> None:
-    assert company_name(name) == shown
-
-
 def test_open_market_sale() -> None:
     s = summary("0001936006-26-000026")
     assert (
         s.headline == "Douglas J Herrington sold 1,000 AMZN shares for $251.5K (avg $251.50/share)"
     )
     assert s.summary == (
-        "Douglas J Herrington (CEO Worldwide Amazon Stores) reported 1 transaction in Amazon Com"
+        "Douglas J Herrington (CEO Worldwide Amazon Stores) reported 1 transaction in Amazon.com"
         " Inc (AMZN) securities on Oct 1, 2026. Douglas J Herrington sold 1,000 AMZN shares for"
         " $251.5K (avg $251.50/share). The filing says the trades were made under a Rule 10b5-1"
         " trading plan. Afterwards, the reported holding was 474,681 AMZN shares directly."

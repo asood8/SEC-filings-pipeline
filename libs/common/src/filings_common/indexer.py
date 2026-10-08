@@ -1,9 +1,12 @@
-"""`filings-index`: rebuild the search index from current summaries and embed what's missing.
+"""`filings-index`: rebuild the search index from current summaries, and embed the documents whose
+embedding is missing or outdated.
 
 Run it after enabling or changing the embedding model, after changing how search documents are
-built (their fields, or the keyword lists in filings_common.search), or to backfill filings
-summarized before search existed. It is idempotent, and it re-embeds nothing that has an
-embedding. New summaries are indexed by the summarizer as they're written.
+built (their fields, the keyword lists in filings_common.search, or how names are shown), or to
+backfill filings summarized before search existed. It is idempotent. It embeds a document only
+when its embedded text differs from the text its stored vector was made from (or there is none),
+so a change to keywords embeds nothing. New summaries are indexed by the summarizer as they're
+written.
 """
 
 import logging

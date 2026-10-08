@@ -16,6 +16,7 @@
 `filings-search-eval` (search_eval.py) measures ranking changes on a labeled query set.
 """
 
+import hashlib
 import logging
 import re
 from collections.abc import Mapping, Sequence
@@ -26,6 +27,7 @@ from sqlalchemy.dialects.postgresql import ARRAY, TSQUERY
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.orm import Session, aliased, sessionmaker
 
+from filings_common import names
 from filings_common.db import Company, Filing, FilingEmbedding, FilingSearch, Summary
 from filings_common.embeddings import Embedder, EmbeddingError
 from filings_common.summaries import FilingSummary
@@ -70,6 +72,13 @@ WORD_FORMS: Mapping[str, str] = {
     "bought": "buy purchase",
     "sold": "sell sale",
 }
+# Other words for what a word means here, also one way. The Form 4 template writes stock trades
+# as "shares" ("gave 438,000 NVDA shares as a gift") and never "stock", so "stock gift" found one
+# of seven gifts. Measured with filings-search-eval (ADR-0011): its recall@10 went from 0.14 to
+# 1.00 (keyword) and 0.43 to 1.00 (hybrid), and no labeled query got worse.
+RELATED_WORDS: Mapping[str, str] = {
+    "shares": "stock",
+}
 
 
 def _pattern(phrase: str) -> re.Pattern[str]:
@@ -84,7 +93,10 @@ def _pattern(phrase: str) -> re.Pattern[str]:
 _ALIASES: list[tuple[re.Pattern[str], str]] = [
     *((_pattern(long), short) for short, long in ABBREVIATIONS.items()),
     *((_pattern(short), long) for short, long in ABBREVIATIONS.items()),
-    *((re.compile(rf"\b{form}\b", re.IGNORECASE), words) for form, words in WORD_FORMS.items()),
+    *(
+        (re.compile(rf"\b{word}\b", re.IGNORECASE), words)
+        for word, words in [*WORD_FORMS.items(), *RELATED_WORDS.items()]
+    ),
 ]
 # A query word shaped like a ticker (compared in capitals): up to 5 letters and digits, starting
 # with a letter, maybe with a class or series after "." or "-" (BRK-B, BRK.A).
@@ -94,7 +106,7 @@ _TICKER_WORD = re.compile(r"[A-Z][A-Z0-9]{0,4}(?:[.-][A-Z0-9]{1,3})?")
 @dataclass(frozen=True)
 class SearchDocument:
     title: str
-    company: str  # the company's name
+    company: str  # the company's name, as names.company_name shows it
     body: str
     ticker: str | None = None
     # Searched, not embedded: other words for what the text says (keywords_for).
@@ -115,8 +127,8 @@ class SearchHit:
 
 def keywords_for(text: str) -> str:
     """Other words for what the text says, one per line: what an abbreviation stands for, or the
-    reverse, when the text has only one of the two (ABBREVIATIONS), and the plain words for an
-    irregular verb form (WORD_FORMS)."""
+    reverse, when the text has only one of the two (ABBREVIATIONS), the plain words for an
+    irregular verb form (WORD_FORMS), and related words the text doesn't have (RELATED_WORDS)."""
     found = [alias for pattern, alias in _ALIASES if pattern.search(text)]
     return "\n".join(dict.fromkeys(a for a in found if not _pattern(a).search(text)))
 
@@ -124,11 +136,14 @@ def keywords_for(text: str) -> str:
 def build_document(
     summary: FilingSummary, *, company_name: str, ticker: str | None, form_type: str
 ) -> SearchDocument:
+    """The search document of a summary. The company's name may be EDGAR's ("CHEVRON CORP") or
+    already shown the way names.company_name shows it ("Chevron Corp"): the document gets the
+    latter either way, so the summarizer and `filings-index` write the same text."""
     label = FORM_LABELS.get(form_type, f"Form {form_type}")
     body = "\n".join([summary.summary, *summary.key_points, label])
     return SearchDocument(
         title=summary.headline,
-        company=company_name,
+        company=names.company_name(company_name),
         body=body,
         ticker=ticker or None,
         keywords=keywords_for(f"{summary.headline}\n{body}"),
@@ -155,16 +170,29 @@ def upsert_document(
     )
 
 
+def text_sha256(text: str) -> str:
+    """The hash stored with an embedding of `text` (FilingEmbedding.text_sha256)."""
+    return hashlib.sha256(text.encode()).hexdigest()
+
+
 def upsert_embedding(
-    session: Session, accession_no: str, model: str, embedding: Sequence[float]
+    session: Session, accession_no: str, model: str, embedding: Sequence[float], *, text: str
 ) -> None:
+    """Store a filing's embedding for `model`, made from `text` (its SearchDocument.text())."""
     stmt = pg_insert(FilingEmbedding).values(
-        accession_no=accession_no, model=model, embedding=list(embedding)
+        accession_no=accession_no,
+        model=model,
+        embedding=list(embedding),
+        text_sha256=text_sha256(text),
     )
     session.execute(
         stmt.on_conflict_do_update(
             index_elements=[FilingEmbedding.accession_no, FilingEmbedding.model],
-            set_={"embedding": stmt.excluded.embedding, "updated_at": sa.func.now()},
+            set_={
+                "embedding": stmt.excluded.embedding,
+                "text_sha256": stmt.excluded.text_sha256,
+                "updated_at": sa.func.now(),
+            },
         )
     )
 
@@ -267,6 +295,13 @@ def semantic_search(
     form_type: str | None = None,
     cik: int | None = None,
 ) -> list[SearchHit]:
+    # The HNSW index scan stops at its hnsw.ef_search (40) nearest vectors, and the filters apply
+    # after it: without iterative scans, a form or company filter returns only those of the 40
+    # that pass (none for 8-Ks once Form 4s fill them), and hybrid search gets 40 candidates, not
+    # 50. Iterative scans go on, nearest first, until the limit is met or hnsw.max_scan_tuples
+    # (20,000) are visited. For the transaction only; small or selective searches don't use the
+    # index at all (the planner computes those distances exactly).
+    session.execute(sa.text("SET LOCAL hnsw.iterative_scan = strict_order"))
     distance = FilingEmbedding.embedding.cosine_distance(list(embedding)).label("distance")
     query = (
         sa.select(FilingEmbedding.accession_no, distance, Filing.form_type)
@@ -322,8 +357,9 @@ def hybrid_search(
 
 
 def rebuild_index(sessions: sessionmaker[Session], embedder: Embedder | None) -> tuple[int, int]:
-    """Rebuild every filing's search document from its current summary, then embed the ones that
-    have no embedding for the configured model. Idempotent. Returns (documents, embedded)."""
+    """Rebuild every filing's search document from its current summary, then embed the ones whose
+    embedding for the configured model is missing or was made from other text (embed_outdated).
+    Idempotent. Returns (documents, embedded)."""
     newer = aliased(Summary)
     latest = (
         sa.select(newer.id)
@@ -349,30 +385,40 @@ def rebuild_index(sessions: sessionmaker[Session], embedder: Embedder | None) ->
             upsert_document(session, accession_no, summary.id, document)
     if embedder is None:
         return len(rows), 0
-    return len(rows), embed_missing(sessions, embedder)
+    return len(rows), embed_outdated(sessions, embedder)
 
 
-def embed_missing(sessions: sessionmaker[Session], embedder: Embedder, batch: int = 32) -> int:
-    """Embed search documents that have no embedding for the embedder's model."""
-    with sessions() as session:
-        missing = (
-            session.execute(
-                sa.select(FilingSearch)
-                .outerjoin(
-                    FilingEmbedding,
-                    (FilingEmbedding.accession_no == FilingSearch.accession_no)
-                    & (FilingEmbedding.model == embedder.model),
-                )
-                .where(FilingEmbedding.accession_no.is_(None))
-                .order_by(FilingSearch.accession_no)
-            )
-            .scalars()
-            .all()
+def embed_outdated(sessions: sessionmaker[Session], embedder: Embedder, batch: int = 32) -> int:
+    """Embed the search documents that have no embedding for the embedder's model, or whose
+    embedding was made from other text (its stored hash differs): the document changed since it
+    was embedded, for example rebuilt after a change to how documents are built, or rewritten
+    while the embedder was down; or the vector predates the hash. A document whose text is
+    unchanged is never embedded again. Returns how many were embedded."""
+    query = (
+        sa.select(
+            FilingSearch.accession_no,
+            FilingSearch.title,
+            FilingSearch.company,
+            FilingSearch.body,
+            FilingSearch.ticker,
+            FilingEmbedding.text_sha256,
         )
-        documents = [
-            (d.accession_no, SearchDocument(d.title, d.company, d.body, d.ticker).text())
-            for d in missing
-        ]
+        .outerjoin(
+            FilingEmbedding,
+            (FilingEmbedding.accession_no == FilingSearch.accession_no)
+            & (FilingEmbedding.model == embedder.model),
+        )
+        .order_by(FilingSearch.accession_no)
+        .execution_options(yield_per=500)
+    )
+    documents = []
+    with sessions() as session:
+        # Hashed here rather than in SQL, so SearchDocument.text() stays the one definition of
+        # the embedded text.
+        for row in session.execute(query):
+            text = SearchDocument(row.title, row.company, row.body, row.ticker).text()
+            if row.text_sha256 != text_sha256(text):
+                documents.append((row.accession_no, text))
     embedded = 0
     for start in range(0, len(documents), batch):
         chunk = documents[start : start + batch]
@@ -380,11 +426,11 @@ def embed_missing(sessions: sessionmaker[Session], embedder: Embedder, batch: in
             vectors = embedder.embed_documents([text for _, text in chunk])
         except EmbeddingError:
             logger.exception(
-                "embedding failed; %d documents remain unembedded", len(documents) - embedded
+                "embedding failed; %d documents remain to embed", len(documents) - embedded
             )
             break
         with sessions.begin() as session:
-            for (accession_no, _), vector in zip(chunk, vectors, strict=True):
-                upsert_embedding(session, accession_no, embedder.model, vector)
+            for (accession_no, text), vector in zip(chunk, vectors, strict=True):
+                upsert_embedding(session, accession_no, embedder.model, vector, text=text)
         embedded += len(chunk)
     return embedded

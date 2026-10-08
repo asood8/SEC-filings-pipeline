@@ -91,7 +91,12 @@ class Company(Base):
 
 class Filing(Base):
     __tablename__ = "filings"
-    __table_args__ = (sa.Index("ix_filings_cik_filed_at", "cik", "filed_at"),)
+    __table_args__ = (
+        # A company's filings, newest first (company pages, the feed filtered by company).
+        sa.Index("ix_filings_cik_filed_at", "cik", "filed_at"),
+        # The feed's order (GET /filings and its cursors): without it, each page sorts every filing.
+        sa.Index("ix_filings_filed_at_accession_no", "filed_at", "accession_no"),
+    )
 
     # The natural key everywhere in the pipeline, e.g. 0000320193-24-000123.
     accession_no: Mapped[str] = mapped_column(primary_key=True)
@@ -155,7 +160,10 @@ class Form4Filing(Base):
     issuer_cik: Mapped[int] = mapped_column(sa.BigInteger)
     issuer_name: Mapped[str]
     issuer_ticker: Mapped[str | None]
-    reporting_owners: Mapped[list[str]] = mapped_column(ARRAY(sa.Text()))
+    reporting_owners: Mapped[list[str]] = mapped_column(ARRAY(sa.Text()))  # names, as filed
+    # The owners' CIKs, in the same order as their names. NULL on rows saved before CIKs were
+    # stored, until `filings-rebuild-key-fields` rewrites them.
+    reporting_owner_ciks: Mapped[list[int] | None] = mapped_column(ARRAY(sa.BigInteger()))
     transaction_codes: Mapped[list[str]] = mapped_column(ARRAY(sa.Text()))
     is_10b5_1: Mapped[bool | None]
     updated_at: Mapped[datetime] = mapped_column(
@@ -177,6 +185,14 @@ class Form4Transaction(Base):
     __table_args__ = (
         sa.CheckConstraint("acquired_disposed IN ('A', 'D')", name="acquired_disposed"),
         sa.CheckConstraint("direct_or_indirect IN ('D', 'I')", name="direct_or_indirect"),
+        # Insider buying and selling (GET /companies/{ticker}/insider-activity): open-market
+        # stock purchases and sales only, the lines it totals, so the planner probes these per
+        # filing instead of scanning every line. Its condition must match that query's.
+        sa.Index(
+            "ix_form4_transactions_trades",
+            "accession_no",
+            postgresql_where=sa.text("code IN ('P', 'S') AND is_derivative IS false"),
+        ),
     )
 
     # Deleting a filing deletes its form4_filings row, and with it these lines.
@@ -287,6 +303,10 @@ class FilingEmbedding(Base):
     )
     model: Mapped[str] = mapped_column(primary_key=True)
     embedding: Mapped[list[float]] = mapped_column(Vector(EMBEDDING_DIMENSIONS))
+    # Hex SHA-256 of the text that was embedded (SearchDocument.text()), so `filings-index`
+    # re-embeds a document whose text has changed since. NULL for vectors stored before it was
+    # recorded, which are re-embedded once.
+    text_sha256: Mapped[str | None]
     updated_at: Mapped[datetime] = mapped_column(
         server_default=sa.func.now(), onupdate=sa.func.now()
     )

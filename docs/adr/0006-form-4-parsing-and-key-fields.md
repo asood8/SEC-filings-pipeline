@@ -95,7 +95,35 @@ Alternatives considered for this change:
 Consequences: an existing database needs the migration, then one `filings-rebuild-key-fields
 --form-type 4` run. Owner names are shown as filed ("COOK TIMOTHY D"), and an owner who files
 alone and jointly gets two rows; owner CIKs aren't stored yet. Activity totals add shares across
-share classes (Lennar's Class A and B); values are unaffected.
+share classes (Lennar's Class A and B); values are unaffected. (Owner CIKs and readable names were
+added the same day; see below.)
+
+### Owner CIKs and readable names (added 2026-10-08)
+
+- **`form4_filings.reporting_owner_ciks`:** the owners' CIKs, in the order of
+  `reporting_owners` (their names as filed). The parser writes both. Rows saved before the
+  column existed have NULL until `filings-rebuild-key-fields --form-type 4` fills them from
+  MongoDB.
+- **Insider activity groups filings by the set of owner CIKs**, not by the list of names. The
+  same owners in another order, or with a name typed differently, now share a row. A joint
+  filing is still one row for its owners together, and its lines count once. An owner who also
+  files alone still gets a row of their own: splitting a joint filing's shares between its owners
+  would be a guess. A row is named as on its owners' latest filing. Rows without CIKs fall back
+  to the set of names.
+- **Readable names:** the API returns each owner as `{cik, name, display_name}`, where `name` is
+  as filed and `display_name` is `filings_common.names.display_name` ("Timothy D Cook";
+  entities such as "Berkshire Hathaway Inc" keep their word order). The website shows the
+  display name, with the name as filed on hover. The Form 4 template uses the same function.
+  It reorders "LAST FIRST MIDDLE" by rule (particles such as "Di Sibio" and suffixes such as
+  "Jr" and "III" are handled), and checked on all 193 owner names in the local database, it got
+  191 right. The two it gets wrong, a two-word last name with no particle ("MONTGOMERY RICE
+  VALERIE MD") and a name filed first name first ("SACHIN J. MEHRA"), are why the name as filed
+  stays in the API.
+
+Alternatives considered: grouping by CIK in SQL (`GROUP BY` a sorted array) works too, but the
+rows need the latest filing's names as well, which is simpler in Python over one row per filing;
+and storing display names would freeze today's rules into the data, while computing them per
+request costs microseconds.
 
 ## Alternatives considered
 

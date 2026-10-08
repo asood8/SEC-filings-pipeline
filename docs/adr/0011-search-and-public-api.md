@@ -28,6 +28,9 @@ Redis or the embedding model is down.
     capitals, so the name "Cao" doesn't count as CAO.
   - *Irregular verbs:* the Form 4 template writes "bought" (code P) and "sold" (code S), which
     stemming doesn't relate to "buy", "purchase", "sell", or "sale". Those words get added.
+  - *Related words (added 2026-10-08):* "stock" for "shares". The Form 4 template writes stock
+    lines as "1,000 AMZN shares" and never says "stock", so "stock gift" found one of seven gifts.
+    Only the plural counts: "earnings per share" isn't about stock.
   - *Weight B, like the body:* an alias counts as much as the words it stands for. With weight C,
     the Chevron 8-K for "CFO appointment" ranked third in hybrid search instead of first. No other
     labeled query changed.
@@ -39,6 +42,20 @@ Redis or the embedding model is down.
     and the model sees only what the summary says.
 - **Written with every summary.** The summarizer writes the document in the same transaction as
   the summary. `filings-index` rebuilds documents and backfills embeddings, idempotently.
+- **One writer's text (added 2026-10-08).** The summarizer stored the company name as the Form 4
+  template shows it ("Chevron Corp") and `filings-index` as EDGAR has it ("CHEVRON CORP"), so a
+  document's text, and its vector, depended on which wrote it last. Both now build documents
+  with `filings_common.names.company_name`, which the template uses too, and a test checks that
+  the summarizer and a rebuild write the same row.
+- **Embeddings follow the text (added 2026-10-08).** `filing_embeddings.text_sha256` is the
+  SHA-256 of the text each vector was made from. `filings-index` embeds a document when that
+  hash differs from its current text's (or it has no vector): a change to how documents are
+  built, or a summary rewritten while the embedder was down, gets a new vector. An unchanged
+  document is never embedded again, and a keyword-list change embeds nothing. Vectors stored
+  before the column existed have no hash and are re-embedded once (278 documents in about 50 s
+  on the laptop's CPU). *Alternative:* deleting all vectors on every rebuild is simpler but
+  re-embeds everything each time; comparing in SQL would need a second definition of the
+  embedded text.
 
 ### Keyword search
 
@@ -172,7 +189,8 @@ the production ranking.
 - **Insider trades (added 2026-10-08):** a Form 4's detail lists its transaction lines, and
   `GET /companies/{ticker}/insider-activity?days=90` (1 to 365) totals insiders' purchases and
   sales (codes P and S) of the company's stock per reporting owner. Both read
-  `form4_transactions` (ADR-0006).
+  `form4_transactions` (ADR-0006). Reporting owners are objects, `{cik, name, display_name}`:
+  the name as filed and a readable one (ADR-0006, "Owner CIKs and readable names").
 - **Docs:** typed response models generate the OpenAPI docs at `/docs`.
 - **Keyset cursors** encode the last row's sort key, so pages stay correct while new filings
   arrive. Offsets would repeat or skip rows.
@@ -195,6 +213,36 @@ the production ranking.
   retries. After an error, Redis is skipped for 10 s, so an outage costs one timeout, not one per
   request. Before this change, an outage added about 8 s to every request (redis-py retries by
   default).
+
+### Indexes and query plans at volume (added 2026-10-08)
+
+Every API query was explained at 13 times the 35-company watchlist's 10-year volume (synthetic
+data: 500 companies, 10 years, 452,000 filings; runbook, "Capacity planning", has the numbers).
+
+- **The feed has an index in its order**, `filings (filed_at, accession_no)`. Without it, every
+  page of `GET /filings` (cursor or not, form filter or not) sorted all filings: 249 ms for the
+  first page, 0.4 ms with it. Keyset cursors only pay off with an index on the sort key.
+- **Insider activity has a partial index**, `form4_transactions (accession_no)` where the code is
+  P or S and the line isn't derivative: exactly the lines the endpoint totals. The planner then
+  probes the issuer's filings' lines instead of hash-joining all of them: 87 → 36 ms for an
+  issuer with 8,400 Form 4s. Its condition must change with the query's. The work still grows
+  with the issuer's whole history, not with `days`.
+- **Semantic search scans the HNSW index iteratively** (`hnsw.iterative_scan = strict_order`, set
+  for the transaction). An HNSW scan returns its `hnsw.ef_search` (40) nearest vectors and filters
+  apply afterwards, so at volume an 8-K filter returned nothing once Form 4s filled those 40, and
+  hybrid search got 40 semantic candidates instead of 50. Iterative scans continue in distance
+  order until the limit is met or `hnsw.max_scan_tuples` (20,000) vectors were visited, which
+  bounds the worst case (about 250 ms with clustered synthetic vectors). Small tables, such as the
+  live one, are compared exactly and never used the index.
+  - *Not chosen:* a higher `ef_search` (fixes only the unfiltered case), `relaxed_order` (results
+    come slightly out of order, while the plan trusts the index's order and only sorts ties), or
+    exact search under every filter (a Form 4 filter would compute nearly every distance).
+- **Keyword search's cost follows its matches.** `ts_rank_cd` reads each matching row, and no
+  Postgres index can rank, so a word in most documents takes 1–2 s at that volume (under about
+  0.3 s at the watchlist's 10-year volume). Left as it is, with the options listed in the runbook,
+  until a larger watchlist makes it matter.
+- **No index on `companies (ticker)`.** Ticker lookups and the companies list read the 8,000-row
+  ticker map whole in under 2 ms, and it doesn't grow with history.
 
 ## Alternatives considered
 
@@ -266,6 +314,28 @@ the production ranking.
     share of the top 5 to 35–40% at weights 0.85–0.9. But "insider purchase", a Form 4 query, got
     worse (recall@5 0.67 → 0.50), and MRR fell at 0.8 and below. Someone choosing semantic mode
     also asks for plain similarity, so that mode stays as it is.
+- **After consistent company names and "stock" for "shares" (2026-10-08)**, on a fresh copy of
+  the local database (278 filings), measured in two steps: names first (every document rebuilt
+  and re-embedded), then the keyword:
+
+  | Mode | Recall@5 | Recall@10 | MRR | Form 4 share@5 (16 queries) |
+  |---|---|---|---|---|
+  | keyword | 0.86 → 0.86 → 0.89 | 0.87 → 0.87 → 0.92 | 0.94 | 11% |
+  | semantic | 0.81 | 0.87 | 0.85 → 0.86 → 0.86 | 49% |
+  | hybrid | 0.90 → 0.90 → 0.91 | 0.95 → 0.95 → 0.97 | 1.00 | 28% → 26% → 26% |
+
+  - *Names:* no labeled query got worse. Semantic "debt offering" moved up a place, and hybrid
+    "electric vehicle deliveries" lost its one Form 4 in the top 5.
+  - *"stock" for "shares":* only "stock gift" changed: recall@10 0.14 → 1.00 (keyword) and 0.43 →
+    1.00 (hybrid). No other labeled query moved.
+  - *Spot checks of unlabeled queries:* "stock purchase" now finds Oracle's and Salesforce's
+    open-market purchases, where hybrid used to show Netflix option grants; "stock award" finds
+    the share grants. The other side: for "stock sale" and "stock award", Form 4s now fill
+    hybrid's top 10, pushing out Oracle's 8-K about Larry Ellison's plan to sell stock and the
+    8-K naming Kevin Mandia a director with a stock grant. Names, tickers, "gift", "shares",
+    "insider buying", and "restricted stock" return the same filings as before. The keyword
+    stays: it fixes a labeled query and makes Form 4s findable by the word people use, and the
+    cost falls on "stock" queries that Form 4s answer too.
 - **Changing dimensions needs a migration.** `EMBEDDING_DIMENSIONS` is fixed at 768 by the pgvector
   column, so a model with another size means a migration and a re-embed with `filings-index`.
 - **Production.** The API needs the embedding server at query time, so Phase 7 must run it next to

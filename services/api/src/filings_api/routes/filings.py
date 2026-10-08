@@ -5,7 +5,13 @@ import sqlalchemy as sa
 from fastapi import APIRouter, HTTPException, Path, Query
 
 from filings_api.pagination import decode_cursor, encode_cursor
-from filings_api.queries import CikFilter, SessionDep, filing_select, to_filing_out
+from filings_api.queries import (
+    CikFilter,
+    SessionDep,
+    filing_select,
+    reporting_owners_out,
+    to_filing_out,
+)
 from filings_api.schemas import (
     ExhibitOut,
     FilingDetail,
@@ -24,6 +30,7 @@ from filings_common.db import (
     Summary,
 )
 from filings_common.edgar import archive_url
+from filings_common.names import company_name
 from filings_common.summaries import FilingSummary
 
 router = APIRouter(tags=["filings"])
@@ -108,9 +115,11 @@ def get_filing(
             Form4Details(
                 period_of_report=form4.period_of_report,
                 issuer_cik=form4.issuer_cik,
-                issuer_name=form4.issuer_name,
+                issuer_name=company_name(form4.issuer_name),
                 issuer_ticker=form4.issuer_ticker,
-                reporting_owners=form4.reporting_owners,
+                reporting_owners=reporting_owners_out(
+                    form4.reporting_owners, form4.reporting_owner_ciks
+                ),
                 transaction_codes=form4.transaction_codes,
                 is_10b5_1=form4.is_10b5_1,
                 transactions=[Form4TransactionOut.model_validate(t) for t in transactions],

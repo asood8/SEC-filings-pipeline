@@ -262,6 +262,19 @@ def test_pruning_deletes_in_batches_oldest_first(clean_db: Engine) -> None:
     assert deleted == [2, 2, 1, 0]
 
 
+def test_pruning_looks_only_at_the_oldest_published_rows(clean_db: Engine) -> None:
+    """Rows are published in id order, so if the oldest batch isn't old enough, nothing is: a run
+    with nothing to delete reads one batch, not the whole outbox. A row published out of order
+    (its transaction committed late) waits until the rows before it go."""
+    accessions = add_events(clean_db, 4)
+    publish_all(clean_db)
+    age(clean_db, accessions[2:], days=8)  # as if published before the first two
+    sessions = session_factory(clean_db)
+    assert prune_published(sessions, older_than=timedelta(days=7), batch_size=2) == 0
+    assert prune_published(sessions, older_than=timedelta(days=7), batch_size=3) == 1
+    assert remaining(clean_db) == [*accessions[:2], accessions[3]]
+
+
 def test_the_pruner_catches_up_then_runs_hourly(clean_db: Engine) -> None:
     accessions = add_events(clean_db, 3)
     publish_all(clean_db)

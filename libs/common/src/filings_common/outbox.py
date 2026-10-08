@@ -147,19 +147,23 @@ def prune_published(
     how many. Unpublished rows are never touched.
 
     Rows are published in id order, so the oldest published rows have the lowest ids, and the
-    primary key finds them without an index on `published_at`.
+    primary key finds them without an index on `published_at`. Only those `batch_size` rows are
+    looked at: if they aren't old enough, no later row is. (Asking for any old enough row instead
+    made each hourly run that finds none read the whole outbox: after a full replay, 460,000
+    rows for a week, 137 ms each on a laptop; docs/runbook.md, "Capacity planning".) A row that
+    committed late, and so was published after rows with higher ids, may wait for a later run.
     """
     with sessions.begin() as session:
         oldest = (
-            sa.select(OutboxEvent.id)
-            .where(OutboxEvent.published_at < sa.func.now() - older_than)
+            sa.select(OutboxEvent.id, OutboxEvent.published_at)
+            .where(OutboxEvent.published_at.is_not(None))
             .order_by(OutboxEvent.id)
             .limit(batch_size)
+            .subquery()
         )
+        due = sa.select(oldest.c.id).where(oldest.c.published_at < sa.func.now() - older_than)
         deleted = session.scalars(
-            sa.delete(OutboxEvent)
-            .where(OutboxEvent.id.in_(oldest.scalar_subquery()))
-            .returning(OutboxEvent.id)
+            sa.delete(OutboxEvent).where(OutboxEvent.id.in_(due)).returning(OutboxEvent.id)
         ).all()
     return len(deleted)
 

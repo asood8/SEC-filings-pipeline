@@ -1,16 +1,17 @@
-"""Shared query pieces: a filing joined with its company and current headline, and a company
-looked up by ticker."""
+"""Shared query pieces: a filing joined with its company and current headline, a Form 4's
+reporting owners, and a company looked up by ticker."""
 
-from collections.abc import Iterator
+from collections.abc import Iterator, Sequence
 from typing import Annotated
 
 import sqlalchemy as sa
 from fastapi import Depends, Query, Request
 from sqlalchemy.orm import Session, sessionmaker
 
-from filings_api.schemas import FilingOut
+from filings_api.schemas import FilingOut, ReportingOwnerOut
 from filings_common.db import Company, Filing, FilingSearch
 from filings_common.embeddings import Embedder
+from filings_common.names import company_name, display_name
 
 
 def get_session(request: Request) -> Iterator[Session]:
@@ -43,7 +44,7 @@ def to_filing_out(filing: Filing, ticker: str, name: str, headline: str | None) 
         accession_no=filing.accession_no,
         cik=filing.cik,
         ticker=ticker,
-        company_name=name,
+        company_name=company_name(name),
         form_type=filing.form_type,
         filed_at=filing.filed_at,
         accepted_at=filing.accepted_at,
@@ -51,6 +52,20 @@ def to_filing_out(filing: Filing, ticker: str, name: str, headline: str | None) 
         headline=headline,
         sec_url=filing.primary_doc_url,
     )
+
+
+def reporting_owners_out(
+    names: Sequence[str], ciks: Sequence[int] | None
+) -> list[ReportingOwnerOut]:
+    """A Form 4's owners from its `form4_filings` row: names as filed, CIKs in the same order
+    (NULL on rows saved before CIKs were stored)."""
+    known: Sequence[int | None] = (
+        ciks if ciks is not None and len(ciks) == len(names) else [None] * len(names)
+    )
+    return [
+        ReportingOwnerOut(cik=cik, name=name, display_name=display_name(name))
+        for name, cik in zip(names, known, strict=True)
+    ]
 
 
 def company_by_ticker(session: Session, ticker: str) -> Company | None:

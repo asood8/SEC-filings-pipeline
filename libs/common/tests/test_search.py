@@ -24,13 +24,14 @@ from filings_common.search import (
     SearchDocument,
     SearchHit,
     build_document,
-    embed_missing,
+    embed_outdated,
     hybrid_search,
     keyword_search,
     keywords_for,
     rebuild_index,
     reciprocal_rank_fusion,
     semantic_search,
+    text_sha256,
     upsert_document,
 )
 from filings_common.summaries import FilingSummary
@@ -210,6 +211,9 @@ def test_build_document_adds_company_and_form_label() -> None:
     no_ticker = build_document(summary, company_name="Acme Corp", ticker="", form_type="8-K")
     assert no_ticker.ticker is None
     assert no_ticker.text() == "H\nAcme Corp\nS\nK1\nK2\nForm 8-K current report"
+    # EDGAR's name or the display name: the document is the same (filings_common.names).
+    edgar = build_document(summary, company_name="ACME CORP /DE/", ticker="ACME", form_type="4")
+    assert edgar == document
 
 
 def test_build_document_adds_other_words_as_keywords_only() -> None:
@@ -223,6 +227,7 @@ def test_build_document_adds_other_words_as_keywords_only() -> None:
         "chief financial officer",
         "executive vice president",
         "buy purchase",
+        "stock",
     ]
     assert "purchase" not in document.text()  # searchable, but not embedded
 
@@ -241,9 +246,18 @@ def test_keywords_spell_out_abbreviations_and_abbreviate_titles() -> None:
 
 
 def test_keywords_add_plain_words_for_irregular_verbs() -> None:
-    assert keywords_for("Jane Roe bought 100 ACME shares") == "buy purchase"
-    assert keywords_for("John Doe SOLD 50 shares and sold 20 more") == "sell sale"
-    assert keywords_for("Jane Roe received 100 ACME shares as a grant or award") == ""
+    assert keywords_for("Jane Roe bought 100 ACME units") == "buy purchase"
+    assert keywords_for("John Doe SOLD 50 units and sold 20 more") == "sell sale"
+    assert keywords_for("Jane Roe received 100 ACME units as a grant or award") == ""
+
+
+def test_keywords_add_stock_for_shares() -> None:
+    # The Form 4 template says "shares"; "stock gift" should find the gifts.
+    assert keywords_for("Jane Roe gave 100 ACME shares as a gift") == "stock"
+    assert keywords_for("Jane Roe bought 100 ACME Shares") == "buy purchase\nstock"
+    # Not when the text says "stock" already, nor for "share" alone ("earnings per share").
+    assert keywords_for("sold 100 shares of common stock") == "sell sale"
+    assert keywords_for("diluted earnings per share rose") == "EPS"
 
 
 def test_keyword_search_ranks_headline_matches_first(indexed: Engine) -> None:
@@ -354,6 +368,40 @@ def test_semantic_search_orders_by_similarity(indexed: Engine) -> None:
         assert semantic_search(session, query, model="another-model") == []
 
 
+def test_semantic_search_through_the_index_fills_the_limit_despite_filters(
+    clean_db: Engine,
+) -> None:
+    """The HNSW index scan stops at hnsw.ef_search candidates and filters apply afterwards, so a
+    filter could leave fewer results than exist, or none (seen at volume: an 8-K filter returned
+    nothing once Form 4s filled the 40 nearest). Iterative scans keep going."""
+    form4s = [
+        (f"0000000001-26-{n:06d}", 1, "4", date(2026, 9, 1), f"Insider {n} sold shares", "Sold.")
+        for n in range(1, 31)
+    ]
+    form8ks = [
+        (f"0000000001-26-{n:06d}", 1, "8-K", date(2026, 9, 2), f"Acme item {n}", "Board news.")
+        for n in range(31, 36)
+    ]
+    add_filings(clean_db, [(1, "ACME", "Acme Corp")], form4s + form8ks)
+    assert rebuild_index(session_factory(clean_db), WordHashEmbedder()) == (35, 35)
+    query = WordHashEmbedder().embed_query("insider sold shares")
+    with session_factory(clean_db)() as session:
+        # Make this tiny table take the index path that big ones take, with few candidates.
+        for setting in ("enable_seqscan = off", "enable_sort = off", "hnsw.ef_search = 10"):
+            session.execute(sa.text(f"SET LOCAL {setting}"))
+        plan = session.execute(
+            sa.text(
+                "EXPLAIN SELECT accession_no FROM filing_embeddings"
+                " ORDER BY embedding <=> CAST(:q AS vector) LIMIT 20"
+            ),
+            {"q": str(query)},
+        ).scalars()
+        assert any("ix_filing_embeddings_embedding_hnsw" in line for line in plan)
+        eight_ks = semantic_search(session, query, model="word-hash", limit=5, form_type="8-K")
+        assert sorted(accessions(eight_ks)) == [f[0] for f in form8ks]
+        assert len(semantic_search(session, query, model="word-hash", limit=20)) == 20
+
+
 def test_embedded_text_includes_the_ticker(indexed: Engine) -> None:
     query = WordHashEmbedder().embed_query("GLOB")
     with session_factory(indexed)() as session:
@@ -411,10 +459,65 @@ def test_rebuild_is_idempotent_and_embeds_only_missing(indexed: Engine) -> None:
         assert session.scalar(sa.select(sa.func.count()).select_from(FilingEmbedding)) == 4
 
 
+def embeddings(engine: Engine) -> dict[str, tuple[list[float], str | None]]:
+    with session_factory(engine)() as session:
+        rows = session.execute(
+            sa.select(
+                FilingEmbedding.accession_no, FilingEmbedding.embedding, FilingEmbedding.text_sha256
+            )
+        ).all()
+    return {accession_no: (list(vector), digest) for accession_no, vector, digest in rows}
+
+
+def test_rebuild_reembeds_exactly_the_documents_whose_text_changed(indexed: Engine) -> None:
+    sessions = session_factory(indexed)
+    acme = {FILINGS[0][0], FILINGS[1][0]}
+    before = embeddings(indexed)
+
+    # EDGAR's spelling of the same name makes the same documents: nothing to embed.
+    with sessions.begin() as session:
+        session.get_one(Company, 1).name = "ACME CORP /DE/"
+    assert rebuild_index(sessions, WordHashEmbedder()) == (4, 0)
+    assert embeddings(indexed) == before
+
+    # A new name changes the text of Acme's two documents, which are embedded again.
+    with sessions.begin() as session:
+        session.get_one(Company, 1).name = "Acme Holdings"
+    assert rebuild_index(sessions, WordHashEmbedder()) == (4, 2)
+    after = embeddings(indexed)
+    assert {a for a in before if after[a] != before[a]} == acme
+    with sessions() as session:
+        document = session.get_one(FilingSearch, FILINGS[0][0])
+    text = SearchDocument(document.title, document.company, document.body, document.ticker).text()
+    assert "Acme Holdings ACME" in text
+    vector, digest = after[FILINGS[0][0]]
+    assert digest == text_sha256(text)
+    assert vector == pytest.approx(WordHashEmbedder().embed_documents([text])[0], abs=1e-6)
+    assert rebuild_index(sessions, WordHashEmbedder()) == (4, 0)
+
+
+def test_embed_outdated_catches_up_on_text_written_without_an_embedding(indexed: Engine) -> None:
+    sessions = session_factory(indexed)
+    stale, unhashed = FILINGS[2][0], FILINGS[3][0]
+    with sessions.begin() as session:
+        # A new summary's document, written while the embedder was down (the summarizer keeps
+        # the old vector), and a vector stored before hashes were.
+        summary_id = session.get_one(FilingSearch, stale).summary_id
+        upsert_document(session, stale, summary_id, SearchDocument("New", "Globex Inc", "Body"))
+        session.execute(
+            sa.update(FilingEmbedding)
+            .where(FilingEmbedding.accession_no == unhashed)
+            .values(text_sha256=None)
+        )
+    assert embed_outdated(sessions, WordHashEmbedder()) == 2
+    assert embeddings(indexed)[stale][1] == text_sha256("New\nGlobex Inc\nBody")
+    assert embed_outdated(sessions, WordHashEmbedder()) == 0
+
+
 def test_embedding_failure_leaves_documents_searchable_by_keyword(indexed: Engine) -> None:
     sessions = session_factory(indexed)
     with sessions.begin() as session:
         session.execute(sa.delete(FilingEmbedding))
-    assert embed_missing(sessions, WordHashEmbedder(fail=True)) == 0
+    assert embed_outdated(sessions, WordHashEmbedder(fail=True)) == 0
     with sessions() as session:
         assert keyword_search(session, "Acme")

@@ -52,6 +52,13 @@ def test_form_4_detail(client: TestClient, ids: Any) -> None:
     detail = client.get(f"/filings/{ids.form4}").json()
     assert detail["summary"]["provider"] == "template"
     assert detail["summary"]["ungrounded_numbers"] is None  # templates aren't checked
+    sale = {
+        "is_derivative": False,
+        "security_title": "Common Stock",
+        "transaction_date": "2026-09-29",
+        "code": "S",
+        "acquired_disposed": "D",
+    }
     assert detail["form4"] == {
         "period_of_report": "2026-09-29",
         "issuer_cik": 320193,
@@ -60,6 +67,24 @@ def test_form_4_detail(client: TestClient, ids: Any) -> None:
         "reporting_owners": ["COOK TIMOTHY D"],
         "transaction_codes": ["S"],
         "is_10b5_1": True,
+        "transactions": [  # by line
+            sale
+            | {
+                "line": 1,
+                "shares": 30000.0,
+                "price_per_share": 254.5,
+                "shares_owned_after": 3250000.0,
+                "direct_or_indirect": "D",
+            },
+            sale
+            | {
+                "line": 2,
+                "shares": 20000.0,
+                "price_per_share": None,
+                "shares_owned_after": 3230000.0,
+                "direct_or_indirect": "I",
+            },
+        ],
     }
     assert (detail["items"], detail["exhibits"]) == (None, [])
 

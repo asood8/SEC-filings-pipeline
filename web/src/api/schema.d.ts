@@ -75,6 +75,30 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/companies/{ticker}/insider-activity": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Insiders' buying and selling of a company's stock
+         * @description Open-market or private purchases (Form 4 code P) and sales (S) of the company's stock in
+         *     the last `days` days, by transaction date, per reporting owner. Grants, option exercises, tax
+         *     withholding, gifts, and derivative trades are left out.
+         *
+         *     Form 4s found under another company count too: what matters is whose stock was traded.
+         */
+        get: operations["get_insider_activity_companies__ticker__insider_activity_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/search": {
         parameters: {
             query?: never;
@@ -424,6 +448,49 @@ export interface components {
             transaction_codes: string[];
             /** Is 10B5 1 */
             is_10b5_1: boolean | null;
+            /** Transactions */
+            transactions: components["schemas"]["Form4TransactionOut"][];
+        };
+        /**
+         * Form4TransactionOut
+         * @description One line of a Form 4's transaction tables, as filed.
+         */
+        Form4TransactionOut: {
+            /**
+             * Line
+             * @description Position in the filing: stock lines first, then derivatives.
+             */
+            line: number;
+            /**
+             * Is Derivative
+             * @description Options, RSUs, and other derivatives; false for stock.
+             */
+            is_derivative: boolean;
+            /** Security Title */
+            security_title: string;
+            /** Transaction Date */
+            transaction_date: string | null;
+            /**
+             * Code
+             * @description SEC transaction code: P open-market or private purchase, S sale, A grant or award, M exercise or conversion, F tax withholding, G gift, and others.
+             */
+            code: string | null;
+            /** Shares */
+            shares: number | null;
+            /**
+             * Price Per Share
+             * @description Null when the filing gives the price only in a footnote.
+             */
+            price_per_share: number | null;
+            /** Acquired Disposed */
+            acquired_disposed: ("A" | "D") | null;
+            /** Shares Owned After */
+            shares_owned_after: number | null;
+            /**
+             * Direct Or Indirect
+             * @description D: owned directly; I: indirectly, for example through a trust or a fund.
+             */
+            direct_or_indirect: ("D" | "I") | null;
         };
         /** GoogleSignIn */
         GoogleSignIn: {
@@ -437,6 +504,51 @@ export interface components {
         HTTPValidationError: {
             /** Detail */
             detail?: components["schemas"]["ValidationError"][];
+        };
+        /** InsiderActivity */
+        InsiderActivity: {
+            /** Ticker */
+            ticker: string;
+            /** Days */
+            days: number;
+            /**
+             * Since
+             * Format: date
+             * @description The earliest transaction date counted.
+             */
+            since: string;
+            /** @description Everyone's open-market or private purchases (P). */
+            bought: components["schemas"]["TradeTotals"];
+            /** @description Everyone's open-market or private sales (S). */
+            sold: components["schemas"]["TradeTotals"];
+            /** Filings */
+            filings: number;
+            /**
+             * Owners
+             * @description By value bought and sold, largest first; at most 50. Totals count everyone.
+             */
+            owners: components["schemas"]["OwnerActivity"][];
+        };
+        /** OwnerActivity */
+        OwnerActivity: {
+            /**
+             * Reporting Owners
+             * @description As filed. Joint filers (one Form 4, several owners) share a row.
+             */
+            reporting_owners: string[];
+            bought: components["schemas"]["TradeTotals"];
+            sold: components["schemas"]["TradeTotals"];
+            /**
+             * Filings
+             * @description Form 4s reporting these trades.
+             */
+            filings: number;
+            /**
+             * Latest Date
+             * Format: date
+             * @description The most recent trade's date.
+             */
+            latest_date: string;
         };
         /** Page[CompanyOut] */
         Page_CompanyOut_: {
@@ -632,6 +744,21 @@ export interface components {
              */
             ungrounded_numbers: string[] | null;
         };
+        /** TradeTotals */
+        TradeTotals: {
+            /** Shares */
+            shares: number;
+            /**
+             * Value
+             * @description Shares times price, over the trades with a reported price.
+             */
+            value: number;
+            /**
+             * Unpriced Shares
+             * @description Shares whose price the filing gives only in a footnote, so not in `value`.
+             */
+            unpriced_shares: number;
+        };
         /** UserOut */
         UserOut: {
             /** Id */
@@ -783,6 +910,39 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["CompanyDetail"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_insider_activity_companies__ticker__insider_activity_get: {
+        parameters: {
+            query?: {
+                days?: number;
+            };
+            header?: never;
+            path: {
+                ticker: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["InsiderActivity"];
                 };
             };
             /** @description Validation Error */

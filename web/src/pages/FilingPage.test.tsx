@@ -1,6 +1,6 @@
 import { screen, within } from '@testing-library/react'
 import { describe, expect, it } from 'vitest'
-import { filingDetail } from '../test/data'
+import { filingDetail, form4Transaction } from '../test/data'
 import { mockApi, renderRoute } from '../test/render'
 
 describe('FilingPage', () => {
@@ -56,6 +56,7 @@ describe('FilingPage', () => {
             reporting_owners: ['BERKSHIRE HATHAWAY INC', 'BUFFETT WARREN E'],
             transaction_codes: ['P'],
             is_10b5_1: false,
+            transactions: [], // parsed before transaction lines were stored
           },
         }),
     })
@@ -71,10 +72,94 @@ describe('FilingPage', () => {
     expect(
       within(trade).getByText('Open-market or private purchase'),
     ).toBeInTheDocument()
+    expect(within(trade).queryByRole('table')).not.toBeInTheDocument()
     expect(
       within(trade).getByText('Not marked as a Rule 10b5-1 trading plan'),
     ).toBeInTheDocument()
     expect(screen.getByText(/hasn't been summarized yet/)).toBeInTheDocument()
+  })
+
+  it("lists a Form 4's transactions in plain language", async () => {
+    mockApi({
+      '/filings/x': () =>
+        filingDetail({
+          accession_no: 'x',
+          form_type: '4',
+          items: null,
+          form4: {
+            period_of_report: '2026-09-08',
+            issuer_cik: 320193,
+            issuer_name: 'Apple Inc.',
+            issuer_ticker: 'AAPL',
+            reporting_owners: ['BARTON RICHARD N'],
+            transaction_codes: ['M', 'S'],
+            is_10b5_1: true,
+            transactions: [
+              form4Transaction(),
+              form4Transaction({
+                line: 2,
+                code: 'M',
+                shares: 1060,
+                price_per_share: null,
+                acquired_disposed: 'A',
+                shares_owned_after: 63388,
+                direct_or_indirect: 'I',
+              }),
+              form4Transaction({
+                line: 3,
+                is_derivative: true,
+                security_title: 'Non-Qualified Stock Option (right to buy)',
+                code: 'M',
+                price_per_share: 0,
+                shares_owned_after: 230,
+              }),
+            ],
+          },
+        }),
+    })
+    renderRoute('/filings/x')
+
+    const table = await screen.findByRole('table', {
+      name: 'Transactions reported in this filing',
+    })
+    const [, sale, exercise, option] = within(table).getAllByRole('row')
+    const cells = (row: HTMLElement) =>
+      within(row)
+        .getAllByRole('cell')
+        .map((cell) => cell.textContent)
+    expect(cells(sale)).toEqual([
+      'Open-market or private sale',
+      'Sep 8, 2026',
+      'Common Stock',
+      'disposed of −720',
+      '$77.60',
+      '$55,872',
+      '2,460',
+      'Direct',
+    ])
+    expect(cells(exercise)).toEqual([
+      'Exercise or conversion of a derivative',
+      'Sep 8, 2026',
+      'Common Stock',
+      'acquired +1,060',
+      '—', // price only in a footnote
+      '—',
+      '63,388',
+      'Indirect',
+    ])
+    expect(within(option).getByText('Derivative')).toBeInTheDocument()
+    expect(cells(option).slice(3, 6)).toEqual([
+      'disposed of −720',
+      '$0.00',
+      '$0.00',
+    ])
+    expect(
+      screen.getByText(/gives the price only in a footnote/),
+    ).toBeInTheDocument()
+    // The table replaces the list of codes.
+    expect(
+      screen.queryByText('Transactions', { selector: 'dt' }),
+    ).not.toBeInTheDocument()
   })
 
   it('shows not found for an unknown filing', async () => {

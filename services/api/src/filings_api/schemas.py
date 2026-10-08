@@ -48,6 +48,34 @@ class SummaryOut(BaseModel):
     )
 
 
+class Form4TransactionOut(BaseModel):
+    """One line of a Form 4's transaction tables, as filed."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    line: int = Field(description="Position in the filing: stock lines first, then derivatives.")
+    is_derivative: bool = Field(
+        description="Options, RSUs, and other derivatives; false for stock."
+    )
+    security_title: str
+    transaction_date: date | None
+    code: str | None = Field(
+        description=(
+            "SEC transaction code: P open-market or private purchase, S sale, A grant or award, "
+            "M exercise or conversion, F tax withholding, G gift, and others."
+        )
+    )
+    shares: float | None
+    price_per_share: float | None = Field(
+        description="Null when the filing gives the price only in a footnote."
+    )
+    acquired_disposed: Literal["A", "D"] | None
+    shares_owned_after: float | None
+    direct_or_indirect: Literal["D", "I"] | None = Field(
+        description="D: owned directly; I: indirectly, for example through a trust or a fund."
+    )
+
+
 class Form4Details(BaseModel):
     period_of_report: date
     issuer_cik: int = Field(description="Whose stock was traded; may differ from `cik`.")
@@ -56,6 +84,7 @@ class Form4Details(BaseModel):
     reporting_owners: list[str]
     transaction_codes: list[str]
     is_10b5_1: bool | None
+    transactions: list[Form4TransactionOut]
 
 
 class ExhibitOut(BaseModel):
@@ -81,6 +110,36 @@ class CompanyOut(BaseModel):
 
 class CompanyDetail(CompanyOut):
     recent_filings: list[FilingOut]
+
+
+class TradeTotals(BaseModel):
+    shares: float
+    value: float = Field(description="Shares times price, over the trades with a reported price.")
+    unpriced_shares: float = Field(
+        description="Shares whose price the filing gives only in a footnote, so not in `value`."
+    )
+
+
+class OwnerActivity(BaseModel):
+    reporting_owners: list[str] = Field(
+        description="As filed. Joint filers (one Form 4, several owners) share a row."
+    )
+    bought: TradeTotals
+    sold: TradeTotals
+    filings: int = Field(description="Form 4s reporting these trades.")
+    latest_date: date = Field(description="The most recent trade's date.")
+
+
+class InsiderActivity(BaseModel):
+    ticker: str
+    days: int
+    since: date = Field(description="The earliest transaction date counted.")
+    bought: TradeTotals = Field(description="Everyone's open-market or private purchases (P).")
+    sold: TradeTotals = Field(description="Everyone's open-market or private sales (S).")
+    filings: int
+    owners: list[OwnerActivity] = Field(
+        description="By value bought and sold, largest first; at most 50. Totals count everyone."
+    )
 
 
 class SearchResultOut(FilingOut):

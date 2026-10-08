@@ -72,6 +72,13 @@ WORD_FORMS: Mapping[str, str] = {
     "bought": "buy purchase",
     "sold": "sell sale",
 }
+# Other words for what a word means here, also one way. The Form 4 template writes stock trades
+# as "shares" ("gave 438,000 NVDA shares as a gift") and never "stock", so "stock gift" found one
+# of seven gifts. Measured with filings-search-eval (ADR-0011): its recall@10 went from 0.14 to
+# 1.00 (keyword) and 0.43 to 1.00 (hybrid), and no labeled query got worse.
+RELATED_WORDS: Mapping[str, str] = {
+    "shares": "stock",
+}
 
 
 def _pattern(phrase: str) -> re.Pattern[str]:
@@ -86,7 +93,10 @@ def _pattern(phrase: str) -> re.Pattern[str]:
 _ALIASES: list[tuple[re.Pattern[str], str]] = [
     *((_pattern(long), short) for short, long in ABBREVIATIONS.items()),
     *((_pattern(short), long) for short, long in ABBREVIATIONS.items()),
-    *((re.compile(rf"\b{form}\b", re.IGNORECASE), words) for form, words in WORD_FORMS.items()),
+    *(
+        (re.compile(rf"\b{word}\b", re.IGNORECASE), words)
+        for word, words in [*WORD_FORMS.items(), *RELATED_WORDS.items()]
+    ),
 ]
 # A query word shaped like a ticker (compared in capitals): up to 5 letters and digits, starting
 # with a letter, maybe with a class or series after "." or "-" (BRK-B, BRK.A).
@@ -117,8 +127,8 @@ class SearchHit:
 
 def keywords_for(text: str) -> str:
     """Other words for what the text says, one per line: what an abbreviation stands for, or the
-    reverse, when the text has only one of the two (ABBREVIATIONS), and the plain words for an
-    irregular verb form (WORD_FORMS)."""
+    reverse, when the text has only one of the two (ABBREVIATIONS), the plain words for an
+    irregular verb form (WORD_FORMS), and related words the text doesn't have (RELATED_WORDS)."""
     found = [alias for pattern, alias in _ALIASES if pattern.search(text)]
     return "\n".join(dict.fromkeys(a for a in found if not _pattern(a).search(text)))
 

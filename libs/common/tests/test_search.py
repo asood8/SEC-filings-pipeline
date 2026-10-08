@@ -227,6 +227,7 @@ def test_build_document_adds_other_words_as_keywords_only() -> None:
         "chief financial officer",
         "executive vice president",
         "buy purchase",
+        "stock",
     ]
     assert "purchase" not in document.text()  # searchable, but not embedded
 
@@ -245,9 +246,18 @@ def test_keywords_spell_out_abbreviations_and_abbreviate_titles() -> None:
 
 
 def test_keywords_add_plain_words_for_irregular_verbs() -> None:
-    assert keywords_for("Jane Roe bought 100 ACME shares") == "buy purchase"
-    assert keywords_for("John Doe SOLD 50 shares and sold 20 more") == "sell sale"
-    assert keywords_for("Jane Roe received 100 ACME shares as a grant or award") == ""
+    assert keywords_for("Jane Roe bought 100 ACME units") == "buy purchase"
+    assert keywords_for("John Doe SOLD 50 units and sold 20 more") == "sell sale"
+    assert keywords_for("Jane Roe received 100 ACME units as a grant or award") == ""
+
+
+def test_keywords_add_stock_for_shares() -> None:
+    # The Form 4 template says "shares"; "stock gift" should find the gifts.
+    assert keywords_for("Jane Roe gave 100 ACME shares as a gift") == "stock"
+    assert keywords_for("Jane Roe bought 100 ACME Shares") == "buy purchase\nstock"
+    # Not when the text says "stock" already, nor for "share" alone ("earnings per share").
+    assert keywords_for("sold 100 shares of common stock") == "sell sale"
+    assert keywords_for("diluted earnings per share rose") == "EPS"
 
 
 def test_keyword_search_ranks_headline_matches_first(indexed: Engine) -> None:

@@ -40,6 +40,12 @@ seen waits at most 2 s for the CPU-only embedding model before answering from ke
 **Model benchmark** (`filings-benchmark`, 3 recent 8-Ks, llama3.2:3b on the laptop's CPU): all 3
 summarized, median 28 s, p95 49 s, no numbers that the filing doesn't contain.
 
+**Search quality** (`filings-search-eval`, 20 labeled queries over the local filings): hybrid
+search (the default) finds the first relevant filing at an average reciprocal rank of 0.94 and
+91% of the relevant filings in its top 10. Weighting Form 4s' semantic matches at half cut their
+share of the top 5, for queries about other forms, from 54% to 30%
+([ADR-0011](docs/adr/0011-search-and-public-api.md)).
+
 Example headlines from that run (public filings):
 
 - *Douglas J Herrington sold 1,000 AMZN shares for $251.5K (avg $251.50/share)* (Form 4)
@@ -64,7 +70,7 @@ Example headlines from that run (public filings):
 | 5. Frontend | React site (Vite + TypeScript) on Cloudflare Pages | Done |
 | 6. Observability | OpenTelemetry traces, metrics, Grafana dashboards and alerts | Done |
 | 7. Production | Terraform, k3s on Oracle Cloud's free tier, Argo CD, multi-arch images | In progress: images and their CI build and deploy, Kubernetes manifests (sealed secrets, Argo CD), and Terraform written and validated offline; nothing applied yet (needs cloud accounts and a domain) |
-| 8. Hardening | Load tests, local-model benchmark, backups, runbook | In progress: k6 load test, model benchmark tool, backup restore drill, outbox pruning and capacity planning, runbook, dependency audit; the runs on the production VM (benchmark, load test, first backup) are still to do |
+| 8. Hardening | Load tests, local-model benchmark, backups, runbook | In progress: k6 load test, model benchmark tool, search-quality evaluation, backup restore drill, outbox pruning and capacity planning, runbook, dependency audit; the runs on the production VM (benchmark, load test, first backup) are still to do |
 
 The full plan is in the [project brief](docs/PROJECT_BRIEF.md#8-build-plan).
 
@@ -204,6 +210,7 @@ uv run filings-replay parsed --form-type 4 # re-summarize history (also: discove
 | `make backup-drill` | Dump the local database, restore it into a throwaway database, and check every table matches |
 | `make audit` | Check the locked Python and website dependencies for known vulnerabilities |
 | `uv run filings-benchmark --model <name>` | Compare 8-K summarization across models: latency, failures, grounding |
+| `uv run filings-search-eval` | Score keyword, semantic, and hybrid search against labeled queries (`config/search_eval.json`) |
 | `uv run filings-replay discovered --accession <no>` | Reprocess one filing (also `--form-type`, `--status`, or `parsed`) |
 | `uv run filings-healthcheck <process>` | The workers' liveness check (e.g. `filings-parser`): exits 1 if its loop stopped beating |
 

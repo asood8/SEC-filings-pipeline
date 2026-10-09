@@ -14,15 +14,16 @@ import { ErrorMessage, Loading } from '../components/QueryStatus'
 import { SubscriptionForm } from '../components/SubscriptionForm'
 import { SubscriptionList } from '../components/SubscriptionList'
 import { loadGoogleSignIn } from '../lib/googleSignIn'
+import { usePageTitle } from '../lib/usePageTitle'
 
 export function AlertsPage() {
   const me = useQuery(meQuery())
   const heading = useRef<HTMLHeadingElement>(null)
   useFocusWhenSignedInOrOut(me.data, heading)
+  usePageTitle('Alerts')
 
   return (
     <>
-      <title>Alerts · SEC Filings</title>
       <h1 ref={heading} tabIndex={-1}>
         Alerts
       </h1>

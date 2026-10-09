@@ -5,6 +5,7 @@ import { SEARCH_LIMIT, searchQuery, type SearchMode } from '../api/queries'
 import { FilingList } from '../components/FilingList'
 import { ErrorMessage } from '../components/QueryStatus'
 import styles from './SearchPage.module.css'
+import { usePageTitle } from '../lib/usePageTitle'
 
 const MODES: { value: SearchMode; label: string }[] = [
   { value: 'hybrid', label: 'Best match' },
@@ -28,6 +29,7 @@ export function SearchPage() {
   const query = useQuery(
     searchQuery({ q, mode, formType: formType || undefined }),
   )
+  usePageTitle(q ? `Search: ${q}` : 'Search')
 
   // The fields follow the URL (the header's search box changes it too). They're updated in
   // place rather than re-mounted, so focus stays where it was after a search.
@@ -65,9 +67,6 @@ export function SearchPage() {
 
   return (
     <>
-      <title>
-        {q ? `${q} · Search · SEC Filings` : 'Search · SEC Filings'}
-      </title>
       <h1>Search filings</h1>
       <form className={styles.form} onSubmit={submit}>
         <label htmlFor="search-q" className="visually-hidden">

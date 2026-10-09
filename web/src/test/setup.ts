@@ -5,4 +5,5 @@ import { afterEach, vi } from 'vitest'
 afterEach(() => {
   cleanup()
   vi.unstubAllGlobals()
+  document.title = '' // so each test sees only the titles its own pages set
 })

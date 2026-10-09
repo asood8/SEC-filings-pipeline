@@ -8,6 +8,7 @@ import { InsiderActivity } from '../components/InsiderActivity'
 import { ErrorMessage, Loading } from '../components/QueryStatus'
 import { edgarCompanyUrl } from '../lib/format'
 import { NotFoundPage } from './NotFoundPage'
+import { usePageTitle } from '../lib/usePageTitle'
 
 export function CompanyPage() {
   const { ticker = '' } = useParams()
@@ -16,6 +17,13 @@ export function CompanyPage() {
     ...filingsQuery({ cik: company.data?.cik }),
     enabled: company.data !== undefined,
   })
+  usePageTitle(
+    company.data
+      ? `${company.data.name} (${company.data.ticker})`
+      : isNotFound(company.error)
+        ? 'Company not found'
+        : ticker.toUpperCase(),
+  )
 
   if (company.isPending) return <Loading />
   if (isNotFound(company.error)) return <NotFoundPage what="company" />
@@ -24,7 +32,6 @@ export function CompanyPage() {
   const { name, cik, exchange } = company.data
   return (
     <>
-      <title>{`${name} (${company.data.ticker}) · SEC Filings`}</title>
       <h1>{name}</h1>
       <p className="muted">
         {company.data.ticker}

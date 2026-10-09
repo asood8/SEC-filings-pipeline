@@ -9,6 +9,7 @@ import { ErrorMessage, Loading } from '../components/QueryStatus'
 import { formatDate, formatMoney, formatShares } from '../lib/format'
 import filters from './FeedPage.module.css'
 import styles from './InsiderTradesPage.module.css'
+import { usePageTitle } from '../lib/usePageTitle'
 
 const SIDES: { value: TradeSide; label: string; noun: string }[] = [
   { value: 'buy', label: 'Purchases', noun: 'purchases' },
@@ -28,6 +29,7 @@ export function InsiderTradesPage() {
     PERIODS.find((days) => String(days) === params.get('days')) ?? DEFAULT_DAYS
   const query = useQuery(insiderTradesQuery(side, period))
   const noun = SIDES.find((s) => s.value === side)?.noun
+  usePageTitle(`Insider trades: ${noun}, last ${period} days`)
 
   function choose(next: { side?: TradeSide; days?: number }) {
     const chosen = { side: next.side ?? side, days: next.days ?? period }
@@ -39,7 +41,6 @@ export function InsiderTradesPage() {
 
   return (
     <>
-      <title>Insider trades · SEC Filings</title>
       <h1>Insider trades</h1>
       <p className="muted">
         The largest recent purchases and sales of company stock by insiders

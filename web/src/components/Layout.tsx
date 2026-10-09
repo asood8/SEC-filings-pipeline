@@ -7,6 +7,7 @@ import {
 } from 'react'
 import { Link, NavLink, Outlet, useLocation, useNavigate } from 'react-router'
 import { API_BASE_URL } from '../api/client'
+import { SITE_NAME } from '../lib/site'
 import styles from './Layout.module.css'
 
 export function Layout() {
@@ -34,7 +35,7 @@ export function Layout() {
       <header className={styles.header}>
         <div className={styles.bar}>
           <Link to="/" className={styles.brand}>
-            SEC Filings
+            {SITE_NAME}
           </Link>
           <nav className={styles.nav} aria-label="Main">
             <NavLink to="/" end>

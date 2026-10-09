@@ -79,13 +79,18 @@ export const insiderTradesQuery = (side: TradeSide, days: number) =>
 export type SearchMode = 'hybrid' | 'keyword' | 'semantic'
 export type SearchParams = { q: string; mode: SearchMode; formType?: string }
 
+/** The most results one search returns. */
+export const SEARCH_LIMIT = 30
+
 export const searchQuery = ({ q, mode, formType }: SearchParams) =>
   queryOptions({
     queryKey: ['search', { q, mode, formType }],
     queryFn: () =>
       unwrap(
         api.GET('/search', {
-          params: { query: { q, mode, form_type: formType, limit: 30 } },
+          params: {
+            query: { q, mode, form_type: formType, limit: SEARCH_LIMIT },
+          },
         }),
       ),
     enabled: q.trim().length > 0,

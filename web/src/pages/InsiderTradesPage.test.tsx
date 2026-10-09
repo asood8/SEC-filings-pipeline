@@ -4,6 +4,7 @@ import { describe, expect, it } from 'vitest'
 import type { InsiderTrade } from '../api/client'
 import { BERKSHIRE, BUFFETT, insiderTrade } from '../test/data'
 import { mockApi, renderRoute } from '../test/render'
+import { rowText } from '../test/table'
 
 /** The API's answer for the request's side and days. */
 function answer(url: URL, items: InsiderTrade[]) {
@@ -14,11 +15,6 @@ function answer(url: URL, items: InsiderTrade[]) {
     items,
   }
 }
-
-const cells = (row: HTMLElement) =>
-  within(row)
-    .getAllByRole('cell')
-    .map((cell) => cell.textContent)
 
 describe('InsiderTradesPage', () => {
   it('lists the largest purchases, linking to filings and companies', async () => {
@@ -60,30 +56,37 @@ describe('InsiderTradesPage', () => {
       name: 'Largest insider purchases, last 30 days',
     })
     const [, lennar, fund] = within(table).getAllByRole('row')
-    expect(cells(lennar)).toEqual([
+    expect(rowText(lennar)).toEqual([
       'LEN Lennar Corp',
       'Berkshire Hathaway Inc (10% owner); Warren E Buffett (10% owner)',
       '$212,395,151 2,743,529 shares',
       '$77.42',
       'Sep 19, 2026',
       'No',
-      'Filed Sep 21, 2026',
+      'Filed Sep 21, 2026 (LEN Form 4)',
     ])
+    // Each row is titled by its stock, for screen readers moving across the row.
+    expect(within(lennar).getByRole('rowheader')).toHaveTextContent(
+      'LEN Lennar Corp',
+    )
     expect(within(lennar).getByRole('link', { name: 'LEN' })).toHaveAttribute(
       'href',
       '/companies/LEN',
     )
     expect(
-      within(lennar).getByRole('link', { name: 'Filed Sep 21, 2026' }),
+      // The link's name says which filing it opens, out of context too.
+      within(lennar).getByRole('link', {
+        name: 'Filed Sep 21, 2026 (LEN Form 4)',
+      }),
     ).toHaveAttribute('href', '/filings/0001193125-26-397059')
-    expect(cells(fund)).toEqual([
+    expect(rowText(fund)).toEqual([
       'Example Municipal Fund',
       'Timothy D Cook (Executive Chair, Director)',
       '—* 1,000 shares',
       '—',
       'Oct 2, 2026',
       'Not stated',
-      'Filed Oct 5, 2026',
+      'Filed Oct 5, 2026 (Example Municipal Fund Form 4)',
     ])
     expect(within(fund).getAllByRole('link')).toHaveLength(1) // the filing only
     expect(screen.getByText(/since Sep 8, 2026/)).toBeInTheDocument()

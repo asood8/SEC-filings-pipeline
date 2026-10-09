@@ -1,7 +1,7 @@
 import { useInfiniteQuery } from '@tanstack/react-query'
 import { useSearchParams } from 'react-router'
 import { filingsQuery } from '../api/queries'
-import { FilingList } from '../components/FilingList'
+import { PagedFilingList } from '../components/PagedFilingList'
 import { ErrorMessage, Loading } from '../components/QueryStatus'
 import styles from './FeedPage.module.css'
 
@@ -46,30 +46,19 @@ export function FeedPage() {
         ))}
       </fieldset>
 
-      {query.isPending ? (
-        <Loading />
+      {query.data ? (
+        <PagedFilingList
+          pages={query.data.pages}
+          hasNextPage={query.hasNextPage}
+          isFetchingNextPage={query.isFetchingNextPage}
+          fetchNextPage={query.fetchNextPage}
+          error={query.error}
+          empty="No filings yet."
+        />
       ) : query.isError ? (
         <ErrorMessage error={query.error} />
       ) : (
-        <>
-          <FilingList
-            filings={query.data.pages.flatMap((page) => page.items)}
-          />
-          {query.data.pages[0].items.length === 0 && (
-            <p className="muted">No filings yet.</p>
-          )}
-          {query.hasNextPage && (
-            <p>
-              <button
-                type="button"
-                onClick={() => query.fetchNextPage()}
-                disabled={query.isFetchingNextPage}
-              >
-                {query.isFetchingNextPage ? 'Loading…' : 'Load more'}
-              </button>
-            </p>
-          )}
-        </>
+        <Loading />
       )}
     </>
   )

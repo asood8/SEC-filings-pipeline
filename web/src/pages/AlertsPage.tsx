@@ -1,4 +1,5 @@
 import { useQuery } from '@tanstack/react-query'
+import { type RefObject, useEffect, useRef } from 'react'
 import { useSearchParams } from 'react-router'
 import {
   meQuery,
@@ -16,11 +17,15 @@ import { loadGoogleSignIn } from '../lib/googleSignIn'
 
 export function AlertsPage() {
   const me = useQuery(meQuery())
+  const heading = useRef<HTMLHeadingElement>(null)
+  useFocusWhenSignedInOrOut(me.data, heading)
 
   return (
     <>
       <title>Alerts · SEC Filings</title>
-      <h1>Alerts</h1>
+      <h1 ref={heading} tabIndex={-1}>
+        Alerts
+      </h1>
       <p className="muted">
         Get a Discord, Slack, or email message when a company you follow files a
         Form 4 or an 8-K, with its plain-English summary. One message per
@@ -37,6 +42,24 @@ export function AlertsPage() {
       )}
     </>
   )
+}
+
+/**
+ * Signing in or out replaces most of the page, including the button that was used, so focus
+ * moves to the page's heading instead of being lost.
+ */
+function useFocusWhenSignedInOrOut(
+  user: User | null | undefined,
+  heading: RefObject<HTMLHeadingElement | null>,
+) {
+  const signedIn = user === undefined ? undefined : user !== null
+  const previous = useRef(signedIn)
+  useEffect(() => {
+    if (signedIn === undefined) return
+    if (previous.current !== undefined && previous.current !== signedIn)
+      heading.current?.focus()
+    previous.current = signedIn
+  }, [signedIn, heading])
 }
 
 function SignedOut() {
@@ -58,6 +81,7 @@ function SignedIn({ user }: { user: User }) {
   const subscriptions = useQuery(subscriptionsQuery())
   const signOut = useSignOut()
   const deleteAccount = useDeleteAccount()
+  const alertsHeading = useRef<HTMLHeadingElement>(null)
 
   function leave() {
     // Stop Google from signing this browser straight back in.
@@ -78,14 +102,19 @@ function SignedIn({ user }: { user: User }) {
       </p>
       {signOut.isError && <ErrorMessage error={signOut.error} />}
 
-      <h2>Your alerts</h2>
+      <h2 ref={alertsHeading} tabIndex={-1}>
+        Your alerts
+      </h2>
       {subscriptions.isPending ? (
         <Loading />
       ) : subscriptions.isError ? (
         <ErrorMessage error={subscriptions.error} />
       ) : (
         <>
-          <SubscriptionList subscriptions={subscriptions.data} />
+          <SubscriptionList
+            subscriptions={subscriptions.data}
+            onRemoved={() => alertsHeading.current?.focus()}
+          />
           <SubscriptionForm
             user={user}
             subscriptions={subscriptions.data}

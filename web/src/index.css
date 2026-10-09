@@ -3,7 +3,8 @@
   --surface: #f6f7f9;
   --text: #1f2933;
   --muted: #5f6b7a;
-  --border: #e1e5ea;
+  --border: #e1e5ea; /* dividers and decoration only: too faint to outline a control */
+  --control-border: #7b8794; /* outlines form controls: 3:1 or more against --bg and --surface */
   --accent: #1d4ed8;
   --accent-soft: #e8eefc;
   --warn-bg: #fff7e6;
@@ -26,6 +27,7 @@
     --text: #e6e9ed;
     --muted: #9aa5b1;
     --border: #2b323b;
+    --control-border: #677281;
     --accent: #7aa2ff;
     --accent-soft: #1d2a4a;
     --warn-bg: #2e2510;
@@ -39,6 +41,7 @@
 
 body {
   margin: 0;
+  overflow-wrap: break-word; /* long URLs and identifiers wrap instead of widening the page */
 }
 
 a {
@@ -48,6 +51,15 @@ a {
 
 a:hover {
   text-decoration: underline;
+}
+
+/* Links inside running text are underlined, since their colour alone doesn't set them apart
+ * from the words around them (WCAG 1.4.1). Lists of links (navigation, headlines, table cells)
+ * stand on their own. */
+p a,
+dd a {
+  text-decoration: underline;
+  text-underline-offset: 0.15em;
 }
 
 h1,
@@ -66,22 +78,52 @@ button {
 input,
 select {
   padding: 0.45rem 0.6rem;
-  border: 1px solid var(--border);
+  border: 1px solid var(--control-border);
   border-radius: var(--radius);
   background: var(--bg);
 }
 
 button {
   padding: 0.45rem 0.9rem;
-  border: 1px solid var(--border);
+  border: 1px solid var(--control-border);
   border-radius: var(--radius);
   background: var(--surface);
   cursor: pointer;
 }
 
-button:disabled {
+button:disabled,
+button[aria-disabled='true'] {
   cursor: default;
   opacity: 0.6;
+}
+
+/* One focus ring for every control, in the accent colour (3:1 or more against every background
+ * it can sit on, in both themes). */
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* Headings and <main> receive focus only from code (after navigation, or the skip link), so
+ * they don't need a ring. */
+[tabindex='-1']:focus {
+  outline: none;
+}
+
+/* Hidden until a keyboard user tabs to it: the first stop on every page. */
+.skip-link {
+  position: absolute;
+  top: 0.5rem;
+  left: 0.5rem;
+  z-index: 1;
+  padding: 0.5rem 0.75rem;
+  border-radius: var(--radius);
+  background: var(--bg);
+  transform: translateY(-200%);
+}
+
+.skip-link:focus {
+  transform: none;
 }
 
 .muted {
@@ -106,11 +148,15 @@ button:disabled {
   background: var(--warn-bg);
 }
 
+/* Read by screen readers, not shown. */
 .visually-hidden {
   position: absolute;
   width: 1px;
   height: 1px;
+  margin: -1px;
+  padding: 0;
   overflow: hidden;
   clip-path: inset(50%);
   white-space: nowrap;
+  border: 0;
 }

@@ -2,6 +2,7 @@ import { useQuery } from '@tanstack/react-query'
 import type { TradeTotals } from '../api/client'
 import { insiderActivityQuery } from '../api/queries'
 import { formatDate, formatMoney, formatShares } from '../lib/format'
+import { DataTable } from './DataTable'
 import styles from './DataTable.module.css'
 import { OwnerNames } from './OwnerNames'
 import { ErrorMessage, Loading } from './QueryStatus'
@@ -30,72 +31,78 @@ export function InsiderActivity({ ticker }: { ticker: string }) {
             {formatDate(query.data.since)}. Awards, option exercises, tax
             withholding, and gifts aren't included.
           </p>
-          <div className={styles.scroll}>
-            <table className={styles.table}>
-              <caption className="visually-hidden">
-                Insider purchases and sales by owner, last {DAYS} days
-              </caption>
-              <thead>
-                <tr>
-                  <th scope="col">Reported by</th>
-                  <th scope="col" className={styles.number}>
-                    Bought
+          <DataTable
+            caption={`Insider purchases and sales by owner, last ${DAYS} days`}
+          >
+            <thead role="rowgroup">
+              <tr role="row">
+                <th scope="col" role="columnheader">
+                  Reported by
+                </th>
+                <th scope="col" role="columnheader" className={styles.number}>
+                  Bought
+                </th>
+                <th scope="col" role="columnheader" className={styles.number}>
+                  Sold
+                </th>
+                <th scope="col" role="columnheader" className={styles.number}>
+                  Filings
+                </th>
+                <th scope="col" role="columnheader" className={styles.number}>
+                  Latest
+                </th>
+              </tr>
+            </thead>
+            <tbody role="rowgroup">
+              {query.data.owners.map((owner) => (
+                <tr
+                  key={owner.reporting_owners
+                    .map((o) => o.cik ?? o.name)
+                    .join('|')}
+                  role="row"
+                >
+                  <th scope="row" role="rowheader">
+                    <OwnerNames owners={owner.reporting_owners} />
                   </th>
-                  <th scope="col" className={styles.number}>
-                    Sold
-                  </th>
-                  <th scope="col" className={styles.number}>
-                    Filings
-                  </th>
-                  <th scope="col" className={styles.number}>
-                    Latest
-                  </th>
-                </tr>
-              </thead>
-              <tbody>
-                {query.data.owners.map((owner) => (
-                  <tr
-                    key={owner.reporting_owners
-                      .map((o) => o.cik ?? o.name)
-                      .join('|')}
+                  <td role="cell" data-label="Bought" className={styles.number}>
+                    <Trades totals={owner.bought} />
+                  </td>
+                  <td role="cell" data-label="Sold" className={styles.number}>
+                    <Trades totals={owner.sold} />
+                  </td>
+                  <td
+                    role="cell"
+                    data-label="Filings"
+                    className={styles.number}
                   >
-                    <td>
-                      <OwnerNames owners={owner.reporting_owners} />
-                    </td>
-                    <td data-label="Bought" className={styles.number}>
-                      <Trades totals={owner.bought} />
-                    </td>
-                    <td data-label="Sold" className={styles.number}>
-                      <Trades totals={owner.sold} />
-                    </td>
-                    <td data-label="Filings" className={styles.number}>
-                      {owner.filings}
-                    </td>
-                    <td data-label="Latest" className={styles.number}>
-                      <time dateTime={owner.latest_date}>
-                        {formatDate(owner.latest_date)}
-                      </time>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-              <tfoot>
-                <tr>
-                  <td>All insiders</td>
-                  <td data-label="Bought" className={styles.number}>
-                    <Trades totals={query.data.bought} />
+                    {owner.filings}
                   </td>
-                  <td data-label="Sold" className={styles.number}>
-                    <Trades totals={query.data.sold} />
+                  <td role="cell" data-label="Latest" className={styles.number}>
+                    <time dateTime={owner.latest_date}>
+                      {formatDate(owner.latest_date)}
+                    </time>
                   </td>
-                  <td data-label="Filings" className={styles.number}>
-                    {query.data.filings}
-                  </td>
-                  <td className={styles.number} />
                 </tr>
-              </tfoot>
-            </table>
-          </div>
+              ))}
+            </tbody>
+            <tfoot role="rowgroup">
+              <tr role="row">
+                <th scope="row" role="rowheader">
+                  All insiders
+                </th>
+                <td role="cell" data-label="Bought" className={styles.number}>
+                  <Trades totals={query.data.bought} />
+                </td>
+                <td role="cell" data-label="Sold" className={styles.number}>
+                  <Trades totals={query.data.sold} />
+                </td>
+                <td role="cell" data-label="Filings" className={styles.number}>
+                  {query.data.filings}
+                </td>
+                <td role="cell" className={styles.number} />
+              </tr>
+            </tfoot>
+          </DataTable>
           {[query.data.bought, query.data.sold].some(
             (t) => t.unpriced_shares > 0,
           ) && (

@@ -450,18 +450,30 @@ address, answer.
 The summarizer's local model is llama.cpp's server in the `llm` Deployment (ADR-0017); Gemini is
 the fallback. `filings-benchmark` runs the collected 8-Ks through models with the production
 prompt and schema, and reports per model the median and p95 time, failures (errors or answers that
-don't fit the schema), and how many summaries contain numbers the filing doesn't. With `--out`, it
-saves every summary for reading side by side: numbers can't catch a wrong but well-formed claim.
+don't fit the schema), fact recall and summaries with forbidden claims (scored against the labeled
+8-Ks in `config/summary_eval.json`, ADR-0008), and how many summaries contain numbers the filing
+doesn't. With `--out`, it saves every summary with what it missed and any forbidden claim, for
+reading side by side; read the misses before trusting a difference of a filing or two.
+
+The labels cover the 22 8-Ks in the local database (accession numbers), so the quality columns
+only mean something there: production collects other 8-Ks, and on the VM they read `n/a`. Compare
+quality locally, with the same model file if it is a different quantization (Ollama can load a
+GGUF file through a Modelfile, `ollama create`), and speed on the VM.
 
 1. **Compare quality locally first** (Ollama):
 
    ```
    make llm-up                                          # starts Ollama, pulls llama3.2:3b
    docker compose exec ollama ollama pull <candidate>
-   uv run filings-benchmark --model llama3.2:3b --model <candidate> --limit 10 --out bench-local.json
+   uv run filings-benchmark --model llama3.2:3b --model <candidate> --out bench-local.json
    ```
 
-   `--gemini` adds Gemini as a reference (it uses the free daily quota); `--runs 3` repeats each.
+   All 22 labeled 8-Ks take about 25 minutes per model on the laptop; `--accession <number>`
+   (repeatable) runs chosen ones. `--gemini` adds Gemini as a reference (it uses the free daily
+   quota); `--runs 3` repeats each. After a change to the labels, `--rescore bench-local.json`
+   scores the saved summaries again without calling a model. A prompt change is measured the same
+   way: run before and after, and keep it only if fact recall or forbidden claims improve without
+   costing grounding, failures, or much time (bump `PROMPT_VERSION`, ADR-0007).
 2. **Point the `llm` Deployment at the new file** in `deploy/k8s/base/llm.yaml`: `MODEL_FILE`,
    `MODEL_URL` (pinned to a Hugging Face commit: `.../resolve/<commit>/<file>`), `MODEL_SHA256`
    (from the file's Hugging Face page), and the server's `--model` path and `--alias`. Set

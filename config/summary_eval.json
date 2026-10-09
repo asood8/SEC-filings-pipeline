@@ -395,7 +395,7 @@
       "forbidden": [
         {
           "claim": "financial results reported",
-          "patterns": ["\\b(revenue|net income|profit|earnings per share)s? (of|was|were|rose|grew|increased|fell|declined) "],
+          "patterns": ["\\b(revenue|net income|profit|earnings per share)s? (of|was|were|rose|grew|increased|fell|declined)\\b"],
           "evidence": "Our net income and cash flow results will be announced along with the rest of our financial performance when we announce Q3 earnings."
         }
       ]

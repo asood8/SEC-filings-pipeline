@@ -66,6 +66,12 @@ def test_patterns_never_span_two_parts_of_a_summary() -> None:
     assert "CEO named" in score.missing
 
 
+def test_patterns_are_taken_verbatim() -> None:
+    spaced = labels(company="Acme", facts=[{"fact": "the CEO", "patterns": [" ceo "]}])
+    assert score_summary(summary("Acme names a CEO today"), spaced).stated == 1
+    assert score_summary(summary("Acme CEOs meet"), spaced).stated == 0
+
+
 def test_curly_quotes_and_dashes_are_made_plain() -> None:
     curly = (
         f"McDonald{chr(0x2019)}s {chr(0x201C)}NEXT{chr(0x201D)}{chr(0xA0)}plan {chr(0x2013)} 2030"

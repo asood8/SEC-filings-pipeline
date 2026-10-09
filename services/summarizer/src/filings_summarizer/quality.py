@@ -46,6 +46,8 @@ DEFAULT_LABELS = Path("config/summary_eval.json")
 
 AccessionNo = Annotated[str, StringConstraints(pattern=r"^\d{10}-\d{2}-\d{6}$")]
 Text = Annotated[str, StringConstraints(min_length=1, strip_whitespace=True)]
+# Regular expressions are taken as written: no stripping, a space can matter.
+Regex = Annotated[str, StringConstraints(min_length=1)]
 
 # Typographic characters that models and filings use interchangeably with plain ones: curly
 # quotes, Unicode hyphens and dashes, no-break spaces.
@@ -76,7 +78,7 @@ class Fact(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
 
     fact: Text
-    patterns: tuple[Text, ...] = ()
+    patterns: tuple[Regex, ...] = ()
     numbers: tuple[Text, ...] = ()
 
     @field_validator("patterns")
@@ -104,7 +106,7 @@ class ForbiddenClaim(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
 
     claim: Text
-    patterns: tuple[Text, ...] = Field(min_length=1)
+    patterns: tuple[Regex, ...] = Field(min_length=1)
     # What the filing says instead, quoted, so the label can be checked.
     evidence: str = ""
 

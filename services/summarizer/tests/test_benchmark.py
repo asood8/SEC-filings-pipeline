@@ -8,6 +8,7 @@ from typing import Any
 from filings_parser.form8k import parse_form8k
 from filings_summarizer.benchmark import (
     Case,
+    ModelResult,
     _percentile,
     main,
     render_table,
@@ -149,6 +150,21 @@ LOWERED = {
     "facts": [{"fact": "third-quarter results", "patterns": ["third[- ]quarter"]}],
     "forbidden": [{"claim": "targets lowered", "patterns": ["lowered"]}],
 }
+
+
+def test_progress_sees_the_results_after_every_attempt(tmp_path: Path) -> None:
+    model = FakeModel("m", summary("warmup"), summary("one"), LlmError("down"), summary("three"))
+    path = tmp_path / "bench.json"
+    saved: list[int] = []
+
+    def save(results: list[ModelResult]) -> None:
+        write_results(path, 1, None, results)
+        saved.append(len(json.loads(path.read_text())["results"][0]["attempts"]))
+
+    run_benchmark([model], [ADOBE], runs=3, progress=save)
+
+    assert saved == [1, 2, 3]  # an interrupted run keeps every attempt before the interruption
+    assert not (tmp_path / "bench.json.partial").exists()
 
 
 def test_rescore_scores_saved_summaries_against_new_labels(tmp_path: Path) -> None:

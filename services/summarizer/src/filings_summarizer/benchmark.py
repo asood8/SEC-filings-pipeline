@@ -22,7 +22,7 @@ import math
 import statistics
 import sys
 import time
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any
@@ -159,14 +159,17 @@ def run_benchmark(
     runs: int = 1,
     warmup: bool = True,
     labels: Mapping[str, FilingLabels] | None = None,
+    progress: Callable[[list[ModelResult]], None] | None = None,
 ) -> list[ModelResult]:
     """Every case through every provider, `runs` times each, scored against `labels` (by
     accession number) where a filing has them. With `warmup`, one untimed call first loads the
-    model, so the first case isn't charged for it."""
+    model, so the first case isn't charged for it. `progress` gets the results so far after every
+    attempt, so a long run that is interrupted keeps what it measured."""
     labels = labels or {}
-    results = []
+    results: list[ModelResult] = []
     for provider in providers:
         result = ModelResult(provider.name, provider.model)
+        results.append(result)
         if warmup and cases:
             summarize_once(provider, cases[0])
         for case in cases:
@@ -180,7 +183,8 @@ def run_benchmark(
                     attempt.seconds,
                     attempt.error or _outcome(attempt),
                 )
-        results.append(result)
+                if progress is not None:
+                    progress(results)
     return results
 
 
@@ -304,8 +308,10 @@ def write_results(
             for r in results
         ],
     }
-    path.write_text(json.dumps(document, indent=2, default=str))
-    logger.info("wrote %s", path)
+    # Replaced whole, never left half-written: it is rewritten after every summary.
+    partial = path.with_name(path.name + ".partial")
+    partial.write_text(json.dumps(document, indent=2, default=str))
+    partial.replace(path)
 
 
 def _providers(parser: argparse.ArgumentParser, args: argparse.Namespace) -> list[LlmProvider]:
@@ -359,7 +365,13 @@ def main(argv: Sequence[str] | None = None) -> int:
         " skipped if it isn't there)",
     )
     parser.add_argument("--runs", type=int, default=1, help="summaries per 8-K and model")
-    parser.add_argument("--out", type=Path, default=None, help="write every summary to this JSON")
+    parser.add_argument(
+        "--out",
+        type=Path,
+        default=None,
+        help="write every summary to this JSON (rewritten after each one, so an interrupted run"
+        " keeps what it measured)",
+    )
     parser.add_argument(
         "--rescore",
         type=Path,
@@ -399,10 +411,22 @@ def main(argv: Sequence[str] | None = None) -> int:
         if labels and unlabeled:
             logger.warning("%d 8-K(s) have no labels, so no quality score", unlabeled)
         logger.info("benchmarking %d model(s) on %d 8-K(s)", len(providers), len(cases))
-        results = run_benchmark(providers, cases, runs=args.runs, labels=labels)
+        out = args.out
+
+        def save(so_far: list[ModelResult]) -> None:
+            write_results(out, prompt_version, labels_path, so_far)
+
+        results = run_benchmark(
+            providers,
+            cases,
+            runs=args.runs,
+            labels=labels,
+            progress=save if out is not None else None,
+        )
     print(render_table(results))
     if args.out is not None:
         write_results(args.out, prompt_version, labels_path, results)
+        logger.info("wrote %s", args.out)
     return 0
 
 

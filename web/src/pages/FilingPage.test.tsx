@@ -9,6 +9,7 @@ import {
   withoutRelationship,
 } from '../test/data'
 import { mockApi, renderRoute } from '../test/render'
+import { rowText } from '../test/table'
 
 describe('FilingPage', () => {
   it('shows the summary, 8-K items, and a link to the original', async () => {
@@ -20,12 +21,14 @@ describe('FilingPage', () => {
     ).toBeInTheDocument()
     expect(screen.getByText('Effective January 1, 2027')).toBeInTheDocument()
     expect(screen.getByText(/Director or officer change/)).toBeInTheDocument()
-    expect(
-      screen.getByRole('link', { name: /original on sec.gov/ }),
-    ).toHaveAttribute(
+    const original = screen.getByRole('link', {
+      name: 'Read the original on sec.gov (opens in a new tab)',
+    })
+    expect(original).toHaveAttribute(
       'href',
       'https://www.sec.gov/Archives/edgar/data/320193/x.htm',
     )
+    expect(original).toHaveAttribute('target', '_blank')
     expect(screen.getByText(/Summarized by an AI model/)).toBeInTheDocument()
     expect(screen.queryByText(/Check these numbers/)).not.toBeInTheDocument()
   })
@@ -174,12 +177,18 @@ describe('FilingPage', () => {
     const table = await screen.findByRole('table', {
       name: 'Transactions reported in this filing',
     })
+    // A wide table scrolls inside a region keyboard users can focus and scroll.
+    expect(
+      screen.getByRole('region', {
+        name: 'Transactions reported in this filing',
+      }),
+    ).toHaveAttribute('tabindex', '0')
+    expect(within(table).getAllByRole('columnheader')).toHaveLength(8)
     const [, sale, exercise, option] = within(table).getAllByRole('row')
-    const cells = (row: HTMLElement) =>
-      within(row)
-        .getAllByRole('cell')
-        .map((cell) => cell.textContent)
-    expect(cells(sale)).toEqual([
+    expect(within(sale).getByRole('rowheader')).toHaveTextContent(
+      'Open-market or private sale',
+    )
+    expect(rowText(sale)).toEqual([
       'Open-market or private sale',
       'Sep 8, 2026',
       'Common Stock',
@@ -189,7 +198,7 @@ describe('FilingPage', () => {
       '2,460',
       'Direct',
     ])
-    expect(cells(exercise)).toEqual([
+    expect(rowText(exercise)).toEqual([
       'Exercise or conversion of a derivative',
       'Sep 8, 2026',
       'Common Stock',
@@ -200,7 +209,7 @@ describe('FilingPage', () => {
       'Indirect',
     ])
     expect(within(option).getByText('Derivative')).toBeInTheDocument()
-    expect(cells(option).slice(3, 6)).toEqual([
+    expect(rowText(option).slice(3, 6)).toEqual([
       'disposed of −720',
       '$0.00',
       '$0.00',

@@ -2,6 +2,7 @@ import { useQuery } from '@tanstack/react-query'
 import { Link, useParams } from 'react-router'
 import { isNotFound, type FilingDetail } from '../api/client'
 import { filingQuery } from '../api/queries'
+import { ExternalLink } from '../components/ExternalLink'
 import { Form4Transactions } from '../components/Form4Transactions'
 import { OwnerNames } from '../components/OwnerNames'
 import { ErrorMessage, Loading } from '../components/QueryStatus'
@@ -36,9 +37,9 @@ export function FilingPage() {
       </p>
       <h1>{title}</h1>
       <p>
-        <a href={filing.sec_url} target="_blank" rel="noreferrer">
-          Read the original on sec.gov ↗
-        </a>
+        <ExternalLink href={filing.sec_url}>
+          Read the original on sec.gov
+        </ExternalLink>
       </p>
 
       <Summary filing={filing} />
@@ -61,9 +62,9 @@ export function FilingPage() {
           <ul>
             {filing.exhibits.map((exhibit) => (
               <li key={exhibit.filename}>
-                <a href={exhibit.sec_url} target="_blank" rel="noreferrer">
+                <ExternalLink href={exhibit.sec_url}>
                   {exhibit.type}
-                </a>{' '}
+                </ExternalLink>{' '}
                 <span className="muted">{exhibit.filename}</span>
               </li>
             ))}

@@ -36,6 +36,12 @@ export function CompaniesPage() {
           onChange={(event) => setFilter(event.target.value)}
         />
       </p>
+      {/* Tells screen readers how many companies the filter left, as they type. */}
+      <p role="status" className="visually-hidden">
+        {needle && query.data
+          ? `${companies.length} of ${query.data.items.length} companies match.`
+          : ''}
+      </p>
       {query.isPending ? (
         <Loading />
       ) : query.isError ? (

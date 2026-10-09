@@ -2,7 +2,8 @@ import { useInfiniteQuery, useQuery } from '@tanstack/react-query'
 import { Link, useParams } from 'react-router'
 import { isNotFound } from '../api/client'
 import { companyQuery, filingsQuery } from '../api/queries'
-import { FilingList } from '../components/FilingList'
+import { PagedFilingList } from '../components/PagedFilingList'
+import { ExternalLink } from '../components/ExternalLink'
 import { InsiderActivity } from '../components/InsiderActivity'
 import { ErrorMessage, Loading } from '../components/QueryStatus'
 import { edgarCompanyUrl } from '../lib/format'
@@ -28,9 +29,9 @@ export function CompanyPage() {
       <p className="muted">
         {company.data.ticker}
         {exchange && ` · ${exchange}`} · CIK {cik} ·{' '}
-        <a href={edgarCompanyUrl(cik)} target="_blank" rel="noreferrer">
-          All filings on EDGAR ↗
-        </a>
+        <ExternalLink href={edgarCompanyUrl(cik)}>
+          All filings on EDGAR
+        </ExternalLink>
       </p>
       <p>
         <Link to={`/alerts?ticker=${company.data.ticker}`}>
@@ -39,31 +40,20 @@ export function CompanyPage() {
       </p>
       <InsiderActivity ticker={company.data.ticker} />
       <h2>Recent filings</h2>
-      {filings.isPending ? (
-        <Loading />
+      {filings.data ? (
+        <PagedFilingList
+          pages={filings.data.pages}
+          hasNextPage={filings.hasNextPage}
+          isFetchingNextPage={filings.isFetchingNextPage}
+          fetchNextPage={filings.fetchNextPage}
+          error={filings.error}
+          empty="No filings collected yet."
+          showCompany={false}
+        />
       ) : filings.isError ? (
         <ErrorMessage error={filings.error} />
       ) : (
-        <>
-          <FilingList
-            filings={filings.data.pages.flatMap((page) => page.items)}
-            showCompany={false}
-          />
-          {filings.data.pages[0].items.length === 0 && (
-            <p className="muted">No filings collected yet.</p>
-          )}
-          {filings.hasNextPage && (
-            <p>
-              <button
-                type="button"
-                onClick={() => filings.fetchNextPage()}
-                disabled={filings.isFetchingNextPage}
-              >
-                {filings.isFetchingNextPage ? 'Loading…' : 'Load more'}
-              </button>
-            </p>
-          )}
-        </>
+        <Loading />
       )}
     </>
   )

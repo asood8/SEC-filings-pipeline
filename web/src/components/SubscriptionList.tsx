@@ -1,4 +1,4 @@
-import { type FormEvent, useState } from 'react'
+import { type FormEvent, type KeyboardEvent, useRef, useState } from 'react'
 import { Link } from 'react-router'
 import { useDeleteSubscription, useUpdateSubscription } from '../api/account'
 import type { Subscription } from '../api/client'
@@ -21,19 +21,56 @@ function formsLabel(forms: string[]) {
   return forms.length === 0 ? 'all forms' : forms.map(formLabel).join(' and ')
 }
 
-export function SubscriptionList({
-  subscriptions,
-}: {
+type Props = {
   subscriptions: Subscription[]
-}) {
-  const remove = useDeleteSubscription()
+  /** Called once an alert is gone, to put focus somewhere sensible: its button went with it. */
+  onRemoved?: () => void
+}
 
-  if (subscriptions.length === 0) {
-    return <p className="muted">No alerts yet. Add some below.</p>
+export function SubscriptionList({ subscriptions, onRemoved }: Props) {
+  const remove = useDeleteSubscription()
+  const [removed, setRemoved] = useState<string>()
+
+  function removeOne(id: number, label: string) {
+    if (remove.isPending) return
+    setRemoved(undefined)
+    remove.mutate(id, {
+      onSuccess: () => {
+        setRemoved(`Removed the ${label}.`)
+        onRemoved?.()
+      },
+    })
   }
+
   return (
     <>
+      {/* Always in the page, so screen readers announce a removal. */}
+      <div role="status">{removed && <p className="muted">{removed}</p>}</div>
       {remove.isError && <ErrorMessage error={remove.error} />}
+      {subscriptions.length === 0 ? (
+        <p className="muted">No alerts yet. Add some below.</p>
+      ) : (
+        <Groups
+          subscriptions={subscriptions}
+          onRemove={removeOne}
+          removing={remove.isPending}
+        />
+      )}
+    </>
+  )
+}
+
+function Groups({
+  subscriptions,
+  onRemove,
+  removing,
+}: {
+  subscriptions: Subscription[]
+  onRemove: (id: number, label: string) => void
+  removing: boolean
+}) {
+  return (
+    <>
       <p className="muted">{subscriptions.length} of 25 alerts used.</p>
       <ul className={styles.list}>
         {byCompany(subscriptions).map((group) => {
@@ -54,8 +91,8 @@ export function SubscriptionList({
                   <Destination
                     key={subscription.id}
                     subscription={subscription}
-                    onRemove={() => remove.mutate(subscription.id)}
-                    removing={remove.isPending}
+                    onRemove={(label) => onRemove(subscription.id, label)}
+                    removing={removing}
                   />
                 ))}
               </ul>
@@ -69,15 +106,22 @@ export function SubscriptionList({
 
 type DestinationProps = {
   subscription: Subscription
-  onRemove: () => void
+  onRemove: (label: string) => void
   removing: boolean
 }
 
 function Destination({ subscription, onRemove, removing }: DestinationProps) {
   const [editing, setEditing] = useState(false)
+  const editButton = useRef<HTMLButtonElement>(null)
   const update = useUpdateSubscription()
   const channel = CHANNEL_NAMES[subscription.channel]
   const label = `${subscription.company.ticker} ${channel} alert`
+
+  /** Closes the edit form, putting focus back on the button that opened it. */
+  function close() {
+    setEditing(false)
+    editButton.current?.focus()
+  }
 
   function save(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
@@ -86,8 +130,14 @@ function Destination({ subscription, onRemove, removing }: DestinationProps) {
     )[]
     update.mutate(
       { id: subscription.id, form_types: forms },
-      { onSuccess: () => setEditing(false) },
+      { onSuccess: close },
     )
+  }
+
+  function closeOnEscape(event: KeyboardEvent<HTMLFormElement>) {
+    if (event.key !== 'Escape') return
+    event.preventDefault()
+    close()
   }
 
   return (
@@ -99,6 +149,7 @@ function Destination({ subscription, onRemove, removing }: DestinationProps) {
         </span>
         <span className={styles.actions}>
           <button
+            ref={editButton}
             type="button"
             onClick={() => setEditing(!editing)}
             aria-expanded={editing}
@@ -108,8 +159,8 @@ function Destination({ subscription, onRemove, removing }: DestinationProps) {
           </button>
           <button
             type="button"
-            onClick={onRemove}
-            disabled={removing}
+            onClick={() => onRemove(label)}
+            aria-disabled={removing || undefined}
             aria-label={`Remove the ${label}`}
           >
             Remove
@@ -121,6 +172,7 @@ function Destination({ subscription, onRemove, removing }: DestinationProps) {
         <form
           className={styles.edit}
           onSubmit={save}
+          onKeyDown={closeOnEscape}
           aria-label={`Forms for the ${label}`}
         >
           <label className={styles.inline}>
@@ -156,7 +208,14 @@ function LastDelivery({ subscription }: { subscription: Subscription }) {
   const last = subscription.last_delivery
   if (!last) return <p className={styles.status}>No alerts yet.</p>
   const when = formatDateTime(last.at)
-  const filing = <Link to={`/filings/${last.accession_no}`}>{when}</Link>
+  const filing = (
+    <Link to={`/filings/${last.accession_no}`}>
+      {when}{' '}
+      <span className="visually-hidden">
+        (the {subscription.company.ticker} filing alerted)
+      </span>
+    </Link>
+  )
   if (last.status === 'sent') {
     return <p className={styles.status}>Last alert sent {filing}.</p>
   }

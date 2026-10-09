@@ -1,4 +1,4 @@
-import { screen, within } from '@testing-library/react'
+import { screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { Subscription } from '../api/client'
@@ -90,6 +90,10 @@ describe('AlertsPage', () => {
       await screen.findByRole('button', { name: 'Sign in with Google' }),
     )
     expect(await screen.findByText('ada@example.com')).toBeInTheDocument()
+    // The sign-in button is gone, so focus goes to the page's heading.
+    expect(
+      screen.getByRole('heading', { level: 1, name: 'Alerts' }),
+    ).toHaveFocus()
     expect(credential).toBe('id-token')
     expect(screen.getByText(/…abcd/)).toBeInTheDocument()
   })
@@ -138,8 +142,10 @@ describe('AlertsPage', () => {
       within(form).getByRole('button', { name: 'Add 4 alerts' }),
     )
 
-    expect(await within(form).findByRole('status')).toHaveTextContent(
-      'Added 4 alerts. 1 already existed.',
+    await waitFor(() =>
+      expect(within(form).getByRole('status')).toHaveTextContent(
+        'Added 4 alerts. 1 already existed.',
+      ),
     )
     expect(sent).toEqual({
       tickers: ['MSFT', 'AAPL'],
@@ -236,6 +242,33 @@ describe('AlertsPage', () => {
     expect(
       screen.queryByRole('form', { name: 'Forms for the AAPL Discord alert' }),
     ).not.toBeInTheDocument()
+    // Focus returns to the button that opened the form.
+    const edit = screen.getByRole('button', {
+      name: 'Edit the forms for the AAPL Discord alert',
+    })
+    expect(edit).toHaveFocus()
+    expect(edit).toHaveAttribute('aria-expanded', 'false')
+  })
+
+  it('closes the edit form with Escape, back on its button', async () => {
+    mockApi({
+      '/me': () => USER,
+      'GET /subscriptions': () => subscriptions,
+      '/companies': () => WATCHLIST,
+    })
+    renderRoute('/alerts')
+
+    const edit = await screen.findByRole('button', {
+      name: 'Edit the forms for the AAPL Discord alert',
+    })
+    await userEvent.click(edit)
+    expect(edit).toHaveAttribute('aria-expanded', 'true')
+    await userEvent.click(screen.getByLabelText('Form 4'))
+    await userEvent.keyboard('{Escape}')
+    expect(
+      screen.queryByRole('form', { name: 'Forms for the AAPL Discord alert' }),
+    ).not.toBeInTheDocument()
+    expect(edit).toHaveFocus()
   })
 
   it('removes an alert and signs out', async () => {
@@ -266,9 +299,24 @@ describe('AlertsPage', () => {
     expect(
       await screen.findByText('No alerts yet. Add some below.'),
     ).toBeInTheDocument()
+    // The removed alert's button went with it: focus moves to the list's heading, and screen
+    // readers hear what happened.
+    await waitFor(() =>
+      expect(
+        screen.getByRole('heading', { name: 'Your alerts' }),
+      ).toHaveFocus(),
+    )
+    expect(screen.getByText('Removed the AAPL Discord alert.')).toBeVisible()
+    expect(
+      screen.getByText('Removed the AAPL Discord alert.').closest('[role]'),
+    ).toHaveAttribute('role', 'status')
+
     await userEvent.click(screen.getByRole('button', { name: 'Sign out' }))
     expect(
       await screen.findByRole('button', { name: 'Sign in with Google' }),
     ).toBeInTheDocument()
+    expect(
+      screen.getByRole('heading', { level: 1, name: 'Alerts' }),
+    ).toHaveFocus()
   })
 })

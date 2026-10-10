@@ -1,9 +1,27 @@
 .form {
   display: flex;
   flex-wrap: wrap;
-  gap: 0.5rem;
+  gap: 0.5rem 0.75rem;
+  align-items: center;
 }
 
 .form input[type='search'] {
   flex: 1 1 18rem;
+  min-width: 0;
+}
+
+/* A select with its visible label beside it. */
+.field {
+  display: flex;
+  gap: 0.4rem;
+  align-items: center;
+  color: var(--muted);
+}
+
+.field select {
+  color: var(--text);
+}
+
+.status p {
+  color: var(--muted);
 }

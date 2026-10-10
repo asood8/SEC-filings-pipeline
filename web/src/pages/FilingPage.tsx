@@ -2,6 +2,7 @@ import { useQuery } from '@tanstack/react-query'
 import { Link, useParams } from 'react-router'
 import { isNotFound, type FilingDetail } from '../api/client'
 import { filingQuery } from '../api/queries'
+import { ExternalLink } from '../components/ExternalLink'
 import { Form4Transactions } from '../components/Form4Transactions'
 import { OwnerNames } from '../components/OwnerNames'
 import { ErrorMessage, Loading } from '../components/QueryStatus'
@@ -9,20 +10,27 @@ import { formatDate, formatDateTime, formLabel } from '../lib/format'
 import { ITEMS_8K, TRANSACTION_CODES } from '../lib/glossary'
 import { NotFoundPage } from './NotFoundPage'
 import styles from './FilingPage.module.css'
+import { usePageTitle } from '../lib/usePageTitle'
 
 export function FilingPage() {
   const { accessionNo = '' } = useParams()
   const query = useQuery(filingQuery(accessionNo))
+  usePageTitle(
+    query.data
+      ? filingTitle(query.data)
+      : isNotFound(query.error)
+        ? 'Filing not found'
+        : undefined,
+  )
 
   if (query.isPending) return <Loading />
   if (isNotFound(query.error)) return <NotFoundPage what="filing" />
   if (query.isError) return <ErrorMessage error={query.error} />
 
   const filing = query.data
-  const title = filing.headline ?? `${formLabel(filing.form_type)} filing`
+  const title = filingTitle(filing)
   return (
     <article>
-      <title>{`${title} · SEC Filings`}</title>
       <p className={styles.meta}>
         <Link to={`/companies/${filing.ticker}`} className={styles.ticker}>
           {filing.ticker}
@@ -36,9 +44,9 @@ export function FilingPage() {
       </p>
       <h1>{title}</h1>
       <p>
-        <a href={filing.sec_url} target="_blank" rel="noreferrer">
-          Read the original on sec.gov ↗
-        </a>
+        <ExternalLink href={filing.sec_url}>
+          Read the original on sec.gov
+        </ExternalLink>
       </p>
 
       <Summary filing={filing} />
@@ -61,9 +69,9 @@ export function FilingPage() {
           <ul>
             {filing.exhibits.map((exhibit) => (
               <li key={exhibit.filename}>
-                <a href={exhibit.sec_url} target="_blank" rel="noreferrer">
+                <ExternalLink href={exhibit.sec_url}>
                   {exhibit.type}
-                </a>{' '}
+                </ExternalLink>{' '}
                 <span className="muted">{exhibit.filename}</span>
               </li>
             ))}
@@ -88,6 +96,11 @@ export function FilingPage() {
       </section>
     </article>
   )
+}
+
+/** The headline, or "8-K filing" until the filing is summarized. */
+function filingTitle(filing: FilingDetail): string {
+  return filing.headline ?? `${formLabel(filing.form_type)} filing`
 }
 
 function Summary({ filing }: { filing: FilingDetail }) {

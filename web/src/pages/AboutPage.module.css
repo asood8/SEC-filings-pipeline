@@ -1,0 +1,4 @@
+/* Prose reads best at about 70 characters a line, narrower than the tables elsewhere. */
+.page {
+  max-width: 42rem;
+}

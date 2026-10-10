@@ -41,6 +41,24 @@ We will build the website as a single-page app with **Vite, React, and TypeScrip
   job.
 - **Runtime:** Node.js 24 LTS (`web/.nvmrc`), used only to build. Production serves plain files.
 
+### Accessibility, page titles, and the About page (added 2026-10-09)
+
+- **Accessibility target: WCAG 2.2 AA**, checked from the code and with DOM tests (no browser
+  was available to test with). A single-page app has to do what a full page load does for free:
+  after following a link, focus moves to the new page's heading so a screen reader announces it,
+  and a skip link leads past the header. Tables keep explicit ARIA roles, so the card layout on
+  a phone is still read as a table. A test reads `index.css` and checks the contrast of every
+  text and control colour pair in both themes, so a colour change can't quietly drop below AA.
+- **Page titles:** a `usePageTitle` hook sets `document.title` ("Apple Inc. (AAPL) · SEC
+  Filings") rather than React 19's `<title>` element, which React removes when its page
+  unmounts, so the tab showed the bare URL while the next page loaded.
+- **About page** (`/about`, linked from every page's footer): what the site covers, that the
+  data comes from SEC EDGAR and the site isn't affiliated with the SEC, how fresh it is (EDGAR
+  is checked every 10 minutes; the first real alert arrived 8½ minutes after acceptance), how
+  summaries are written, and their limits (automated, may contain errors, not investment
+  advice). Its facts come from the configuration and the README, so it needs updating when
+  those change: the polling interval, the form types, or the 30-day lookback.
+
 ## Alternatives considered
 
 - **Next.js with static export.** Its main strengths are server-side rendering, server

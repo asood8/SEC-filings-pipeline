@@ -1,5 +1,6 @@
-/* A table of figures. On narrow screens each row becomes a card of "label: value" lines,
- * labelled from each cell's data-label, so nothing scrolls sideways. */
+/* A table of figures (DataTable.tsx). On narrow screens each row becomes a card of
+ * "label: value" lines, labelled from each cell's data-label, so nothing scrolls sideways.
+ * Each row starts with its row header (th scope="row"): the row's title. */
 
 /* In case a wide table still doesn't fit just above the breakpoint. */
 .scroll {
@@ -25,6 +26,11 @@
   padding-left: 0;
 }
 
+/* Row headers read as ordinary cells on wide screens. */
+.table tbody th {
+  font-weight: normal;
+}
+
 .table thead th {
   color: var(--muted);
   font-size: 0.8rem;
@@ -38,6 +44,7 @@
   white-space: nowrap;
 }
 
+.table tfoot th,
 .table tfoot td {
   border-bottom: 0;
   font-weight: 600;
@@ -57,6 +64,8 @@
 }
 
 @media (max-width: 48rem) {
+  /* Hidden from view, not from screen readers: each cell is still announced with its column
+   * header (the ARIA roles keep the table a table). */
   .table thead {
     position: absolute;
     width: 1px;
@@ -70,6 +79,7 @@
   .table tbody,
   .table tfoot,
   .table tr,
+  .table th,
   .table td {
     display: block;
   }
@@ -80,7 +90,7 @@
   }
 
   .table td,
-  .table td:first-child,
+  .table th,
   .table .number {
     display: flex;
     gap: 1rem;
@@ -91,20 +101,21 @@
     white-space: normal;
   }
 
+  /* The visible label. Screen readers skip it (the text after the slash is its alternative:
+   * none), since they already announce the column header; browsers without that syntax keep
+   * the first declaration. */
   .table td::before {
     content: attr(data-label);
+    content: attr(data-label) / '';
     flex-shrink: 0;
     color: var(--muted);
     text-align: left;
   }
 
   /* The row's title: no label, set apart. */
-  .table td:first-child {
+  .table tbody th,
+  .table tfoot th {
     font-weight: 600;
     text-align: left;
-  }
-
-  .table td:first-child::before {
-    content: none;
   }
 }

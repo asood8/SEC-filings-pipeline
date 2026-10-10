@@ -1,7 +1,8 @@
-import { screen, within } from '@testing-library/react'
+import { screen, waitFor, within } from '@testing-library/react'
 import { describe, expect, it } from 'vitest'
 import { BERKSHIRE, BUFFETT, COOK, filing, insiderActivity } from '../test/data'
 import { mockApi, renderRoute } from '../test/render'
+import { rowText } from '../test/table'
 
 const apple = () => ({
   cik: 320193,
@@ -24,6 +25,7 @@ describe('CompanyPage', () => {
     expect(
       await screen.findByRole('heading', { name: 'Apple Inc.' }),
     ).toBeInTheDocument()
+    expect(document.title).toBe('Apple Inc. (AAPL) · SEC Filings')
     expect(
       await screen.findByRole('link', { name: /Kevan Parekh/ }),
     ).toBeInTheDocument()
@@ -37,6 +39,22 @@ describe('CompanyPage', () => {
         'No insider purchases or sales of AAPL stock reported in the last 90 days.',
       ),
     ).toBeInTheDocument()
+  })
+
+  it('names an unknown company in the title while it loads, then says not found', async () => {
+    let answer: (response: Response) => void = () => {}
+    mockApi({
+      '/companies/ZZZZ': () =>
+        new Promise<Response>((resolve) => (answer = resolve)),
+    })
+    renderRoute('/companies/zzzz')
+
+    await waitFor(() => expect(document.title).toBe('ZZZZ · SEC Filings'))
+    answer(Response.json({ detail: 'Not Found' }, { status: 404 }))
+    expect(
+      await screen.findByRole('heading', { name: 'Not found' }),
+    ).toBeInTheDocument()
+    expect(document.title).toBe('Company not found · SEC Filings')
   })
 
   it('shows insider buying and selling by owner, with totals', async () => {
@@ -72,18 +90,14 @@ describe('CompanyPage', () => {
       name: /Insider purchases and sales by owner/,
     })
     const [, cook, berkshire, total] = within(table).getAllByRole('row')
-    const cells = (row: HTMLElement) =>
-      within(row)
-        .getAllByRole('cell')
-        .map((cell) => cell.textContent)
-    expect(cells(cook)).toEqual([
+    expect(rowText(cook)).toEqual([
       'Timothy D Cook (Executive Chair, Director)',
       '—',
       '$551,000* 1,600.5 shares',
       '2',
       'Oct 5, 2026',
     ])
-    expect(cells(berkshire)).toEqual([
+    expect(rowText(berkshire)).toEqual([
       'Berkshire Hathaway Inc (10% owner); Warren E Buffett (10% owner)',
       '$144,150 300 shares',
       '—',
@@ -99,7 +113,7 @@ describe('CompanyPage', () => {
     expect(
       within(cook).getByText('(Executive Chair, Director)'),
     ).not.toHaveAttribute('title')
-    expect(cells(total).slice(0, 4)).toEqual([
+    expect(rowText(total).slice(0, 4)).toEqual([
       'All insiders',
       '$144,150 300 shares',
       '$551,000* 1,600.5 shares',

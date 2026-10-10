@@ -2,12 +2,14 @@ import { useQuery } from '@tanstack/react-query'
 import { Link, useSearchParams } from 'react-router'
 import type { InsiderTrade, TradeSide } from '../api/client'
 import { insiderTradesQuery } from '../api/queries'
+import { DataTable } from '../components/DataTable'
 import table from '../components/DataTable.module.css'
 import { OwnerNames } from '../components/OwnerNames'
 import { ErrorMessage, Loading } from '../components/QueryStatus'
 import { formatDate, formatMoney, formatShares } from '../lib/format'
 import filters from './FeedPage.module.css'
 import styles from './InsiderTradesPage.module.css'
+import { usePageTitle } from '../lib/usePageTitle'
 
 const SIDES: { value: TradeSide; label: string; noun: string }[] = [
   { value: 'buy', label: 'Purchases', noun: 'purchases' },
@@ -27,6 +29,7 @@ export function InsiderTradesPage() {
     PERIODS.find((days) => String(days) === params.get('days')) ?? DEFAULT_DAYS
   const query = useQuery(insiderTradesQuery(side, period))
   const noun = SIDES.find((s) => s.value === side)?.noun
+  usePageTitle(`Insider trades: ${noun}, last ${period} days`)
 
   function choose(next: { side?: TradeSide; days?: number }) {
     const chosen = { side: next.side ?? side, days: next.days ?? period }
@@ -38,7 +41,6 @@ export function InsiderTradesPage() {
 
   return (
     <>
-      <title>Insider trades · SEC Filings</title>
       <h1>Insider trades</h1>
       <p className="muted">
         The largest recent purchases and sales of company stock by insiders
@@ -99,35 +101,38 @@ export function InsiderTradesPage() {
             Trades since {formatDate(query.data.since)}, largest first; one row
             per filing.
           </p>
-          <div className={table.scroll}>
-            <table className={table.table}>
-              <caption className="visually-hidden">
-                Largest insider {noun}, last {period} days
-              </caption>
-              <thead>
-                <tr>
-                  <th scope="col">Stock</th>
-                  <th scope="col">Insider</th>
-                  <th scope="col" className={table.number}>
-                    Value
-                  </th>
-                  <th scope="col" className={table.number}>
-                    Average price
-                  </th>
-                  <th scope="col" className={table.number}>
-                    Traded
-                  </th>
-                  <th scope="col">10b5-1 plan</th>
-                  <th scope="col">Filing</th>
-                </tr>
-              </thead>
-              <tbody>
-                {query.data.items.map((trade) => (
-                  <Row key={trade.accession_no} trade={trade} />
-                ))}
-              </tbody>
-            </table>
-          </div>
+          <DataTable caption={`Largest insider ${noun}, last ${period} days`}>
+            <thead role="rowgroup">
+              <tr role="row">
+                <th scope="col" role="columnheader">
+                  Stock
+                </th>
+                <th scope="col" role="columnheader">
+                  Insider
+                </th>
+                <th scope="col" role="columnheader" className={table.number}>
+                  Value
+                </th>
+                <th scope="col" role="columnheader" className={table.number}>
+                  Average price
+                </th>
+                <th scope="col" role="columnheader" className={table.number}>
+                  Traded
+                </th>
+                <th scope="col" role="columnheader">
+                  10b5-1 plan
+                </th>
+                <th scope="col" role="columnheader">
+                  Filing
+                </th>
+              </tr>
+            </thead>
+            <tbody role="rowgroup">
+              {query.data.items.map((trade) => (
+                <Row key={trade.accession_no} trade={trade} />
+              ))}
+            </tbody>
+          </DataTable>
           {query.data.items.some((t) => t.unpriced_shares > 0) && (
             <p className={table.note}>
               * Includes shares whose price the filing gives only in a footnote;
@@ -143,8 +148,8 @@ export function InsiderTradesPage() {
 function Row({ trade }: { trade: InsiderTrade }) {
   const { issuer } = trade
   return (
-    <tr>
-      <td>
+    <tr role="row">
+      <th scope="row" role="rowheader">
         <span>
           {issuer.ticker ? (
             <>
@@ -155,13 +160,13 @@ function Row({ trade }: { trade: InsiderTrade }) {
             issuer.name
           )}
         </span>
-      </td>
-      <td data-label="Insider">
+      </th>
+      <td role="cell" data-label="Insider">
         <span>
           <OwnerNames owners={trade.reporting_owners} />
         </span>
       </td>
-      <td data-label="Value" className={table.number}>
+      <td role="cell" data-label="Value" className={table.number}>
         <span>
           {trade.average_price !== null ? formatMoney(trade.value) : NONE}
           {trade.unpriced_shares > 0 && '*'}{' '}
@@ -170,24 +175,28 @@ function Row({ trade }: { trade: InsiderTrade }) {
           </span>
         </span>
       </td>
-      <td data-label="Average price" className={table.number}>
+      <td role="cell" data-label="Average price" className={table.number}>
         {trade.average_price !== null ? formatMoney(trade.average_price) : NONE}
       </td>
-      <td data-label="Traded" className={table.number}>
+      <td role="cell" data-label="Traded" className={table.number}>
         <time dateTime={trade.transaction_date}>
           {formatDate(trade.transaction_date)}
         </time>
       </td>
-      <td data-label="10b5-1 plan">
+      <td role="cell" data-label="10b5-1 plan">
         {trade.is_10b5_1 === null
           ? 'Not stated'
           : trade.is_10b5_1
             ? 'Yes'
             : 'No'}
       </td>
-      <td data-label="Filing">
+      <td role="cell" data-label="Filing">
         <Link to={`/filings/${trade.accession_no}`}>
-          Filed {formatDate(trade.filed_at)}
+          Filed {formatDate(trade.filed_at)}{' '}
+          {/* Which filing the link opens, for a list of links out of context. */}
+          <span className="visually-hidden">
+            ({issuer.ticker ?? issuer.name} Form 4)
+          </span>
         </Link>
       </td>
     </tr>

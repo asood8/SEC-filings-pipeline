@@ -1,9 +1,10 @@
 import { useInfiniteQuery } from '@tanstack/react-query'
 import { useSearchParams } from 'react-router'
 import { filingsQuery } from '../api/queries'
-import { FilingList } from '../components/FilingList'
+import { PagedFilingList } from '../components/PagedFilingList'
 import { ErrorMessage, Loading } from '../components/QueryStatus'
 import styles from './FeedPage.module.css'
+import { usePageTitle } from '../lib/usePageTitle'
 
 const FORM_FILTERS = [
   { value: '', label: 'All' },
@@ -17,6 +18,7 @@ export function FeedPage() {
   const query = useInfiniteQuery(
     filingsQuery({ formType: formType || undefined }),
   )
+  usePageTitle('Latest filings')
 
   function setForm(value: string) {
     setParams(value ? { form: value } : {}, { replace: true })
@@ -24,7 +26,6 @@ export function FeedPage() {
 
   return (
     <>
-      <title>Latest filings · SEC Filings</title>
       <h1>Latest filings</h1>
       <p className="muted">
         New SEC filings from a watchlist of well-known public companies, with
@@ -46,30 +47,19 @@ export function FeedPage() {
         ))}
       </fieldset>
 
-      {query.isPending ? (
-        <Loading />
+      {query.data ? (
+        <PagedFilingList
+          pages={query.data.pages}
+          hasNextPage={query.hasNextPage}
+          isFetchingNextPage={query.isFetchingNextPage}
+          fetchNextPage={query.fetchNextPage}
+          error={query.error}
+          empty="No filings yet."
+        />
       ) : query.isError ? (
         <ErrorMessage error={query.error} />
       ) : (
-        <>
-          <FilingList
-            filings={query.data.pages.flatMap((page) => page.items)}
-          />
-          {query.data.pages[0].items.length === 0 && (
-            <p className="muted">No filings yet.</p>
-          )}
-          {query.hasNextPage && (
-            <p>
-              <button
-                type="button"
-                onClick={() => query.fetchNextPage()}
-                disabled={query.isFetchingNextPage}
-              >
-                {query.isFetchingNextPage ? 'Loading…' : 'Load more'}
-              </button>
-            </p>
-          )}
-        </>
+        <Loading />
       )}
     </>
   )

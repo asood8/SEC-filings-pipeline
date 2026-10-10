@@ -473,7 +473,9 @@ GGUF file through a Modelfile, `ollama create`), and speed on the VM.
    quota); `--runs 3` repeats each. After a change to the labels, `--rescore bench-local.json`
    scores the saved summaries again without calling a model. A prompt change is measured the same
    way: run before and after, and keep it only if fact recall or forbidden claims improve without
-   costing grounding, failures, or much time (bump `PROMPT_VERSION`, ADR-0007).
+   costing grounding, failures, or much time (bump `PROMPT_VERSION`, ADR-0007). Read the
+   summaries behind an improvement too: an error reworded past its pattern scores as fixed. Add
+   such errors to the labels and rescore both runs before deciding (ADR-0010).
 2. **Point the `llm` Deployment at the new file** in `deploy/k8s/base/llm.yaml`: `MODEL_FILE`,
    `MODEL_URL` (pinned to a Hugging Face commit: `.../resolve/<commit>/<file>`), `MODEL_SHA256`
    (from the file's Hugging Face page), and the server's `--model` path and `--alias`. Set

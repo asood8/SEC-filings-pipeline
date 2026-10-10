@@ -74,6 +74,35 @@ only; a blank `GEMINI_API_KEY` means no Gemini. The default Gemini model is pinn
 - **Backfill:** `filings-discovery fetch-exhibits` covers filings discovered before exhibits were
   collected.
 
+### Measuring summary quality (added 2026-10-08)
+
+The grounding check (ADR-0009) only covers numbers, and the worst mistakes in real summaries are
+grounded: the right figure attached to the wrong thing, the wrong actor, an outcome the filing
+doesn't report ([audit of every stored 8-K summary](../8k-summary-audit.md)). `filings-benchmark`
+therefore also scores each summary against labels written by reading the 22 8-Ks in the local
+database (`config/summary_eval.json`: 86 required facts and 39 forbidden claims):
+
+- **Fact recall:** the share of a filing's required facts (the event, who did it, the main
+  figures) that its summary states, averaged so that every summary counts the same.
+- **Forbidden claims:** the share of summaries making at least one claim the filing contradicts,
+  such as the slips already seen ("all proposals passed" on Nike's vote, "Oracle cancels Larry
+  Ellison's plan" when Ellison cancelled it himself).
+- **No model as judge.** Facts and claims are regular expressions, and figures are compared by
+  value with the grounding check's normalization, so every score traces back to the label that
+  produced it. An LLM judge would need validating in turn, and the free Gemini quota is better
+  spent on summaries. The cost: a correct summary worded in a way nobody anticipated scores as a
+  miss, so a difference of a filing or two is read, not trusted.
+- **Labels change without re-summarizing:** `--rescore` scores a saved run against the current
+  labels.
+- **Local only.** The labels name local accession numbers. Production collects other 8-Ks, so on
+  the VM the quality columns read `n/a`: quality is compared on the laptop, speed on the VM
+  (runbook).
+
+A prompt change is measured the same way: before and after on the same filings and model, kept
+only if quality improves without costing grounding, failures, or much time (and with
+`PROMPT_VERSION` bumped, ADR-0007). The first attempt, a list of rules aimed at the slips in the
+audit, didn't pass and wasn't kept (ADR-0010).
+
 ## Alternatives considered
 
 - **Vendor SDKs (openai, google-genai).** More dependencies for two small POST requests, and

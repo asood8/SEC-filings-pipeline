@@ -69,6 +69,8 @@ export function Layout() {
           Data from SEC EDGAR.
         </p>
         <p>
+          <Link to="/about">About</Link>
+          <span aria-hidden="true"> · </span>
           <a href={`${API_BASE_URL}/docs`}>API documentation</a>
         </p>
       </footer>

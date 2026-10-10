@@ -48,8 +48,13 @@ Filing and company pages: median 4 ms, p95 18 ms; lists: p95 11 ms; 96% served f
 cache. Searches: median 5 ms; the slowest 5% take about 2 s, because a search the cache hasn't
 seen waits at most 2 s for the CPU-only embedding model before answering from keywords alone.
 
-**Model benchmark** (`filings-benchmark`, 3 recent 8-Ks, llama3.2:3b on the laptop's CPU): all 3
-summarized, median 28 s, p95 49 s, no numbers that the filing doesn't contain.
+**Model benchmark** (`filings-benchmark`, llama3.2:3b on the laptop's CPU, all 22 local 8-Ks,
+each labeled by hand with the facts a correct summary states and the claims the filing
+contradicts): all 22 summarized, median 46 s, p95 109 s. The summaries state 86% of the labeled
+facts. 5 of 22 make a claim the filing contradicts, such as "Oracle cancels Larry Ellison's plan"
+(Ellison cancelled it himself) or a year-to-date growth rate given as the quarter's, and 2 contain
+a number the filing doesn't (the grounding check flags those). A prompt with explicit rules against
+those slips didn't reduce them ([ADR-0010](docs/adr/0010-local-llm-in-compose-and-default-model.md)).
 
 **Search quality** (`filings-search-eval`, 20 labeled queries over the local filings): hybrid
 search (the default) ranks a relevant filing first for every query (mean reciprocal rank 1.00)
@@ -238,7 +243,7 @@ uv run filings-rebuild-key-fields --form-type 4  # refill Form 4 key fields from
 | `make loadtest` | Load-test a running API with k6 (`make api-loadtest` runs the API with rate limits raised) |
 | `make backup-drill` | Dump the local database, restore it into a throwaway database, and check every table matches |
 | `make audit` | Check the locked Python and website dependencies for known vulnerabilities |
-| `uv run filings-benchmark --model <name>` | Compare 8-K summarization across models: latency, failures, grounding |
+| `uv run filings-benchmark --model <name>` | Compare 8-K summarization across models: latency, failures, fact recall and forbidden claims (labeled 8-Ks), grounding |
 | `uv run filings-search-eval` | Score keyword, semantic, and hybrid search against labeled queries (`config/search_eval.json`) |
 | `uv run filings-replay discovered --accession <no>` | Reprocess one filing (also `--form-type`, `--status`, or `parsed`) |
 | `uv run filings-rebuild-key-fields --form-type 4` | Rewrite parsed filings' Postgres key fields (Form 4 owner CIKs and transaction lines too) from their MongoDB payloads, after a key-field change; no SEC calls, no events |

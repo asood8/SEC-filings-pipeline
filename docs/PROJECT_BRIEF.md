@@ -166,7 +166,7 @@ Each phase ends with something runnable, tests passing, and docs updated. Check 
   - _Done when:_ `terraform apply` plus an Argo CD sync brings up a working system, and a push to `main` deploys automatically. _Pending: needs the accounts, a domain, and a real apply._
 - [ ] **Phase 8: Hardening.**
   - k6 load test of the API. _Done on the laptop (`make loadtest`, numbers in the README); a run against the VM waits for Phase 7._
-  - Local model benchmark (speed vs summary quality across 2–3 small models/quantizations on the A1 VM). _The tool is done (`filings-benchmark`, laptop numbers in the README); the A1 run is pending._
+  - Local model benchmark (speed vs summary quality across 2–3 small models/quantizations on the A1 VM). _The tool is done (`filings-benchmark`, with summary quality scored against 22 hand-labeled 8-Ks; laptop numbers in the README); the A1 run is pending._
   - Backups, data retention, runbook. _Done: the nightly backup CronJob and a restore drill (`make backup-drill`), outbox pruning and a retention and capacity analysis (runbook, "Capacity planning", with every regular query measured on 10 years of synthetic data for 500 companies and the slow ones fixed), and the runbook (`docs/runbook.md`). The first production backup and restore drill wait for Phase 7._
   - README with architecture diagram and real metrics, ADRs complete. _The README has the diagram and the load-test and benchmark numbers; production metrics wait for Phase 7, and ADR-0018 and ADR-0019 are still Proposed._
 

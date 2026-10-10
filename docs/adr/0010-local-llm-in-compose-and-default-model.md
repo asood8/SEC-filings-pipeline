@@ -70,3 +70,37 @@ Gemini as the fallback. Two things were still open:
 - **A second semantic slip.** In the same run, the local model wrote "Oracle Corp Cancels Larry
   Ellison's Plan to Sell Oracle Stock", but it was Ellison who cancelled his own trading plan, as
   Gemini correctly said.
+- **The default model's quality, measured (2026-10-10).** `filings-benchmark` with prompt v1 on
+  all 22 labeled 8-Ks (ADR-0008): fact recall 86%; 5 summaries with a claim the filing
+  contradicts (Oracle's actor, ExxonMobil's issuer, Tesla's $14.0 billion of commitments, Chevron's
+  Nelson "stepping down", PepsiCo's year-to-date growth rate given as the quarter's); 2 with
+  numbers the filing doesn't contain; median 46 s, p95 109 s. The 5 GB limit was hit once: the
+  kernel killed Ollama's runner on Oracle's long results 8-K, so that filing failed. Ollama
+  restarted the runner, and the filing then summarized in 25 s on its own. The 2026-10-08 run hit
+  it too, so a long 8-K can need more than 5 GB at an 8k context; in the pipeline, that costs a
+  failover to Gemini.
+- **A prompt experiment, not kept (2026-10-09).** With summary quality now measurable (fact recall
+  and forbidden claims against labeled 8-Ks, ADR-0008), prompt v2 added five rules aimed at the
+  slips in the [audit](../8k-summary-audit.md): cover every event the items report, not just the
+  main one; name whoever acted, as the filing does; keep each figure's label and period (a
+  quarter is not year to date, a draw period is not a loan's term, an optional increase is not a
+  current amount); give vote outcomes from the vote counts; no key points about the filing itself
+  (exhibit numbers, where documents can be found). Measured with llama3.2:3b against v1 on the 9
+  8-Ks with known errors, twice each:
+
+  | Prompt | Summaries | Failed | Median s | Fact recall | With a forbidden claim | With ungrounded numbers |
+  |---|---|---|---|---|---|---|
+  | v1 (kept) | 18 | 0 | 30.3 | 82% | 50% | 11% |
+  | v2 | 18 | 1 | 33.5 | 83% | 47% | 6% |
+
+  As first scored, v2 cut summaries with a forbidden claim from 33% to 12%. Reading them showed
+  that most of the drop was the same errors in words the labels' patterns didn't anticipate
+  (Chevron's Nelson "will leave his role as ... and Vice Chairman"; PepsiCo's "organic revenue
+  increased 3.1% to $68,898 million", which is year-to-date net revenue), plus one new error
+  (Gustavson, not Bonner, "will become President, Oil, Products & Gas"). Once those were added
+  to the labels, the two prompts were one summary apart. Oracle's wrong actor and ExxonMobil's
+  wrong issuer survived both. v2 also cost a schema failure (Tesla's key points broke into 14
+  fragments, where the schema allows 8) and about 10% more time, so v1 stays. The lessons: a 3B
+  model doesn't follow a list of rules reliably, and the errors left are about who did what,
+  which may need a larger model or Gemini first for complex 8-Ks; and a better score needs
+  reading before it is believed, since patterns only catch the wordings someone thought of.

@@ -4,10 +4,12 @@ import { Link } from 'react-router'
 import { watchlistQuery } from '../api/queries'
 import { ErrorMessage, Loading } from '../components/QueryStatus'
 import styles from './CompaniesPage.module.css'
+import { usePageTitle } from '../lib/usePageTitle'
 
 export function CompaniesPage() {
   const query = useQuery(watchlistQuery())
   const [filter, setFilter] = useState('')
+  usePageTitle('Companies')
 
   const needle = filter.trim().toLowerCase()
   const companies = (query.data?.items ?? []).filter(
@@ -18,7 +20,6 @@ export function CompaniesPage() {
 
   return (
     <>
-      <title>Companies · SEC Filings</title>
       <h1>Companies</h1>
       <p className="muted">
         The watchlist: every new filing from these companies is collected and
@@ -35,6 +36,12 @@ export function CompaniesPage() {
           value={filter}
           onChange={(event) => setFilter(event.target.value)}
         />
+      </p>
+      {/* Tells screen readers how many companies the filter left, as they type. */}
+      <p role="status" className="visually-hidden">
+        {needle && query.data
+          ? `${companies.length} of ${query.data.items.length} companies match.`
+          : ''}
       </p>
       {query.isPending ? (
         <Loading />

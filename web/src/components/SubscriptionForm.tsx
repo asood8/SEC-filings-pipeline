@@ -180,11 +180,8 @@ export function SubscriptionForm({
       </fieldset>
 
       {create.isError && <ErrorMessage error={create.error} />}
-      {result && (
-        <p className="muted" role="status">
-          {result}
-        </p>
-      )}
+      {/* Always in the page, so screen readers announce the result when it appears. */}
+      <div role="status">{result && <p className="muted">{result}</p>}</div>
       <p>
         <button type="submit" disabled={total === 0 || create.isPending}>
           {create.isPending

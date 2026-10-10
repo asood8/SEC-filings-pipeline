@@ -132,3 +132,21 @@ growth in an AI-driven era").
 Moët Hennessy; Chevron 0000093410-26-000192 (llama3.2:3b) leaves out the $200 million cash
 consideration. Both Oracle 389753 summaries date the cancellation "September 12", the date of the
 press release; the filing doesn't say when the plan was cancelled.
+
+## Errors found later, in benchmark runs
+
+Reading `filings-benchmark` output turned up errors the labels above didn't catch. Each became a
+forbidden claim (or a wider pattern for an existing one), and saved runs were rescored
+(`--rescore`):
+
+- **2026-10-08, llama3.2:3b baseline:** Chevron 0000093410-26-000188, Nelson "will step down as
+  Vice Chairman" (he remains Vice Chairman); NIKE 0000320187-26-000143, the vote results "are in
+  the proxy statement" (they are in this 8-K); Tesla 0001628280-26-063820, "$14.0 billion in total
+  commitments" (only with the optional $4.0 billion increase).
+- **2026-10-09, prompt experiment (ADR-0010):** ExxonMobil 0001193125-26-402986, "ExxonMobil
+  Holdings Corp. Issues" and "to issue" (the pattern only caught "Holdings Corp:"); Chevron, Nelson
+  "will leave his role as Executive Vice President ..., and Vice Chairman", and "Jeff B. Gustavson
+  will become President, Oil, Products & Gas" (Bonner will; Gustavson becomes CFO); PepsiCo
+  0000077476-26-000050, "Organic revenue increased 3.1% to $68,898 million" ($68,898 million is
+  year-to-date net revenue) and "a 45% increase in operating margin" (45% is year-to-date
+  operating profit growth; the quarter's margin rose 195 basis points).

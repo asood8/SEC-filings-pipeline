@@ -296,7 +296,7 @@
       "forbidden": [
         {
           "claim": "ExxonMobil Holdings issued the notes (Exxon Mobil Corporation did; Holdings guarantees them)",
-          "patterns": ["\\bexxonmobil holdings( corp(oration)?)?:? (has )?(issues|issued|sells|sold|prices|priced)\\b"],
+          "patterns": ["\\bexxonmobil holdings( corp(oration)?\\.?)?:? (has |will |to )?(issue|issues|issued|sell|sells|sold|price|prices|priced)\\b"],
           "evidence": "for the issuance and sale by Exxon Mobil of $185,883,000 aggregate principal amount of its Floating Rate Notes due 2076 (the \"Notes\"), which are to be fully and unconditionally guaranteed by the Company"
         }
       ]
@@ -413,8 +413,13 @@
       "forbidden": [
         {
           "claim": "Nelson steps down (he stays Vice Chairman)",
-          "patterns": ["\\bnelson (is |will |to )?(step|steps|stepping) down\\b(?! as (executive vice president|evp))", "\\bnelson (will )?(no longer serve|cease to serve|leave|leaves) as vice chair"],
+          "patterns": ["\\bnelson (is |will |to )?(step|steps|stepping) down\\b(?! as (executive vice president|evp))", "\\bnelson (will )?(no longer serve|cease to serve|leave|leaves) as vice chair", "\\bnelson\\b[^.]{0,30}\\b(leave|leaves|leaving|step down|steps down|stepping down) (his (role|roles|position|positions) )?as\\b[^.]{0,80}\\band vice chair"],
           "evidence": "Mark A. Nelson, currently Chevron's Vice Chairman and Executive Vice President of Oil, Products & Gas, will remain Vice Chairman with responsibility for Strategy and Business Development ... and will no longer serve as Executive Vice President, Oil, Products & Gas"
+        },
+        {
+          "claim": "Gustavson becomes President, Oil, Products & Gas (Bonner does; Gustavson becomes CFO)",
+          "patterns": ["\\bgustavson\\b(?:(?!bonner)[^.]){0,60}\\b(become|becomes|becoming|named|appointed|elected)( as)? president\\b"],
+          "evidence": "Eimear P. Bonner, currently Chevron's Chief Financial Officer, will become President, Oil, Products & Gas"
         },
         {
           "claim": "Bonner or Nelson leaves Chevron",
@@ -477,6 +482,16 @@
           "claim": "core EPS up 17% (EPS rose 17%, core EPS 2%)",
           "patterns": ["core (constant currency )?eps(?:(?!\\beps\\b)[^.]){0,30}\\b17 ?%"],
           "evidence": "Earnings per share (EPS) increased 17% ... Core EPS increased 2%"
+        },
+        {
+          "claim": "organic revenue given as a dollar amount ($68,898 million is year-to-date net revenue)",
+          "patterns": ["\\borganic revenue (increased|grew|rose|was up|up)( by)? \\d+(\\.\\d+)? ?% to \\$\\d"],
+          "evidence": "Net revenue $25,274 $23,937 5.6% $68,898 $64,582 6.7% [third quarter, then year to date] ... Organic revenue performance 3.1% 2.7%"
+        },
+        {
+          "claim": "operating margin up 45% (45% is year-to-date operating profit growth; the quarter's margin rose 195 bps)",
+          "patterns": ["\\b45 ?%[^.]{0,30}\\boperating margin", "\\boperating margin[^.]{0,30}\\b45 ?%"],
+          "evidence": "Operating profit $4,260 $3,569 19% $11,496 $7,941 45% ... Operating margin 16.9% 14.9% 195 bps"
         }
       ]
     }

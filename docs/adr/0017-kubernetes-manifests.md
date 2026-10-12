@@ -112,7 +112,7 @@ the 2 cores.
 
 | Component | CPU request / limit | Memory request / limit | Basis (measured unless noted) |
 |---|---|---|---|
-| llm | 500m / 2 | 2.5 Gi / 3 Gi | 2.53 GiB peak, largest 8-K |
+| llm | 500m / 2 | 2.5 Gi / 3 Gi | 2.53 GiB peak, largest 8-K; 2.55 GiB over 8 in a row |
 | embeddings | 50m / 1 | 384 Mi / 512 Mi | 396 MiB peak |
 | redpanda | 200m / 1 | 512 Mi / 1.25 Gi | Set: `--memory=1G` (its minimum per core) plus overhead; 88 MiB idle |
 | postgres | 100m / 1 | 384 Mi / 768 Mi | 146 MiB after initialization |
@@ -144,6 +144,16 @@ caps), reading the kernel's `memory.peak` for the container:
   quantization type, and size as the one the manifest downloads. Without direct I/O, page cache
   pushed the same run to the 3.5 GiB cap. A 16-bit KV cache needed 0.4 GiB more than the 8-bit
   one at about the same speed (prompts 7% faster, generation 7% slower).
+- **llm, 8-Ks in a row (added 2026-10-11).** One request missed llama-server's prompt cache:
+  when a new request starts, the server keeps the previous prompt's state in RAM in case it comes
+  back, up to 8 GiB by default (`--cache-ram`). With the manifest's arguments and 3 GiB limit
+  (6 CPUs instead of 2, to finish sooner), 8 labeled 8-Ks in a row took memory from 2.46 GiB
+  after loading to 2.99 GiB after six summaries. Near the limit, reclaim halved prompt speed and
+  one summary timed out, and the kernel killed the server as the seventh request started
+  (`OOMKilled`): 3 of the 8 failed. With `--cache-ram 0`, the same 8 peaked at 2.55 GiB and all
+  were summarized. Each 8-K is a new prompt, so the cache never helped. The embeddings server has
+  the cache enabled too, but embedding requests store nothing in it (none after 6 requests), so
+  its arguments are unchanged.
 - **embeddings:** 396 MiB peak embedding 8 documents of about 480 words with the project's own
   client (768 dimensions, normalized), 1 thread, 22.7 s.
 - **Both servers** started with the exact arguments from the rendered manifests and answered

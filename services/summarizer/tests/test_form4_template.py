@@ -62,6 +62,12 @@ def test_no_holding_sentence_when_trades_span_several_holding_entities() -> None
     assert "Afterwards" not in s.summary
 
 
+def test_roles_read_as_on_the_website() -> None:
+    # The same labels as the API and the website (filings_common.names.relationship_label).
+    assert summary("0001104659-26-106432").summary.startswith("Vaibhav Taneja (CFO) reported")
+    assert summary("0001886367-26-000025").summary.startswith("Latriece Watkins (EVP) reported")
+
+
 def test_exercises_are_not_valued_at_the_strike_price() -> None:
     s = summary("0001065280-26-000269")
     assert (

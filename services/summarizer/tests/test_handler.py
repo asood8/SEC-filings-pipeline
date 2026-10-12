@@ -26,6 +26,7 @@ from filings_common.mongo import ParsedFilingStore
 from filings_common.search import SearchDocument, rebuild_index, text_sha256
 from filings_common.summaries import FilingSummary
 from filings_parser.form4 import parse
+from filings_summarizer.form4_template import TEMPLATE_VERSION
 from filings_summarizer.form8k_prompt import FilingContext
 from filings_summarizer.handler import SummaryHandler
 from filings_summarizer.summarizers import Form4TemplateSummarizer, SummaryResult
@@ -107,7 +108,7 @@ def test_summarizes_marks_ready_and_announces_once(
     assert (summary.provider, summary.model, summary.prompt_version) == (
         "template",
         "form4-template",
-        1,
+        TEMPLATE_VERSION,
     )
     assert FilingSummary.model_validate(summary.summary).headline.startswith(
         "Douglas J Herrington sold"
@@ -122,10 +123,12 @@ def test_new_prompt_version_adds_a_summary_without_announcing_again(
 ) -> None:
     engine, store = setup
     SummaryHandler(session_factory(engine), store, SUMMARIZERS)(parsed_event())
-    SummaryHandler(session_factory(engine), store, {"4": FixedSummarizer(2)})(parsed_event())
+    SummaryHandler(session_factory(engine), store, {"4": FixedSummarizer(TEMPLATE_VERSION + 1)})(
+        parsed_event()
+    )
 
     summaries, events, _ = rows(engine)
-    assert [s.prompt_version for s in summaries] == [1, 2]
+    assert [s.prompt_version for s in summaries] == [TEMPLATE_VERSION, TEMPLATE_VERSION + 1]
     assert [s.ungrounded_numbers for s in summaries] == [None, ["4.25 billion"]]
     assert len(events) == 1
 

@@ -9,11 +9,13 @@ from collections.abc import Sequence
 from dataclasses import dataclass, field
 from datetime import date
 
-from filings_common.names import company_name, display_name
+from filings_common.names import company_name, display_name, relationship_label
 from filings_common.parsed import Form4, ReportingOwner, Transaction
 from filings_common.summaries import FilingSummary
 
-TEMPLATE_VERSION = 1
+# 2: owners' roles read as on the website and in the API (relationship_label: "CFO", not
+# "Chief Financial Officer").
+TEMPLATE_VERSION = 2
 PROVIDER = "template"
 MODEL = "form4-template"
 
@@ -48,19 +50,6 @@ _VALUED_AT_MARKET = frozenset({"F", "D", "J"})
 _HEADLINE_PRIORITY = ["P", "S", "M", "X", "C", "A", "G", "F", "D", "J"]
 
 
-def _role(owner: ReportingOwner) -> str | None:
-    roles = []
-    if owner.is_officer:
-        roles.append(owner.officer_title or "Officer")
-    if owner.is_director:
-        roles.append("Director")
-    if owner.is_ten_percent_owner:
-        roles.append("10% owner")
-    if owner.is_other and owner.other_text:
-        roles.append(owner.other_text)
-    return ", ".join(roles) or None
-
-
 def _who(owners: Sequence[ReportingOwner]) -> str:
     names = [display_name(o.name) for o in owners]
     if len(names) == 1:
@@ -72,7 +61,7 @@ def _who(owners: Sequence[ReportingOwner]) -> str:
 
 def _who_with_roles(owners: Sequence[ReportingOwner]) -> str:
     first = owners[0]
-    role = _role(first)
+    role = relationship_label(first.relationship())
     label = f"{display_name(first.name)} ({role})" if role else display_name(first.name)
     if len(owners) == 2:
         return f"{label} and {display_name(owners[1].name)}"

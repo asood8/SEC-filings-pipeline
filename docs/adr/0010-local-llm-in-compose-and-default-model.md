@@ -24,8 +24,8 @@ Gemini as the fallback. Two things were still open:
   - It listens on the default `LLM_BASE_URL`, so no other configuration is needed.
   - A host install remains usable by pointing `LLM_BASE_URL` at it.
 - **`OLLAMA_CONTEXT_LENGTH=8192`.** Prompts reach about 6k tokens, and Ollama's default context
-  window would silently cut them off. Ollama is also capped at one loaded model and one request at a
-  time, with a 5 GB memory limit.
+  window would silently cut them off. Ollama is also capped at one request at a time and two
+  loaded models (the LLM and, since ADR-0011, the embedding model), with a 5 GB memory limit.
 - **Default model: `llama3.2:3b`** (2.0 GB), chosen with a small benchmark through the production
   provider, prompt, and grounding check, on five varied real 8-Ks, on CPU (laptop i7-13620H):
 
@@ -78,7 +78,11 @@ Gemini as the fallback. Two things were still open:
   kernel killed Ollama's runner on Oracle's long results 8-K, so that filing failed. Ollama
   restarted the runner, and the filing then summarized in 25 s on its own. The 2026-10-08 run hit
   it too, so a long 8-K can need more than 5 GB at an 8k context; in the pipeline, that costs a
-  failover to Gemini.
+  failover to Gemini. *Corrected 2026-10-11:* it wasn't the long 8-K. The llama-server that Ollama
+  runs kept earlier prompts in RAM for reuse, 20 of them and 3.5 GiB by then, on top of the
+  model. Compose now turns that off (`LLAMA_ARG_CACHE_RAM=0`, which llama-server reads from the
+  environment Ollama passes on), and production's llama.cpp server gets `--cache-ram 0`
+  (ADR-0017, where the same server was killed after six 8-Ks at its 3 GiB limit).
 - **A prompt experiment, not kept (2026-10-09).** With summary quality now measurable (fact recall
   and forbidden claims against labeled 8-Ks, ADR-0008), prompt v2 added five rules aimed at the
   slips in the [audit](../8k-summary-audit.md): cover every event the items report, not just the

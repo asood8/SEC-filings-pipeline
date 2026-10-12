@@ -112,7 +112,8 @@ kubectl -n filings exec redpanda-0 -- rpk group describe <group>   # LAG per par
 - **summarizer:** look for failovers and circuit-breaker messages in its log. Then the llm pod:
   `kubectl -n filings describe pod -l app.kubernetes.io/name=llm` (restarts, `OOMKilled`). If the
   local model is down and Gemini answers 429 (free daily quota used up), the backlog waits for one
-  of them; nothing is lost.
+  of them; nothing is lost. An llm pod killed every few 8-Ks, with memory rising after each one,
+  is keeping past prompts in RAM: check its arguments still include `--cache-ram 0` (ADR-0017).
 - **parser, notifier:** repeated retries in the log point at a dependency: MongoDB Atlas for the
   parser (see the IP note under [Oracle](#oracle-idle-reclamation-and-capacity-errors)), webhook
   or SMTP errors for the notifier.

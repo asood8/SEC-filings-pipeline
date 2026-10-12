@@ -102,6 +102,10 @@ services:
       OLLAMA_MAX_LOADED_MODELS: "2"
       OLLAMA_NUM_PARALLEL: "1"
       OLLAMA_KEEP_ALIVE: "30m"
+      # Ollama's llama-server keeps past prompts in RAM for reuse, up to 8 GiB by default, which
+      # got the runner killed at the 5 GB limit after about 20 8-Ks. Each 8-K is a new prompt,
+      # so nothing is lost without it (docs/adr/0010-local-llm-in-compose-and-default-model.md).
+      LLAMA_ARG_CACHE_RAM: "0"
     ports:
       - "127.0.0.1:11434:11434"
     volumes:

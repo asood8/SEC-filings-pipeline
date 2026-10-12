@@ -5,7 +5,8 @@
 # Measured on the dev laptop, capped at 2 CPUs (docs/adr/0017-kubernetes-manifests.md): 2.53 GiB
 # peak while summarizing an 8-K with a long press release (3.8k-token prompt, about 5 minutes).
 # The KV cache is allocated for the whole context up front, so a longer prompt takes longer but
-# needs little more memory.
+# needs little more memory, and with no past prompts kept (--cache-ram 0 below) 8-Ks in a row
+# stay there: 2.55 GiB peak over 8.
 apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
@@ -111,6 +112,11 @@ spec:
             - "1"
             - --threads
             - "2"
+            # Don't keep past prompts in RAM for reuse: by default llama-server keeps up to 8 GiB
+            # of them, each 8-K is a new prompt, and every one kept adds its KV cache until the
+            # pod is killed at its limit (docs/adr/0017-kubernetes-manifests.md).
+            - --cache-ram
+            - "0"
             # An 8-bit KV cache needs 0.4 GiB less than the default 16-bit one at about the same
             # speed (measured: prompts 7% slower, generation 7% faster), and the quantized V cache
             # requires flash attention.

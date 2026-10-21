@@ -106,6 +106,7 @@ export function filingDetail(
     },
     form4: null,
     items: ['5.02', '9.01'],
+    investor_call: null,
     exhibits: [],
     ...overrides,
   }

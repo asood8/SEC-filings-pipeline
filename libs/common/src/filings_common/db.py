@@ -229,7 +229,8 @@ class Form4Transaction(Base):
 
 
 class Form8KFiling(Base):
-    """Queryable key fields of a parsed 8-K: which items it reports. Full text is in MongoDB."""
+    """Queryable key fields of a parsed 8-K: which items it reports, and the call it announces.
+    Full text is in MongoDB."""
 
     __tablename__ = "form8k_filings"
 
@@ -238,6 +239,8 @@ class Form8KFiling(Base):
     )
     # Item numbers in document order, e.g. {2.02, 9.01} for an earnings release.
     items: Mapped[list[str]] = mapped_column(ARRAY(sa.Text()))
+    # The upcoming call the 8-K announces, if any (filings_common.parsed.InvestorCall as JSON).
+    investor_call: Mapped[dict[str, Any] | None] = mapped_column(JSONB)
     updated_at: Mapped[datetime] = mapped_column(
         server_default=sa.func.now(), onupdate=sa.func.now()
     )

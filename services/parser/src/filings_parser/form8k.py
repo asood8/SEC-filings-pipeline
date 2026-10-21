@@ -19,8 +19,9 @@ import sqlalchemy as sa
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.orm import Session
 
-from filings_common.db import Form8KFiling
-from filings_common.parsed import ITEM_TITLES, Exhibit, Form8K, Item
+from filings_common.db import Filing, Form8KFiling
+from filings_common.parsed import EASTERN, ITEM_TITLES, Exhibit, Form8K, Item
+from filings_parser.calls import find_call
 from filings_parser.documents import RawExhibit
 
 # 2: adds the text of EX-99 exhibits (press releases) to the payload.
@@ -205,12 +206,25 @@ def parse(raw: bytes, exhibits: Sequence[RawExhibit] = ()) -> dict[str, Any]:
 
 
 def save_key_fields(session: Session, accession_no: str, payload: dict[str, Any]) -> None:
-    """Upsert the 8-K's item numbers into Postgres (`form8k_filings`)."""
-    numbers = [item.number for item in Form8K.model_validate(payload).items]
-    stmt = pg_insert(Form8KFiling).values(accession_no=accession_no, items=numbers)
+    """Upsert the 8-K's item numbers and the call it announces into Postgres (`form8k_filings`).
+    "Today" in the filing is the day SEC accepted it, in Eastern time (its filing date is the
+    next business day when accepted after 5:30 p.m.)."""
+    form = Form8K.model_validate(payload)
+    numbers = [item.number for item in form.items]
+    filing = session.get(Filing, accession_no)
+    call = None
+    if filing is not None:
+        accepted = filing.accepted_at
+        call = find_call(form, accepted.astimezone(EASTERN).date() if accepted else filing.filed_at)
+    values = {
+        "items": numbers,
+        # SQL NULL, not JSON null, when there is none.
+        "investor_call": call.model_dump(mode="json") if call is not None else sa.null(),
+    }
+    stmt = pg_insert(Form8KFiling).values(accession_no=accession_no, **values)
     session.execute(
         stmt.on_conflict_do_update(
             index_elements=[Form8KFiling.accession_no],
-            set_={"items": numbers, "updated_at": sa.func.now()},
+            set_={**values, "updated_at": sa.func.now()},
         )
     )

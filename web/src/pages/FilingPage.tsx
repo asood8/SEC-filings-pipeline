@@ -6,7 +6,12 @@ import { ExternalLink } from '../components/ExternalLink'
 import { Form4Transactions } from '../components/Form4Transactions'
 import { OwnerNames } from '../components/OwnerNames'
 import { ErrorMessage, Loading } from '../components/QueryStatus'
-import { formatDate, formatDateTime, formLabel } from '../lib/format'
+import {
+  formatDate,
+  formatDateTime,
+  formatEasternTime,
+  formLabel,
+} from '../lib/format'
 import { ITEMS_8K, TRANSACTION_CODES } from '../lib/glossary'
 import { NotFoundPage } from './NotFoundPage'
 import styles from './FilingPage.module.css'
@@ -50,6 +55,7 @@ export function FilingPage() {
       </p>
 
       <Summary filing={filing} />
+      {filing.investor_call && <InvestorCall call={filing.investor_call} />}
       {filing.form4 && <Form4Section filing={filing} form4={filing.form4} />}
       {filing.items && filing.items.length > 0 && (
         <section>
@@ -101,6 +107,40 @@ export function FilingPage() {
 /** The headline, or "8-K filing" until the filing is summarized. */
 function filingTitle(filing: FilingDetail): string {
   return filing.headline ?? `${formLabel(filing.form_type)} filing`
+}
+
+function InvestorCall({
+  call,
+}: {
+  call: NonNullable<FilingDetail['investor_call']>
+}) {
+  const url = call.webcast_url
+  return (
+    <section>
+      <h2>{call.kind}</h2>
+      <p>
+        {call.starts_at ? (
+          <time dateTime={call.starts_at}>
+            {formatEasternTime(call.starts_at)}
+          </time>
+        ) : (
+          <time dateTime={call.day}>{formatDate(call.day)}</time>
+        )}
+        {url && /^https?:\/\//.test(url) && (
+          <>
+            {' · '}
+            <ExternalLink href={url}>
+              Webcast at {url.replace(/^https?:\/\//, '').replace(/\/$/, '')}
+            </ExternalLink>
+          </>
+        )}
+      </p>
+      <p className="muted">
+        As announced in the filing. The call itself, questions and answers
+        included, is on the company's website, not in the filing.
+      </p>
+    </section>
+  )
 }
 
 function Summary({ filing }: { filing: FilingDetail }) {

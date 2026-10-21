@@ -195,7 +195,16 @@ def seeded(clean_db: Engine) -> Engine:
                     direct_or_indirect="I",
                 ),
                 Form8KFiling(accession_no=APPLE_8K, items=["5.02"]),
-                Form8KFiling(accession_no=MSFT_8K, items=["2.02", "9.01"]),
+                Form8KFiling(
+                    accession_no=MSFT_8K,
+                    items=["2.02", "9.01"],
+                    investor_call={
+                        "kind": "Earnings call",
+                        "day": "2026-10-28",
+                        "starts_at": "2026-10-28T14:30:00-07:00",
+                        "webcast_url": "https://www.microsoft.com/investor",
+                    },
+                ),
                 FilingExhibit(
                     accession_no=MSFT_8K,
                     filename="ex991.htm",

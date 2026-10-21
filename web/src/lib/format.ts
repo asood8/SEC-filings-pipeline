@@ -20,6 +20,17 @@ export function formatDateTime(isoDateTime: string): string {
   return dateTimeFormat.format(new Date(isoDateTime))
 }
 
+const easternFormat = new Intl.DateTimeFormat('en-US', {
+  dateStyle: 'medium',
+  timeStyle: 'short',
+  timeZone: 'America/New_York',
+})
+
+/** A timestamp on the market's clock, as companies announce calls: "Oct 21, 2026, 5:30 PM ET". */
+export function formatEasternTime(isoDateTime: string): string {
+  return `${easternFormat.format(new Date(isoDateTime))} ET`
+}
+
 // Fractional shares exist (dividend reinvestment, RSU vesting), down to thousandths.
 const sharesFormat = new Intl.NumberFormat('en-US', {
   maximumFractionDigits: 4,

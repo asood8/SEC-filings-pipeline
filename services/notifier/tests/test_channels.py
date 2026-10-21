@@ -1,12 +1,14 @@
 import json
 import logging
 import smtplib
-from datetime import date
+from dataclasses import replace
+from datetime import UTC, date, datetime
 from typing import Any, ClassVar
 
 import httpx2
 import pytest
 
+from filings_common.parsed import InvestorCall
 from filings_notifier.channels import (
     Alert,
     DeliveryError,
@@ -30,6 +32,12 @@ ALERT = Alert(
     summary="Apple appointed a new CFO.",
     key_points=["Effective October 1"],
     url="https://www.sec.gov/Archives/x.htm",
+)
+CALL = InvestorCall(
+    kind="Earnings call",
+    day=date(2026, 10, 29),
+    starts_at=datetime(2026, 10, 29, 21, 0, tzinfo=UTC),
+    webcast_url="https://investor.apple.com",
 )
 
 
@@ -157,3 +165,34 @@ def test_smtp_email(monkeypatch: pytest.MonkeyPatch) -> None:
     with pytest.raises(PermanentDeliveryError, match=r"recipient refused \(SMTP 550\)") as error:
         sender.send("gone@example.com", ALERT)
     assert "gone@example.com" not in str(error.value)  # it ends up in logs
+
+
+def test_an_announced_call_is_in_every_channel(monkeypatch: pytest.MonkeyPatch) -> None:
+    alert = replace(ALERT, investor_call=CALL)
+    line = "Earnings call: Oct 29, 2026, 5:00 pm ET, https://investor.apple.com"
+    assert CALL.describe() == line
+
+    transport, requests = recorder(httpx2.Response(204), httpx2.Response(200, text="ok"))
+    DiscordSender(transport=transport).send(DISCORD, alert)
+    SlackSender(transport=transport).send(SLACK, alert)
+    fields = json.loads(requests[0].content)["embeds"][0]["fields"]
+    assert fields[-1] == {
+        "name": "Earnings call",
+        "value": "Oct 29, 2026, 5:00 pm ET\nhttps://investor.apple.com",
+        "inline": False,
+    }
+    assert json.loads(requests[1].content)["blocks"][0]["text"]["text"].endswith(f"\n{line}")
+
+    monkeypatch.setattr(smtplib, "SMTP", FakeSmtp)
+    FakeSmtp.sent, FakeSmtp.refuse = [], False
+    SmtpEmailSender(host="smtp", port=587, username="u", password="p", sender="a@example.com").send(
+        "ops@example.com", alert
+    )
+    assert f"{line}\n" in FakeSmtp.sent[0].get_content()
+
+
+def test_no_call_no_call_field() -> None:
+    transport, requests = recorder(httpx2.Response(204))
+    DiscordSender(transport=transport).send(DISCORD, ALERT)
+    names = [f["name"] for f in json.loads(requests[0].content)["embeds"][0]["fields"]]
+    assert names == ["Company", "Form", "Filed"]

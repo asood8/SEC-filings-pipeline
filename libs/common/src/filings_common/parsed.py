@@ -5,8 +5,9 @@ summarizer and API consume them. Changing a model's meaning means bumping that f
 version.
 """
 
-from datetime import date
+from datetime import date, datetime
 from typing import Literal
+from zoneinfo import ZoneInfo
 
 from pydantic import BaseModel
 
@@ -153,3 +154,32 @@ class Exhibit(BaseModel):
 class Form8K(BaseModel):
     items: list[Item]
     exhibits: list[Exhibit] = []
+
+
+EASTERN = ZoneInfo("America/New_York")
+CallKind = Literal["Q&A session", "Investor Day", "Earnings call", "Conference call", "Webcast"]
+
+
+class InvestorCall(BaseModel):
+    """An upcoming call an 8-K announces (an earnings call, a Q&A session with analysts, an
+    investor day, a webcast conference talk), as the filing states it. The call itself isn't in
+    the filing. Found by `filings_parser.calls`; stored on `form8k_filings.investor_call`."""
+
+    kind: CallKind
+    day: date
+    # Only when the filing gives a time and a US time zone.
+    starts_at: datetime | None = None
+    webcast_url: str | None = None
+
+    def when(self) -> str:
+        """In Eastern time, like the rest of the market: "Oct 21, 2026, 5:30 pm ET"."""
+        if self.starts_at is None:
+            return f"{self.day:%b} {self.day.day}, {self.day.year}"
+        at = self.starts_at.astimezone(EASTERN)
+        clock = f"{at.hour % 12 or 12}:{at:%M} {'am' if at.hour < 12 else 'pm'}"
+        return f"{at:%b} {at.day}, {at.year}, {clock} ET"
+
+    def describe(self) -> str:
+        """One line for alerts: "Q&A session: Oct 21, 2026, 5:30 pm ET, https://ir.tesla.com"."""
+        when = self.when()
+        return f"{self.kind}: {when}" + (f", {self.webcast_url}" if self.webcast_url else "")

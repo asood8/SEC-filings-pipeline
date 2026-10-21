@@ -19,6 +19,7 @@ from typing import Any, Protocol
 import httpx2
 
 from filings_common.db import Channel
+from filings_common.parsed import InvestorCall
 from filings_common.targets import target_is_valid
 
 logger = logging.getLogger(__name__)
@@ -45,6 +46,8 @@ class Alert:
     summary: str
     key_points: list[str]
     url: str  # the filing on sec.gov
+    # The upcoming call an 8-K announces: when, and the webcast link.
+    investor_call: InvestorCall | None = None
 
 
 class Sender(Protocol):
@@ -87,12 +90,20 @@ class DiscordSender:
                         },
                         {"name": "Form", "value": alert.form_type, "inline": True},
                         {"name": "Filed", "value": alert.filed_at.isoformat(), "inline": True},
+                        *_discord_call_field(alert.investor_call),
                     ],
                     "footer": {"text": DISCLAIMER},
                 }
             ],
         }
         _post(self._http, target, payload, "Discord")
+
+
+def _discord_call_field(call: InvestorCall | None) -> list[dict[str, Any]]:
+    if call is None:
+        return []
+    value = call.when() + (f"\n{call.webcast_url}" if call.webcast_url else "")
+    return [{"name": call.kind, "value": value, "inline": False}]
 
 
 def _slack_escape(text: str) -> str:
@@ -118,7 +129,12 @@ class SlackSender:
                     "text": {
                         "type": "mrkdwn",
                         "text": f"*<{alert.url}|{_slack_escape(alert.headline)}>*\n"
-                        f"{_slack_escape(alert.summary)}",
+                        f"{_slack_escape(alert.summary)}"
+                        + (
+                            f"\n{_slack_escape(alert.investor_call.describe())}"
+                            if alert.investor_call
+                            else ""
+                        ),
                     },
                 },
                 {
@@ -136,8 +152,9 @@ def _email_message(target: str, alert: Alert, sender: str) -> EmailMessage:
     message["To"] = target
     message["Subject"] = f"[{alert.ticker}] {alert.headline}"
     points = "\n".join(f"- {p}" for p in alert.key_points)
+    call = f"{alert.investor_call.describe()}\n\n" if alert.investor_call else ""
     message.set_content(
-        f"{alert.headline}\n\n{alert.summary}\n\n{points}\n\n"
+        f"{alert.headline}\n\n{alert.summary}\n\n{points}\n\n{call}"
         f"{alert.company_name} ({alert.ticker}), Form {alert.form_type}, "
         f"filed {alert.filed_at.isoformat()}\nOriginal filing: {alert.url}\n\n{DISCLAIMER}\n"
     )

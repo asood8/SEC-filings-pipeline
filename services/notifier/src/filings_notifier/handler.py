@@ -41,6 +41,7 @@ from filings_common.db import (
     Filing,
     FilingStatus,
     Form4Filing,
+    Form8KFiling,
     Notification,
     NotificationStatus,
     Subscription,
@@ -48,6 +49,7 @@ from filings_common.db import (
 )
 from filings_common.events import FilingReady, Topic
 from filings_common.names import company_name
+from filings_common.parsed import InvestorCall
 from filings_common.summaries import FilingSummary
 from filings_common.targets import target_is_valid
 from filings_notifier.channels import Alert, DeliveryError, PermanentDeliveryError, Sender
@@ -115,6 +117,7 @@ class NotificationHandler:
             raise PermanentError(f"no filing or summary for {event.accession_no}")
         filing, company = row
         content = FilingSummary.model_validate(summary.summary)
+        form8k = session.get(Form8KFiling, filing.accession_no)  # None unless an 8-K
         alert = Alert(
             accession_no=filing.accession_no,
             company_name=company_name(company.name),
@@ -125,6 +128,11 @@ class NotificationHandler:
             summary=content.summary,
             key_points=content.key_points,
             url=filing.primary_doc_url,
+            investor_call=(
+                InvestorCall.model_validate(form8k.investor_call)
+                if form8k is not None and form8k.investor_call is not None
+                else None
+            ),
         )
         return alert, filing.created_at
 

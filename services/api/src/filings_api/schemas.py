@@ -6,6 +6,7 @@ from typing import Annotated, Literal
 from pydantic import AfterValidator, BaseModel, ConfigDict, Field
 
 from filings_common.db import Channel, FilingStatus
+from filings_common.parsed import CallKind
 
 # The forms a subscription can choose to be alerted about: the ones the pipeline parses and
 # summarizes. A form the pipeline learns later must be added here before anyone can pick it.
@@ -128,10 +129,25 @@ class ExhibitOut(BaseModel):
     sec_url: str
 
 
+class InvestorCallOut(BaseModel):
+    kind: CallKind
+    day: date = Field(description="The day of the call, as the filing gives it.")
+    starts_at: datetime | None = Field(
+        description="When it starts, only if the filing gives a time and a US time zone."
+    )
+    webcast_url: str | None = Field(
+        description="Where the filing says to listen, usually the company's investor site."
+    )
+
+
 class FilingDetail(FilingOut):
     summary: SummaryOut | None
     form4: Form4Details | None
     items: list[str] | None = Field(description="8-K item numbers, e.g. 2.02 and 9.01.")
+    investor_call: InvestorCallOut | None = Field(
+        description="An upcoming call the 8-K announces, read from its text. The call itself, "
+        "Q&A included, isn't in the filing."
+    )
     exhibits: list[ExhibitOut]
 
 

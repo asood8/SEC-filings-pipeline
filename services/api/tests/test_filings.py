@@ -102,7 +102,7 @@ def test_form_4_detail(client: TestClient, ids: Any) -> None:
             },
         ],
     }
-    assert (detail["items"], detail["exhibits"]) == (None, [])
+    assert (detail["items"], detail["investor_call"], detail["exhibits"]) == (None, None, [])
 
 
 UNKNOWN_RELATIONSHIP = dict.fromkeys(
@@ -146,6 +146,12 @@ def test_form_4_saved_before_owner_ciks_were_stored(
 def test_8k_detail_has_items_exhibits_and_grounding_flags(client: TestClient, ids: Any) -> None:
     detail = client.get(f"/filings/{ids.msft_8k}").json()
     assert detail["items"] == ["2.02", "9.01"]
+    assert detail["investor_call"] == {
+        "kind": "Earnings call",
+        "day": "2026-10-28",
+        "starts_at": "2026-10-28T14:30:00-07:00",
+        "webcast_url": "https://www.microsoft.com/investor",
+    }
     assert detail["exhibits"] == [
         {
             "type": "EX-99.1",

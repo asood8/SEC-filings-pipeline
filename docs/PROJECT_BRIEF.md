@@ -226,3 +226,14 @@ CLAUDE.md
 - Project name and domain (the domain is needed before the first `terraform apply`)
 - Production accounts, before the first `terraform apply` ([infra/terraform/README.md](../infra/terraform/README.md#decisions-first-brief-12)): R2 (Cloudflare asks for a payment method even on the free tier) or another S3-compatible store, the Oracle home region, where the Terraform state lives, and whether Pages builds from GitHub or from CI
 - Later form types (10-Q/10-K section changes, 13F)
+- Earnings-call Q&A (suggested 2026-10-21). The Q&A sessions aren't in EDGAR: 8-Ks only announce
+  the call, and the pipeline now records its day, time, and webcast link
+  ([ADR-0007](adr/0007-8k-items-summaries-and-replay.md#investor-calls-added-2026-10-21)). The full
+  version would transcribe and summarize the call itself and add it to the filing: fetch the
+  webcast audio from each company's investor site (different webcast providers, sometimes behind a
+  sign-up form, replays that expire), transcribe it with a local speech-to-text model such as
+  whisper.cpp (a new component: needs an ADR and approval; on the A1 it shares 2 cores with the
+  LLM, and earnings season brings about 35 calls in a few weeks), summarize it in parts (a call
+  runs about 10,000 words, beyond the 8k-token context), and check each site's terms on
+  downloading and republishing recordings. Start with a proposal and a laptop pilot on one or two
+  companies, measuring transcription time and accuracy.

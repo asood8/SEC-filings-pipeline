@@ -1,5 +1,5 @@
 from collections.abc import Sequence
-from datetime import date
+from datetime import UTC, date, datetime
 from pathlib import Path
 from typing import Any
 
@@ -16,12 +16,14 @@ from filings_common.db import (
     FilingStatus,
     Form4Filing,
     Form4Transaction,
+    Form8KFiling,
     OutboxEvent,
     session_factory,
 )
 from filings_common.events import FilingDiscovered, FilingParsed, Topic
 from filings_common.mongo import ParsedFilingStore
 from filings_common.storage import LocalObjectStore
+from filings_parser import form8k
 from filings_parser.documents import RawExhibit
 from filings_parser.forms import PARSERS as REAL_PARSERS
 from filings_parser.forms import FormParser
@@ -32,6 +34,7 @@ pytestmark = pytest.mark.integration
 ACCESSION = "0001140361-26-000202"
 RAW_KEY = f"filings/320193/{ACCESSION}/form4.xml"
 FORM4_FIXTURE = Path(__file__).parents[3] / "tests/fixtures/form4/0001936006-26-000026.xml"
+FORM8K_FIXTURES = Path(__file__).parents[3] / "tests/fixtures/form8k"
 
 
 def fake_parse(raw: bytes, exhibits: Sequence[RawExhibit] = ()) -> dict[str, Any]:
@@ -199,3 +202,85 @@ def test_real_form_4_key_fields_land_in_postgres(
     stored = ParsedFilingStore(mongo_db).get("0001936006-26-000026")
     assert stored is not None
     assert stored["parsed"]["transactions"][0]["price_per_share"] == 251.5
+
+
+def test_real_8k_key_fields_include_the_call_it_announces(
+    clean_db: Engine, mongo_db: Database[dict[str, Any]], tmp_path: Path
+) -> None:
+    accession_no = "0001628280-26-064366"  # Tesla's Q3 deliveries, announcing the results Q&A
+    prefix = f"filings/1318605/{accession_no}"
+    sessions = session_factory(clean_db)
+    with sessions.begin() as session:
+        session.add(Company(cik=1318605, ticker="TSLA", name="Tesla, Inc.", on_watchlist=True))
+        session.flush()
+        session.add(
+            Filing(
+                accession_no=accession_no,
+                cik=1318605,
+                form_type="8-K",
+                filed_at=date(2026, 10, 2),
+                accepted_at=datetime(2026, 10, 2, 13, 4, 26, tzinfo=UTC),
+                primary_doc_url="https://www.sec.gov/x/tsla-20261002.htm",
+                raw_object_key=f"{prefix}/tsla-20261002.htm",
+            )
+        )
+        session.flush()
+        session.add(
+            FilingExhibit(
+                accession_no=accession_no,
+                filename="exhibit991111111.htm",
+                exhibit_type="EX-99.1",
+                sequence=2,
+                description="EX-99.1",
+                object_key=f"{prefix}/exhibit991111111.htm",
+            )
+        )
+    objects = LocalObjectStore(tmp_path)
+    objects.put(
+        f"{prefix}/tsla-20261002.htm", (FORM8K_FIXTURES / f"{accession_no}.htm").read_bytes()
+    )
+    release = FORM8K_FIXTURES / "exhibits" / accession_no / "exhibit991111111.htm"
+    objects.put(f"{prefix}/exhibit991111111.htm", release.read_bytes())
+    real = FilingHandler(sessions, objects, ParsedFilingStore(mongo_db), REAL_PARSERS)
+    event = FilingDiscovered(
+        accession_no=accession_no,
+        cik=1318605,
+        form_type="8-K",
+        filed_at=date(2026, 10, 2),
+        raw_object_key=f"{prefix}/tsla-20261002.htm",
+    )
+    real(Received(Topic.FILINGS_DISCOVERED, 0, 0, event.key, event.model_dump_json().encode()))
+
+    with sessions() as session:
+        row = session.get_one(Form8KFiling, accession_no)
+    assert row.items == ["2.02", "9.01"]
+    assert row.investor_call == {
+        "kind": "Q&A session",
+        "day": "2026-10-21",
+        "starts_at": "2026-10-21T16:30:00-05:00",  # 4:30 p.m. Central Time
+        "webcast_url": "https://ir.tesla.com",
+    }
+
+
+def test_an_8k_without_a_call_stores_sql_null(clean_db: Engine) -> None:
+    accession_no = "0000002488-26-000182"  # AMD, unregistered sales
+    sessions = session_factory(clean_db)
+    with sessions.begin() as session:
+        session.add(Company(cik=2488, ticker="AMD", name="ADVANCED MICRO DEVICES INC"))
+        session.flush()
+        session.add(
+            Filing(
+                accession_no=accession_no,
+                cik=2488,
+                form_type="8-K",
+                filed_at=date(2026, 9, 28),
+                primary_doc_url="https://www.sec.gov/x/amd.htm",
+                raw_object_key="filings/2488/amd.htm",
+            )
+        )
+        session.flush()
+        payload = form8k.parse((FORM8K_FIXTURES / f"{accession_no}.htm").read_bytes())
+        form8k.save_key_fields(session, accession_no, payload)
+    with sessions() as session:
+        is_null = sa.select(Form8KFiling.investor_call.is_(None))
+        assert session.scalar(is_null) is True  # "IS NULL" doesn't match JSON null

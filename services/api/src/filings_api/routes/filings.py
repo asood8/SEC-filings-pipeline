@@ -18,6 +18,7 @@ from filings_api.schemas import (
     FilingOut,
     Form4Details,
     Form4TransactionOut,
+    InvestorCallOut,
     Page,
     SummaryOut,
 )
@@ -130,6 +131,11 @@ def get_filing(
             else None
         ),
         items=form8k.items if form8k is not None else None,
+        investor_call=(
+            InvestorCallOut.model_validate(form8k.investor_call)
+            if form8k is not None and form8k.investor_call is not None
+            else None
+        ),
         exhibits=[
             ExhibitOut(
                 type=e.exhibit_type,

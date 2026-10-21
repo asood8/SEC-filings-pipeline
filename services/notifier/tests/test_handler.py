@@ -1,4 +1,4 @@
-from datetime import date
+from datetime import UTC, date, datetime
 from typing import Any
 
 import pytest
@@ -14,6 +14,7 @@ from filings_common.db import (
     Filing,
     FilingStatus,
     Form4Filing,
+    Form8KFiling,
     Notification,
     NotificationStatus,
     Subscription,
@@ -22,6 +23,7 @@ from filings_common.db import (
     session_factory,
 )
 from filings_common.events import FilingReady, Topic
+from filings_common.parsed import InvestorCall
 from filings_notifier.channels import Alert, DeliveryError, PermanentDeliveryError
 from filings_notifier.handler import NotificationHandler, PendingAlertsError
 
@@ -35,12 +37,14 @@ SLACK = "https://hooks.slack.com/services/T1/B1/applehook"
 class FakeSender:
     def __init__(self) -> None:
         self.sent: list[tuple[str, str]] = []
+        self.alerts: list[Alert] = []
         self.failures: list[Exception] = []  # raised (in order) before succeeding
 
     def send(self, target: str, alert: Alert) -> None:
         if self.failures:
             raise self.failures.pop(0)
         self.sent.append((target, alert.accession_no))
+        self.alerts.append(alert)
 
 
 @pytest.fixture
@@ -293,3 +297,52 @@ def test_deliveries_are_counted_by_channel_and_outcome(
     assert counted("slack", "sent") == 1
     assert counted("email", "sent") == 1
     assert measured.total("filings.notifications") == 5
+
+
+def test_an_8k_alert_carries_the_call_it_announces(clean_db: Engine, world: dict[str, int]) -> None:
+    accession_no = "0000320193-26-000090"
+    call = {
+        "kind": "Earnings call",
+        "day": "2026-10-29",
+        "starts_at": "2026-10-29T14:00:00-07:00",
+        "webcast_url": "https://investor.apple.com",
+    }
+    with session_factory(clean_db).begin() as session:
+        session.add(
+            Filing(
+                accession_no=accession_no,
+                cik=320193,
+                form_type="8-K",
+                filed_at=date(2026, 10, 1),
+                primary_doc_url="https://www.sec.gov/aapl.htm",
+                raw_object_key="filings/aapl.htm",
+                status=FilingStatus.READY,
+            )
+        )
+        session.flush()
+        summary = Summary(
+            accession_no=accession_no,
+            provider="gemini",
+            model="gemini-flash",
+            prompt_version=1,
+            summary={"headline": "Apple to report results", "summary": "...", "key_points": []},
+        )
+        session.add_all(
+            [summary, Form8KFiling(accession_no=accession_no, items=["8.01"], investor_call=call)]
+        )
+        session.flush()
+        summary_id = summary.id
+    fakes = senders()
+    event = FilingReady(
+        accession_no=accession_no, cik=320193, form_type="8-K", summary_id=summary_id
+    )
+    NotificationHandler(session_factory(clean_db), fakes)(
+        Received(Topic.FILINGS_READY, 0, 0, accession_no, event.model_dump_json().encode())
+    )
+    [alert] = fakes[Channel.EMAIL].alerts  # the Apple subscription
+    assert alert.investor_call == InvestorCall(
+        kind="Earnings call",
+        day=date(2026, 10, 29),
+        starts_at=datetime(2026, 10, 29, 21, 0, tzinfo=UTC),
+        webcast_url="https://investor.apple.com",
+    )

@@ -34,6 +34,61 @@ describe('FilingPage', () => {
     expect(original).toHaveAttribute('target', '_blank')
     expect(screen.getByText(/Summarized by an AI model/)).toBeInTheDocument()
     expect(screen.queryByText(/Check these numbers/)).not.toBeInTheDocument()
+    expect(
+      screen.queryByText(/As announced in the filing/),
+    ).not.toBeInTheDocument()
+  })
+
+  it('shows the call an 8-K announces, on Eastern time, with its webcast', async () => {
+    mockApi({
+      '/filings/0001628280-26-064366': () =>
+        filingDetail({
+          accession_no: '0001628280-26-064366',
+          investor_call: {
+            kind: 'Q&A session',
+            day: '2026-10-21',
+            starts_at: '2026-10-21T16:30:00-05:00', // 4:30 p.m. Central, as filed
+            webcast_url: 'https://ir.tesla.com',
+          },
+        }),
+    })
+    renderRoute('/filings/0001628280-26-064366')
+
+    const heading = await screen.findByRole('heading', {
+      level: 2,
+      name: 'Q&A session',
+    })
+    const section = heading.closest('section')!
+    expect(
+      within(section).getByText('Oct 21, 2026, 5:30 PM ET'),
+    ).toHaveAttribute('dateTime', '2026-10-21T16:30:00-05:00')
+    expect(
+      within(section).getByRole('link', {
+        name: 'Webcast at ir.tesla.com (opens in a new tab)',
+      }),
+    ).toHaveAttribute('href', 'https://ir.tesla.com')
+  })
+
+  it('shows only the day of a call announced without a time or a link', async () => {
+    mockApi({
+      '/filings/0000796343-26-000144': () =>
+        filingDetail({
+          accession_no: '0000796343-26-000144',
+          investor_call: {
+            kind: 'Earnings call',
+            day: '2026-09-10',
+            starts_at: null,
+            webcast_url: null,
+          },
+        }),
+    })
+    renderRoute('/filings/0000796343-26-000144')
+    const heading = await screen.findByRole('heading', {
+      name: 'Earnings call',
+    })
+    const section = heading.closest('section')!
+    expect(within(section).getByText('Sep 10, 2026')).toBeInTheDocument()
+    expect(within(section).queryByRole('link')).not.toBeInTheDocument()
   })
 
   it('flags numbers the grounding check could not find', async () => {

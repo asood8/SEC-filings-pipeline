@@ -68,6 +68,35 @@ safe because every consumer is idempotent. For `parsed`, the parser version come
 The payload models (`filings_common.parsed`) live in the shared library: the parser writes them and
 the summarizer reads them, so they are a contract, just like the events.
 
+### Investor calls (added 2026-10-21)
+
+Earnings releases and other 8-Ks often announce a call: "Tesla management will hold a live
+question and answer webcast that day at 4:30 p.m. Central Time". The call itself, Q&A included,
+isn't in EDGAR; it is a webcast on the company's investor site. So the pipeline records what the
+filing says about it: the kind (earnings call, conference call, Q&A session, Investor Day, or
+webcast), the day, the start time when the filing gives a time and a US time zone, and the
+webcast link. They are stored in `form8k_filings.investor_call` (JSON, `InvestorCall` in
+`filings_common.parsed`), returned by `GET /filings/{accession_no}`, shown on the filing page, and
+added to alerts ("Q&A session: Oct 21, 2026, 5:30 pm ET, https://ir.tesla.com").
+
+- *How:* deterministic rules in `filings_parser.calls`, not the LLM. A slightly wrong date or
+  link is worse than none, rules can be tested sentence by sentence, and the call is found for
+  every 8-K, not only those the LLM summarizes. A call sentence must name a call, look ahead
+  ("will host", "is scheduled"), and not be about a replay. "Today" is the day SEC accepted the
+  filing, in Eastern time, since a filing accepted after 5:30 p.m. gets the next business day as
+  its filing date. A date before that day, or more than 120 days after it, is discarded.
+- *Measured:* of the 22 local 8-Ks, 9 announce a call, and all 9 were found with the right day,
+  time, and link. None of the other 13 gave a false one, including Salesforce's Investor Day
+  slides, filed after the event.
+- *Limits:* one call per filing (the first); US time zones only; a link that exists only behind
+  the text of an HTML anchor isn't seen, because exhibit text drops `href`s; a call announced
+  without a date (or only in a later advisory) isn't recorded.
+- *Existing 8-Ks* get theirs from MongoDB with `filings-rebuild-key-fields --form-type 8-K`, with
+  no SEC requests and no events.
+- *The call's content* (a transcript, a summary of the Q&A) is deferred: it would mean fetching
+  each company's webcast audio, a speech-to-text model, summaries in parts (a transcript is far
+  longer than the LLM's context), and checking the sites' terms. See the brief's open decisions.
+
 ## Alternatives considered
 
 - **An HTML library (BeautifulSoup, lxml) for 8-Ks.** More forgiving of broken markup, but the

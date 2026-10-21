@@ -414,6 +414,8 @@ export interface components {
              * @description 8-K item numbers, e.g. 2.02 and 9.01.
              */
             items: string[] | null;
+            /** @description An upcoming call the 8-K announces, read from its text. The call itself, Q&A included, isn't in the filing. */
+            investor_call: components["schemas"]["InvestorCallOut"] | null;
             /** Exhibits */
             exhibits: components["schemas"]["ExhibitOut"][];
         };
@@ -632,6 +634,30 @@ export interface components {
              * @description By value, largest first; filings that give no price come last. Equal values: the latest trade first.
              */
             items: components["schemas"]["InsiderTrade"][];
+        };
+        /** InvestorCallOut */
+        InvestorCallOut: {
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "Q&A session" | "Investor Day" | "Earnings call" | "Conference call" | "Webcast";
+            /**
+             * Day
+             * Format: date
+             * @description The day of the call, as the filing gives it.
+             */
+            day: string;
+            /**
+             * Starts At
+             * @description When it starts, only if the filing gives a time and a US time zone.
+             */
+            starts_at: string | null;
+            /**
+             * Webcast Url
+             * @description Where the filing says to listen, usually the company's investor site.
+             */
+            webcast_url: string | null;
         };
         /** IssuerOut */
         IssuerOut: {

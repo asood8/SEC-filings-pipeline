@@ -242,6 +242,7 @@ uv run filings-rebuild-key-fields --form-type 4  # refill Form 4 key fields from
 | `make web-types` | Regenerate the website's API types from the API's OpenAPI schema |
 | `make tf-check` / `make tf-fmt` | Check the Terraform code (fmt, validate, tests on mock providers, free-tier allowlist) / format it |
 | `make tf-init` / `make tf-plan` / `make tf-apply` | Production: connect to the state in R2, plan from `production.tfvars` into `production.tfplan`, apply exactly that plan ([infra/terraform/README.md](infra/terraform/README.md#first-apply)) |
+| `uv run filings-r2-usage` | Check R2's free tier with Cloudflare's own numbers (`CLOUDFLARE_ACCOUNT_ID`, `CLOUDFLARE_ANALYTICS_TOKEN`); a daily job in production |
 | `make k8s-tools` / `make k8s-check` | Install kubectl, kubeconform, and kubeseal (checksums verified) / render and validate the Kubernetes manifests |
 | `make obs-up` / `make obs-down` | Start / stop the optional local trace and metrics viewer (Grafana on :3001) |
 | `make loadtest` | Load-test a running API with k6 (`make api-loadtest` runs the API with rate limits raised) |

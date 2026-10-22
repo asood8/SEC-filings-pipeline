@@ -189,6 +189,7 @@ terraform output -raw mongodb_url \
 | `mongodb` | `terraform output -raw mongodb_url` |
 | `r2-raw-filings`, `r2-backups` | endpoint: `terraform output r2_endpoint_url`; keys: the R2 API tokens made by hand, one per bucket |
 | `grafana-cloud` | the Grafana Cloud portal (OTLP endpoint, instance ID, access policy token) |
+| `cloudflare-analytics` | the account ID, and a token made by hand with only **Account Analytics: Read** (the daily R2 free-tier check) |
 | `postgres` | generate: `openssl rand -hex 32` |
 | `gemini`, `sec-edgar`, `smtp` | your own values |
 

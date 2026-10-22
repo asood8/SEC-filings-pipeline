@@ -1,0 +1,16 @@
+# EXAMPLE ONLY: placeholder values. Never commit a filled-in copy; seal it instead
+# (deploy/k8s/README.md, "Secrets").
+#
+# Cloudflare's analytics, for the daily R2 free-tier check: the account ID and an API token with
+# only Account Analytics: Read (My Profile, API Tokens, custom token). It can read usage numbers
+# and nothing else.
+# Used by: r2-usage.
+apiVersion: v1
+kind: Secret
+metadata:
+  name: cloudflare-analytics
+  namespace: filings
+type: Opaque
+stringData:
+  CLOUDFLARE_ACCOUNT_ID: replace-with-account-id
+  CLOUDFLARE_ANALYTICS_TOKEN: replace-me

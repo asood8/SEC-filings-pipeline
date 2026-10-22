@@ -38,6 +38,7 @@ meter = metrics.get_meter("filings")
 # Attributes besides the ones in `telemetry`.
 ALERT_CHANNEL = "filings.alert.channel"
 STATUS_CLASS = "filings.status_class"
+R2_MEASURE = "filings.r2.measure"  # storage, class_a, class_b
 
 
 class LatestValues:
@@ -53,7 +54,7 @@ class LatestValues:
         self._values: dict[object, list[Observation]] = {}
 
     def replace(
-        self, owner: object, values: Iterable[tuple[int, Mapping[str, AttributeValue]]]
+        self, owner: object, values: Iterable[tuple[float, Mapping[str, AttributeValue]]]
     ) -> None:
         observations = [Observation(value, dict(attributes)) for value, attributes in values]
         with self._lock:
@@ -197,6 +198,20 @@ SEC_THROTTLED = meter.create_counter(
     unit="{response}",
     description="SEC 429 (Too Many Requests) responses: the rate limit is set too high.",
 )
+
+# --- R2's free tier (filings-r2-usage, a daily job) ---------------------------------------------
+
+R2_FREE_TIER_VALUES = LatestValues()
+R2_FREE_TIER_USED = meter.create_observable_gauge(
+    "filings.r2.free_tier.used",
+    callbacks=[R2_FREE_TIER_VALUES.observe],
+    unit="{fraction}",
+    description=(
+        "Fraction of a monthly R2 free-tier allowance used (filings.r2.measure: storage, class_a, "
+        "class_b); 1 is all of it, and more is billed. Measured once a day."
+    ),
+)
+
 
 # Attribute sets, for code that records with them.
 

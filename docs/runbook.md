@@ -18,6 +18,8 @@ applying, reaching the cluster, Terraform state).
 - [Alert: Dead-letter topic not empty](#alert-dead-letter-topic-not-empty)
 - [Alert: Consumer lag high](#alert-consumer-lag-high)
 - [Alert: Pipeline service not reporting](#alert-pipeline-service-not-reporting)
+- [Alert: R2 free tier half used](#alert-r2-free-tier-half-used)
+- [Alert: R2 usage not measured](#alert-r2-usage-not-measured)
 - [Dead letters: inspect, fix, replay, trim](#dead-letters-inspect-fix-replay-trim)
 - [Deploys and rollbacks](#deploys-and-rollbacks)
 - [Pausing Argo CD for hands-on work](#pausing-argo-cd-for-hands-on-work)
@@ -147,6 +149,36 @@ Critical, fires at once. A long-running service (`filings-outbox-relay`, `-parse
     commit was pushed there by hand), or the GHCR package isn't public.
   - `CrashLoopBackOff` right after start: usually a missing Secret or setting; the log says which.
 - **Stopped on purpose:** it fires for up to a day. Silence it.
+
+## Alert: R2 free tier half used
+
+Warning. The daily `r2-usage` job found over half of a monthly R2 free allowance used: storage
+(10 GB), Class A operations (1 million writes and lists in 30 days), or Class B (10 million
+reads). R2 bills past the allowance and has no cap, so act before 100%.
+
+```
+kubectl -n filings logs job/$(kubectl -n filings get jobs -l app.kubernetes.io/name=r2-usage \
+  -o jsonpath='{.items[-1:].metadata.name}')     # each allowance's numbers
+```
+
+- **Storage:** usually backups. Their bucket expires them after `backup_retention_days`
+  (Terraform, 30 by default): lower it and apply. Raw filings grow with the watchlist, a few MB
+  a month at 35 companies.
+- **Class A** (writes): normal use is a few thousand a month (one write per new filing and
+  exhibit, one per nightly backup). Far more means something writes in a loop: check the
+  discovery and backup jobs' logs and recent replays. Lists count too.
+- **Class B** (reads): the parser reads each raw filing once; a replay of `discovered` reads
+  them all again. Repeated replays add up.
+- **An unknown operation type** in the log was counted as Class A, the safe side; if it is free
+  in Cloudflare's price list, add it to `FREE` in `filings_common/r2_usage.py`.
+
+## Alert: R2 usage not measured
+
+Warning. The `r2-usage` job reported in the last week but not in the last 50 hours, so the alert
+above can't fire. `kubectl -n filings get cronjob r2-usage` (last schedule) and the latest job's
+log, as above. A 400 or 403 from Cloudflare's analytics API means the `cloudflare-analytics`
+token was revoked or lost its Account Analytics: Read permission ([Rotating
+secrets](#rotating-secrets)).
 
 ## Dead letters: inspect, fix, replay, trim
 
@@ -352,6 +384,7 @@ The general procedure, for any Secret:
 | `r2-backups`: endpoint, key ID, secret | The same, on `filings-backups` only | none: a CronJob | [Run a backup now](#backups-and-restores) to prove it, then delete the old token. |
 | `cloudflared`: `TUNNEL_TOKEN` | Cloudflare Zero Trust, Networks, Tunnels: refresh the tunnel's token; then `terraform apply -refresh-only` and pipe `terraform output -raw tunnel_token` into kubeseal (infra/terraform/README.md) | cloudflared | Connectors that start with the old token are refused, so roll out right away; check `https://api.<domain>/healthz`. |
 | `grafana-cloud`: endpoint, instance ID, `GRAFANA_CLOUD_API_TOKEN` | Grafana Cloud portal, Access Policies: a new token on the collector's policy | otel-collector | Delete the old token; "Pipeline service not reporting" clears within minutes if it fired. |
+| `cloudflare-analytics`: `CLOUDFLARE_ANALYTICS_TOKEN` | Cloudflare, My Profile, API Tokens: a new token with only Account Analytics: Read | r2-usage | Delete the old token; the next daily run uses the new one (or start one: `kubectl -n filings create job --from=cronjob/r2-usage r2-usage-now`). |
 | `postgres`: `POSTGRES_USER`, `POSTGRES_PASSWORD` | `openssl rand -hex 32` (URL-safe) | every Deployment (below) | The Secret sets the password only when the database is created, so change it in Postgres too (below). |
 | `mongodb`: `MONGODB_URL` | `terraform apply -replace=module.atlas.random_password.database_user`, then pipe `terraform output -raw mongodb_url` into kubeseal | parser, summarizer | The old password stops working at the apply: seal and push right after. |
 

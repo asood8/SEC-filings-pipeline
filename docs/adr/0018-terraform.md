@@ -93,8 +93,17 @@ Four layers, all of which run without credentials:
 
 The account settings matter as much as the code: the Oracle account must stay on the Free tier
 (an upgraded account bills what exceeds the allowance instead of refusing it), and Cloudflare
-asks for a payment method when R2 is enabled, even on the free tier (an open decision in the
-README).
+asks for a payment method when R2 is enabled, even on the free tier (accepted 2026-10-21).
+
+**Usage, not just configuration (added 2026-10-22).** The layers above keep every resource free,
+but R2 also bills by use past its monthly allowance (10 GB of storage, 1 million Class A and 10
+million Class B operations), with no spending cap. Normal use is a few percent of that, so the
+risk is a bug writing in a loop, or years of growth. A daily job, `filings-r2-usage`
+(`deploy/k8s/base/r2-usage.yaml`), reads Cloudflare's own numbers from its GraphQL Analytics
+API with a token that can only read analytics, and exports the fraction of each allowance used;
+Grafana alerts past half of any of them, and if the job stops reporting. It counts on the safe
+side: current storage, operations over 30 days, and unknown operation types as Class A.
+Cloudflare's own budget alerts exist for pay-as-you-go accounts only, and don't cap either.
 
 ### Bootstrapping the VM: cloud-init
 

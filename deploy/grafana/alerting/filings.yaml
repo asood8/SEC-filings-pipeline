@@ -209,3 +209,79 @@ groups:
             {{ .Labels.job }} exported metrics in the last day but not in the last 10 minutes: it
             is down, crash-looping, or can't reach the telemetry endpoint. Stopping a service on
             purpose also fires this, for up to a day.
+
+      # R2 bills past its free tier and has no spending cap, so this fires past half of any monthly
+      # allowance: storage, Class A, or Class B operations (filings_common.r2_usage). The daily
+      # filings-r2-usage job measures them with Cloudflare's own numbers; max_over_time keeps its
+      # once-a-day value in view.
+      - uid: filings-r2-free-tier-half-used
+        title: R2 free tier half used
+        condition: C
+        data:
+          - refId: A
+            relativeTimeRange: { from: 600, to: 0 }
+            datasourceUid: prometheus
+            model:
+              refId: A
+              instant: true
+              range: false
+              expr: max by (filings_r2_measure) (max_over_time(filings_r2_free_tier_used[26h]))
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              refId: C
+              type: threshold
+              expression: A
+              conditions:
+                - evaluator: { type: gt, params: [0.5] }
+        noDataState: OK
+        execErrState: Error
+        for: 0s
+        dashboardUid: filings-pipeline
+        panelId: 31
+        labels:
+          severity: warning
+        annotations:
+          summary: R2 {{ .Labels.filings_r2_measure }} is past half of its free tier
+          description: >-
+            Over half of R2's monthly free {{ .Labels.filings_r2_measure }} allowance is used, and
+            R2 bills past all of it. The filings-r2-usage job's log has the numbers. See the
+            runbook, "Alert: R2 free tier half used", before it reaches 100%.
+
+      # The check above can only fire if its job runs: this one fires when filings-r2-usage
+      # reported in the last week but not in the last 50 hours (it runs daily). Never having run
+      # (the local viewer, a new cluster) doesn't fire it.
+      - uid: filings-r2-usage-not-measured
+        title: R2 usage not measured
+        condition: C
+        data:
+          - refId: A
+            relativeTimeRange: { from: 600, to: 0 }
+            datasourceUid: prometheus
+            model:
+              refId: A
+              instant: true
+              range: false
+              expr: |
+                count by (job) (last_over_time(target_info{job=~"(.+/)?filings-r2-usage"}[7d]))
+                unless
+                count by (job) (last_over_time(target_info{job=~"(.+/)?filings-r2-usage"}[50h]))
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              refId: C
+              type: threshold
+              expression: A
+              conditions:
+                - evaluator: { type: gt, params: [0] }
+        noDataState: OK
+        execErrState: Error
+        for: 0s
+        labels:
+          severity: warning
+        annotations:
+          summary: R2's free-tier use hasn't been measured in two days
+          description: >-
+            The daily filings-r2-usage job hasn't reported for 50 hours, so the free-tier alert
+            can't fire. Check the r2-usage CronJob's runs and logs (its token, Cloudflare's
+            analytics API).

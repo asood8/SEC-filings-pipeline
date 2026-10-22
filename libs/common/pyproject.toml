@@ -26,6 +26,7 @@ filings-replay = "filings_common.replay:main"
 filings-index = "filings_common.indexer:main"
 filings-search-eval = "filings_common.search_eval:main"
 filings-healthcheck = "filings_common.health:main"
+filings-r2-usage = "filings_common.r2_usage:main"
 
 [build-system]
 requires = ["uv_build>=0.12.23,<0.13.0"]

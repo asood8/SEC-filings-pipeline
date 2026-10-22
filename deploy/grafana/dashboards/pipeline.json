@@ -1956,6 +1956,91 @@
         "x": 0,
         "y": 64
       }
+    },
+    {
+      "type": "row",
+      "title": "Free tier",
+      "collapsed": false,
+      "panels": [],
+      "id": 30,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 74
+      }
+    },
+    {
+      "type": "stat",
+      "title": "R2 free tier used",
+      "description": "Share of each monthly R2 free-tier allowance used, from Cloudflare's own numbers, measured once a day by the filings-r2-usage job: storage now, and Class A (writes, lists) and Class B (reads) operations over 30 days. R2 bills past 100% and has no cap; the alert fires past 50%.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "decimals": 1,
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 0.5
+              },
+              {
+                "color": "red",
+                "value": 1
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "textMode": "value_and_name",
+        "wideLayout": true
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "editorMode": "code",
+          "expr": "max by (filings_r2_measure) (max_over_time(filings_r2_free_tier_used[26h]))",
+          "legendFormat": "{{filings_r2_measure}}",
+          "refId": "A",
+          "instant": true,
+          "range": false
+        }
+      ],
+      "id": 31,
+      "gridPos": {
+        "h": 4,
+        "w": 24,
+        "x": 0,
+        "y": 75
+      }
     }
   ]
 }

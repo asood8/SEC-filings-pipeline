@@ -1,6 +1,6 @@
 # ADR-0019: Building images in CI and deploying on push
 
-- **Status:** Proposed
+- **Status:** Accepted (2026-10-22)
 - **Date:** 2026-10-07; revised 2026-10-08: deploys go to a `production` branch that Argo CD
   follows, instead of commits to `main` ([why](#the-revision-of-2026-10-08))
 

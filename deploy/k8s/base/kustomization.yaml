@@ -30,6 +30,7 @@ resources:
   - api.yaml
   # Operations
   - postgres-backup.yaml
+  - r2-usage.yaml
   - cloudflared.yaml
   - otel-collector.yaml
 

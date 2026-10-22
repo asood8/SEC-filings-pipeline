@@ -29,5 +29,5 @@ row below.
 | [0015](0015-frontend-stack.md) | Frontend stack: Vite, React, and TypeScript | Accepted |
 | [0016](0016-observability.md) | Observability with OpenTelemetry | Accepted |
 | [0017](0017-kubernetes-manifests.md) | Kubernetes manifests for the production cluster | Accepted |
-| [0018](0018-terraform.md) | Infrastructure as code with Terraform | Proposed |
-| [0019](0019-image-ci-and-deploy.md) | Building images in CI and deploying on push | Proposed |
+| [0018](0018-terraform.md) | Infrastructure as code with Terraform | Accepted |
+| [0019](0019-image-ci-and-deploy.md) | Building images in CI and deploying on push | Accepted |

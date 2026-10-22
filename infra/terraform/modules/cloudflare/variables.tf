@@ -16,11 +16,12 @@ variable "account_id" {
 }
 
 variable "zone_name" {
-  description = "The domain (a zone already active in this Cloudflare account), for example example.com. The domain is an open decision (brief §12)."
+  description = "The domain (a zone already active in this Cloudflare account), for example example.com. Null until there is one: the tunnel then serves nothing, and no DNS records or website are made (brief §12)."
   type        = string
+  default     = null
 
   validation {
-    condition     = can(regex("^([a-z0-9]([a-z0-9-]*[a-z0-9])?\\.)+[a-z]{2,}$", var.zone_name))
+    condition     = var.zone_name == null || can(regex("^([a-z0-9]([a-z0-9-]*[a-z0-9])?\\.)+[a-z]{2,}$", var.zone_name))
     error_message = "zone_name must be a lowercase domain name such as example.com."
   }
 }

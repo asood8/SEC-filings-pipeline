@@ -43,7 +43,7 @@ output "pages_dev_url" {
 
 output "api_cors_origins" {
   description = "Value for API_CORS_ORIGINS in deploy/k8s/overlays/production/config.env."
-  value       = jsonencode([module.cloudflare.web_url])
+  value       = jsonencode(module.cloudflare.web_url == null ? [] : [module.cloudflare.web_url])
 }
 
 # --- Values for the cluster's Secrets (README.md, "Secrets into the cluster") ---

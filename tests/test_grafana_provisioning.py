@@ -48,6 +48,7 @@ ATTRIBUTES = {
     telemetry.GEN_AI_PROVIDER,
     metrics.ALERT_CHANNEL,
     metrics.STATUS_CLASS,
+    metrics.R2_MEASURE,
     "http.request.method",
     "http.route",
     "http.response.status_code",
@@ -91,7 +92,7 @@ def defined_metrics(_metric_reader: "InMemoryMetricReader") -> set[str]:
             value.add(0, probe)
         elif isinstance(value, Histogram):
             value.record(0, probe)
-    gauges = (metrics.CONSUMER_LAG_VALUES, metrics.DLQ_DEPTH_VALUES)
+    gauges = (metrics.CONSUMER_LAG_VALUES, metrics.DLQ_DEPTH_VALUES, metrics.R2_FREE_TIER_VALUES)
     for gauge in gauges:
         gauge.replace(owner, [(0, probe)])
     try:

@@ -48,6 +48,14 @@ class SummaryOut(BaseModel):
             "Empty when all were found; null when not checked (template summaries)."
         )
     )
+    ungrounded_names: list[str] | None = Field(
+        default=None,
+        description=(
+            "Capitalized words in an LLM summary that the filing text never uses, such as an "
+            "invented name, worth verifying. Empty when all were found; null when not checked "
+            "(template summaries, and summaries written before this check)."
+        ),
+    )
 
 
 class Form4TransactionOut(BaseModel):

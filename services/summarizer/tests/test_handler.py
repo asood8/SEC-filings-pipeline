@@ -48,7 +48,12 @@ class FixedSummarizer:
     def summarize(self, payload: dict[str, Any], context: FilingContext) -> SummaryResult:
         summary = FilingSummary(headline="v2", summary="Second take of $4.25 billion.")
         return SummaryResult(
-            summary, "template", "form4-template", self.prompt_version, ["4.25 billion"]
+            summary,
+            "template",
+            "form4-template",
+            self.prompt_version,
+            ["4.25 billion"],
+            ungrounded_names=["Whitfield"],
         )
 
 
@@ -130,6 +135,7 @@ def test_new_prompt_version_adds_a_summary_without_announcing_again(
     summaries, events, _ = rows(engine)
     assert [s.prompt_version for s in summaries] == [TEMPLATE_VERSION, TEMPLATE_VERSION + 1]
     assert [s.ungrounded_numbers for s in summaries] == [None, ["4.25 billion"]]
+    assert [s.ungrounded_names for s in summaries] == [None, ["Whitfield"]]
     assert len(events) == 1
 
 

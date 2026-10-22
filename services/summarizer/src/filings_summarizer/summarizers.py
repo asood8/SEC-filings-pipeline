@@ -23,7 +23,7 @@ from filings_common.ratelimit import RedisTokenBucket
 from filings_common.summaries import FilingSummary
 from filings_summarizer import form4_template, form8k_prompt
 from filings_summarizer.form8k_prompt import FilingContext
-from filings_summarizer.grounding import ungrounded_numbers
+from filings_summarizer.grounding import ungrounded_names, ungrounded_numbers
 from filings_summarizer.llm import (
     FailoverChain,
     GeminiProvider,
@@ -42,8 +42,9 @@ class SummaryResult:
     provider: str
     model: str
     prompt_version: int
-    # From the grounding check (LLM summaries only); None when not checked.
+    # From the grounding checks (LLM summaries only); None when not checked.
     ungrounded_numbers: list[str] | None = None
+    ungrounded_names: list[str] | None = None
 
 
 class Summarizer(Protocol):
@@ -91,6 +92,9 @@ class Form8KLlmSummarizer:
             model=answer.model,
             prompt_version=form8k_prompt.PROMPT_VERSION,
             ungrounded_numbers=ungrounded_numbers(summary_text, prompt),
+            ungrounded_names=ungrounded_names(
+                summary.headline, summary.summary, summary.key_points, prompt
+            ),
         )
 
 

@@ -59,6 +59,7 @@ const APPLE_ALERT: Subscription = {
   form4_trades: 'all',
   form4_min_value: null,
   form8k_items: [],
+  query: null,
   channel: 'discord',
   target: 'https://discord.com/api/webhooks/123/…abcd',
   created_at: '2026-10-06T00:00:00Z',
@@ -156,6 +157,7 @@ describe('AlertsPage', () => {
       form4_trades: 'all', // every Form 4 unless a filter is chosen
       form4_min_value: null,
       form8k_items: [], // every 8-K
+      query: null,
       destinations: [
         { channel: 'discord', target_from: 7 },
         {
@@ -167,6 +169,59 @@ describe('AlertsPage', () => {
     expect(
       within(form).getByRole('checkbox', { name: /MSFT/ }),
     ).not.toBeChecked() // reset
+  })
+
+  it('adds a keyword alert on every company and lists it on its own', async () => {
+    let sent: unknown
+    const KEYWORD_ALERT: Subscription = {
+      ...APPLE_ALERT,
+      id: 12,
+      company: null,
+      query: 'buyback',
+      channel: 'email',
+      target: 'ada@example.com',
+    }
+    mockApi({
+      '/me': () => USER,
+      'GET /subscriptions': () => subscriptions,
+      'POST /subscriptions/batch': async (_url, request) => {
+        sent = await request.json()
+        subscriptions = [...subscriptions, KEYWORD_ALERT]
+        return Response.json(
+          { created: [KEYWORD_ALERT], existing: [] },
+          { status: 201 },
+        )
+      },
+      '/companies': () => WATCHLIST,
+    })
+    renderRoute('/alerts')
+
+    const form = (
+      await screen.findByRole('heading', { name: 'Add alerts' })
+    ).closest('form')!
+    await userEvent.type(
+      within(form).getByLabelText('Only filings mentioning (optional)'),
+      'buyback',
+    )
+    await userEvent.click(
+      within(form).getByRole('checkbox', { name: /^Email to / }),
+    )
+    // No company chosen: one keyword alert on every company.
+    await userEvent.click(
+      within(form).getByRole('button', { name: 'Add 1 alert' }),
+    )
+    await waitFor(() =>
+      expect(sent).toMatchObject({ tickers: [], query: 'buyback' }),
+    )
+    const group = (await screen.findByText('Any watchlist company')).closest(
+      'li',
+    )!
+    expect(group).toHaveTextContent('mentioning “buyback”')
+    expect(
+      within(group).getByRole('button', {
+        name: 'Remove the “buyback” Email alert',
+      }),
+    ).toBeInTheDocument()
   })
 
   it('shows API errors', async () => {

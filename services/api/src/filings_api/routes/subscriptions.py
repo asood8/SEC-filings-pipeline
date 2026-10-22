@@ -1,7 +1,8 @@
 """The signed-in user's alert subscriptions: list, create, change, delete.
 
 A subscription alerts one target (a Discord or Slack webhook, or the account's own email address)
-about new filings of one watchlist company, optionally only some forms.
+about new filings of one watchlist company, optionally only some forms. A keyword alert has a
+`query` too: only filings whose summary matches it, of one company or of every watchlist company.
 
 - Every query is scoped to the caller: someone else's subscription answers 404, exactly like a
   missing one, so ids reveal nothing.
@@ -67,16 +68,37 @@ def _error(status_code: int, detail: str) -> HTTPException:
     return HTTPException(status_code=status_code, detail=detail, headers=NO_STORE)
 
 
-def _duplicate(ticker: str) -> HTTPException:
-    return _error(409, f"you already have a subscription to {ticker} with this channel and target")
+def _duplicate(subject: str) -> HTTPException:
+    return _error(409, f"you already have a subscription to {subject} with this channel and target")
+
+
+def _subject(company: Company | None, query: str | None) -> str:
+    """What a subscription is about, for messages: "AAPL", "filings mentioning “buyback”"."""
+    if query is None:
+        return company.ticker if company is not None else "every company"
+    mentioning = f"filings mentioning \u201c{query}\u201d"
+    return f"{company.ticker} {mentioning}" if company is not None else mentioning
+
+
+def _checked_query(session: Session, query: str) -> str:
+    """A query that can match something: one of only stop words ("the") never does."""
+    nodes = session.scalar(
+        sa.select(sa.func.numnode(sa.func.websearch_to_tsquery("english", query)))
+    )
+    if not nodes:
+        raise _error(422, f"the query \u201c{query}\u201d has no searchable words")
+    return query
 
 
 def _subscription_out(
-    subscription: Subscription, company: Company, last: Notification | None = None
+    subscription: Subscription, company: Company | None, last: Notification | None = None
 ) -> SubscriptionOut:
     return SubscriptionOut(
         id=subscription.id,
-        company=CompanyRef(cik=company.cik, ticker=company.ticker, name=company.name),
+        company=None
+        if company is None
+        else CompanyRef(cik=company.cik, ticker=company.ticker, name=company.name),
+        query=subscription.query,
         form_types=subscription.form_types,
         form4_trades=subscription.form4_trades,
         form4_min_value=subscription.form4_min_value,
@@ -110,10 +132,10 @@ def _last_deliveries(session: Session, subscription_ids: list[int]) -> dict[int,
 
 def _own_subscription(
     session: Session, user: User, subscription_id: int
-) -> tuple[Subscription, Company]:
+) -> tuple[Subscription, Company | None]:
     row = session.execute(
         sa.select(Subscription, Company)
-        .join(Company, Company.cik == Subscription.cik)
+        .outerjoin(Company, Company.cik == Subscription.cik)
         .where(Subscription.id == subscription_id, Subscription.user_id == user.id)
     ).one_or_none()
     if row is None:
@@ -156,35 +178,38 @@ def _checked_target(user: User, channel: Channel, target: str | None) -> str:
 def _check_not_duplicate(
     session: Session,
     user: User,
-    company: Company,
+    company: Company | None,
+    query: str | None,
     channel: Channel,
     target: str,
     *,
     excluding: int | None = None,
 ) -> None:
-    query = sa.select(Subscription.id).where(
+    """Like the unique constraint: no company (or no query) equals no company (no query)."""
+    select = sa.select(Subscription.id).where(
         Subscription.user_id == user.id,
-        Subscription.cik == company.cik,
+        Subscription.cik.is_not_distinct_from(company.cik if company is not None else None),
+        Subscription.query.is_not_distinct_from(query),
         Subscription.channel == channel,
         Subscription.target == target,
     )
     if excluding is not None:
-        query = query.where(Subscription.id != excluding)
-    if session.scalars(query.limit(1)).first() is not None:
-        raise _duplicate(company.ticker)
+        select = select.where(Subscription.id != excluding)
+    if session.scalars(select.limit(1)).first() is not None:
+        raise _duplicate(_subject(company, query))
 
 
-def _commit(session: Session, company: Company | None) -> None:
-    """Commit. The unique constraint on (user_id, cik, channel, target) backs up the duplicate
-    check, e.g. against rows written outside the API: a violation is a 409 too."""
+def _commit(session: Session, subject: str | None) -> None:
+    """Commit. The unique constraint on (user_id, cik, query, channel, target) backs up the
+    duplicate check, e.g. against rows written outside the API: a violation is a 409 too."""
     try:
         session.commit()
     except sa.exc.IntegrityError as exc:
         session.rollback()
         if getattr(exc.orig, "sqlstate", None) == UNIQUE_VIOLATION:
-            if company is None:
+            if subject is None:
                 raise _error(409, "a subscription was added at the same time; try again") from None
-            raise _duplicate(company.ticker) from None
+            raise _duplicate(subject) from None
         raise
 
 
@@ -202,7 +227,7 @@ def _count(session: Session, user: User) -> int:
 def list_subscriptions(session: SessionDep, user: CurrentUser) -> list[SubscriptionOut]:
     rows = session.execute(
         sa.select(Subscription, Company)
-        .join(Company, Company.cik == Subscription.cik)
+        .outerjoin(Company, Company.cik == Subscription.cik)
         .where(Subscription.user_id == user.id)
         .order_by(Subscription.id)
     ).all()
@@ -222,25 +247,29 @@ def list_subscriptions(session: SessionDep, user: CurrentUser) -> list[Subscript
 def create_subscription(
     session: SessionDep, user: CurrentUser, body: SubscriptionCreate
 ) -> SubscriptionOut:
-    company = company_by_ticker(session, body.ticker)
-    if company is None:
-        raise _error(422, f"unknown ticker: {body.ticker}")
-    if not company.on_watchlist:
-        raise _error(
-            422,
-            f"{company.ticker} is not on the watchlist; filings (and so alerts) are only "
-            "collected for watchlist companies",
-        )
+    company = None
+    if body.ticker is not None:
+        company = company_by_ticker(session, body.ticker)
+        if company is None:
+            raise _error(422, f"unknown ticker: {body.ticker}")
+        if not company.on_watchlist:
+            raise _error(
+                422,
+                f"{company.ticker} is not on the watchlist; filings (and so alerts) are only "
+                "collected for watchlist companies",
+            )
+    query = _checked_query(session, body.query) if body.query is not None else None
     user = _lock_user(session, user)
     target = _checked_target(user, body.channel, body.target)
     if _count(session, user) >= MAX_SUBSCRIPTIONS:
         raise _error(
             409, f"you have the maximum of {MAX_SUBSCRIPTIONS} subscriptions; delete one first"
         )
-    _check_not_duplicate(session, user, company, body.channel, target)
+    _check_not_duplicate(session, user, company, query, body.channel, target)
     subscription = Subscription(
         user_id=user.id,
-        cik=company.cik,
+        cik=company.cik if company is not None else None,
+        query=query,
         form_types=body.form_types,
         form4_trades=body.form4_trades,
         form4_min_value=body.form4_min_value,
@@ -249,7 +278,7 @@ def create_subscription(
         target=target,
     )
     session.add(subscription)
-    _commit(session, company)
+    _commit(session, _subject(company, query))
     return _subscription_out(subscription, company)
 
 
@@ -303,38 +332,45 @@ def create_subscriptions(
             f"not on the watchlist (filings, and so alerts, are only collected for watchlist "
             f"companies): {', '.join(unwatched)}",
         )
+    query = _checked_query(session, body.query) if body.query is not None else None
+    # No tickers (with a query): one keyword alert on every company per destination.
+    subjects: list[Company | None] = list(companies.values()) or [None]
 
     user = _lock_user(session, user)
     targets = list(
         dict.fromkeys((d.channel, _batch_target(session, user, d)) for d in body.destinations)
     )
     existing = {
-        (subscription.cik, subscription.channel, subscription.target): subscription
+        (subscription.cik, subscription.query, subscription.channel, subscription.target): (
+            subscription
+        )
         for subscription in session.scalars(
             sa.select(Subscription).where(
-                Subscription.user_id == user.id, Subscription.cik.in_(companies)
+                Subscription.user_id == user.id,
+                Subscription.cik.in_(companies) if companies else Subscription.cik.is_(None),
             )
         )
     }
-    created: list[Subscription] = []
-    already: list[Subscription] = []
-    for company in companies.values():
+    created: list[tuple[Subscription, Company | None]] = []
+    already: list[tuple[Subscription, Company | None]] = []
+    for company in subjects:
+        cik = company.cik if company is not None else None
         for channel, target in targets:
-            if match := existing.get((company.cik, channel, target)):
-                already.append(match)
+            if match := existing.get((cik, query, channel, target)):
+                already.append((match, company))
             else:
-                created.append(
-                    Subscription(
-                        user_id=user.id,
-                        cik=company.cik,
-                        form_types=list(body.form_types),
-                        form4_trades=body.form4_trades,
-                        form4_min_value=body.form4_min_value,
-                        form8k_items=list(body.form8k_items),
-                        channel=channel,
-                        target=target,
-                    )
+                subscription = Subscription(
+                    user_id=user.id,
+                    cik=cik,
+                    query=query,
+                    form_types=list(body.form_types),
+                    form4_trades=body.form4_trades,
+                    form4_min_value=body.form4_min_value,
+                    form8k_items=list(body.form8k_items),
+                    channel=channel,
+                    target=target,
                 )
+                created.append((subscription, company))
     total = _count(session, user) + len(created)
     if total > MAX_SUBSCRIPTIONS:
         raise _error(
@@ -342,11 +378,11 @@ def create_subscriptions(
             f"that would make {total} subscriptions, over the maximum of {MAX_SUBSCRIPTIONS}; "
             "choose fewer or delete some first",
         )
-    session.add_all(created)
+    session.add_all(subscription for subscription, _ in created)
     _commit(session, None)
     return SubscriptionBatchOut(
-        created=[_subscription_out(s, companies[s.cik]) for s in created],
-        existing=[_subscription_out(s, companies[s.cik]) for s in already],
+        created=[_subscription_out(s, company) for s, company in created],
+        existing=[_subscription_out(s, company) for s, company in already],
     )
 
 
@@ -372,7 +408,15 @@ def update_subscription(
     else:
         target = _checked_target(user, channel, body.target)
     if (channel, target) != (subscription.channel, subscription.target):
-        _check_not_duplicate(session, user, company, channel, target, excluding=subscription.id)
+        _check_not_duplicate(
+            session,
+            user,
+            company,
+            subscription.query,
+            channel,
+            target,
+            excluding=subscription.id,
+        )
 
     if body.form_types is not None:
         subscription.form_types = list(body.form_types)
@@ -383,7 +427,7 @@ def update_subscription(
     if body.form8k_items is not None:
         subscription.form8k_items = list(body.form8k_items)
     subscription.channel, subscription.target = channel, target
-    _commit(session, company)
+    _commit(session, _subject(company, subscription.query))
     last = _last_deliveries(session, [subscription.id])
     return _subscription_out(subscription, company, last.get(subscription.id))
 

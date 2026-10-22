@@ -558,3 +558,70 @@ def test_subscriptions_show_their_last_delivery(sign_in: SignIn, seeded: Engine,
 
     patched = alice.patch(f"/subscriptions/{apple['id']}", json={"form_types": ["8-K"]}).json()
     assert patched["last_delivery"] == last
+
+
+def keyword_alert(client: TestClient, **fields: Any) -> httpx2.Response:
+    body = {"query": "buyback", "channel": "discord", "target": DISCORD} | fields
+    return client.post("/subscriptions", json=body)
+
+
+def test_keyword_alerts_on_every_company_or_one(sign_in: SignIn) -> None:
+    alice = sign_in("alice")
+    anywhere = keyword_alert(alice)
+    assert anywhere.status_code == 201, anywhere.text
+    assert (anywhere.json()["company"], anywhere.json()["query"]) == (None, "buyback")
+
+    conflict = keyword_alert(alice, query=" buyback ")  # the same query, once trimmed
+    assert conflict.status_code == 409
+    assert "filings mentioning \u201cbuyback\u201d" in conflict.json()["detail"]
+
+    # One company's matching filings, and its plain alert, are different subscriptions.
+    apple = keyword_alert(alice, ticker="AAPL")
+    assert apple.status_code == 201, apple.text
+    assert (apple.json()["company"]["ticker"], apple.json()["query"]) == ("AAPL", "buyback")
+    assert subscribe(alice).status_code == 201
+    listed = alice.get("/subscriptions").json()
+    assert [(s["company"] and s["company"]["ticker"], s["query"]) for s in listed] == [
+        (None, "buyback"),
+        ("AAPL", "buyback"),
+        ("AAPL", None),
+    ]
+    # A keyword alert's other settings change like any other's.
+    changed = alice.patch(f"/subscriptions/{anywhere.json()['id']}", json={"form_types": ["8-K"]})
+    assert (changed.status_code, changed.json()["form_types"]) == (200, ["8-K"])
+
+
+@pytest.mark.parametrize(
+    ("body", "message"),
+    [
+        ({"channel": "email"}, "give a ticker, a query, or both"),
+        ({"query": "the", "channel": "email"}, "has no searchable words"),
+        ({"query": "   ", "channel": "email"}, "at least 1 character"),
+        ({"query": "x" * 101, "channel": "email"}, "at most 100 characters"),
+    ],
+)
+def test_invalid_keyword_alerts_are_refused(
+    sign_in: SignIn, body: dict[str, Any], message: str
+) -> None:
+    response = sign_in("alice").post("/subscriptions", json=body)
+    assert response.status_code == 422
+    assert message in response.text
+
+
+def test_batch_makes_keyword_alerts_on_every_company(sign_in: SignIn) -> None:
+    alice = sign_in("alice")
+    response = batch(
+        alice,
+        tickers=[],
+        query="resign OR retire",
+        destinations=[{"channel": "discord", "target": DISCORD}, {"channel": "email"}],
+    )
+    assert response.status_code == 201, response.text
+    created = response.json()["created"]
+    assert [(s["company"], s["query"], s["channel"]) for s in created] == [
+        (None, "resign OR retire", "discord"),
+        (None, "resign OR retire", "email"),
+    ]
+    again = batch(alice, tickers=[], query="resign OR retire")
+    assert [s["id"] for s in again.json()["existing"]] == [created[0]["id"]]
+    assert batch(alice, tickers=[]).status_code == 422  # no tickers and no query

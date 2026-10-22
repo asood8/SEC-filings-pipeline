@@ -879,17 +879,24 @@ export interface components {
         };
         /**
          * SubscriptionBatch
-         * @description Every combination of `tickers` and `destinations`, with the same form types.
+         * @description Every combination of `tickers` and `destinations`, with the same settings; with a `query`
+         *     and no tickers, one keyword alert on every watchlist company per destination.
          */
         SubscriptionBatch: {
             /**
              * Tickers
+             * @description Optional with a `query`: none means every watchlist company.
              * @example [
              *       "AAPL",
              *       "MSFT"
              *     ]
              */
-            tickers: string[];
+            tickers?: string[];
+            /**
+             * Query
+             * @description Keyword alert: only filings whose summary matches this search, with the search's syntax ("buyback", "resign OR retire", '"credit facility"', "-routine"). Without a ticker, any watchlist company's matching filings.
+             */
+            query?: string | null;
             /**
              * Form Types
              * @description Alert only about these forms; empty means every form.
@@ -929,9 +936,15 @@ export interface components {
         SubscriptionCreate: {
             /**
              * Ticker
+             * @description The company. Optional with a `query`: without one, every watchlist company.
              * @example AAPL
              */
-            ticker: string;
+            ticker?: string | null;
+            /**
+             * Query
+             * @description Keyword alert: only filings whose summary matches this search, with the search's syntax ("buyback", "resign OR retire", '"credit facility"', "-routine"). Without a ticker, any watchlist company's matching filings.
+             */
+            query?: string | null;
             /**
              * Form Types
              * @description Alert only about these forms; empty means every form.
@@ -965,7 +978,13 @@ export interface components {
         SubscriptionOut: {
             /** Id */
             id: number;
-            company: components["schemas"]["CompanyRef"];
+            /** @description Null for a keyword alert on every watchlist company. */
+            company: components["schemas"]["CompanyRef"] | null;
+            /**
+             * Query
+             * @description A keyword alert's search; null for a plain one.
+             */
+            query: string | null;
             /**
              * Form Types
              * @description Empty means every form.

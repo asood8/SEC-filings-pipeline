@@ -382,13 +382,19 @@ class UserSession(Base):
 
 
 class Subscription(Base):
-    """Alert `target` (a webhook URL or an email address) about a company's new filings."""
+    """Alert `target` (a webhook URL or an email address) about a company's new filings, about
+    any watchlist filing matching `query` (a keyword alert), or about a company's filings
+    matching `query`."""
 
     __tablename__ = "subscriptions"
     __table_args__ = (
-        # Subscribing twice to the same thing would send every alert twice.
-        sa.UniqueConstraint("user_id", "cik", "channel", "target"),
+        # Subscribing twice to the same thing would send every alert twice. NULLS NOT DISTINCT:
+        # two keyword alerts on every company (cik NULL) with the same query are duplicates too.
+        sa.UniqueConstraint(
+            "user_id", "cik", "query", "channel", "target", postgresql_nulls_not_distinct=True
+        ),
         sa.Index("ix_subscriptions_cik", "cik"),
+        sa.CheckConstraint("cik IS NOT NULL OR query IS NOT NULL", name="subject"),
         sa.CheckConstraint(
             "form4_trades IN ('all', 'open_market', 'purchases')", name="form4_trades"
         ),
@@ -399,7 +405,11 @@ class Subscription(Base):
     user_id: Mapped[int] = mapped_column(
         sa.BigInteger, sa.ForeignKey("users.id", ondelete="CASCADE")
     )
-    cik: Mapped[int] = mapped_column(sa.BigInteger, sa.ForeignKey("companies.cik"))
+    # NULL for a keyword alert on every watchlist company.
+    cik: Mapped[int | None] = mapped_column(sa.BigInteger, sa.ForeignKey("companies.cik"))
+    # Keyword alerts: only filings whose search document (filing_search) matches this
+    # websearch_to_tsquery query ("buyback", "resign OR retire", '"credit facility"').
+    query: Mapped[str | None]
     # Empty means every form type.
     form_types: Mapped[list[str]] = mapped_column(
         ARRAY(sa.Text()), server_default=sa.text("'{}'::text[]")

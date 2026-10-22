@@ -15,13 +15,20 @@ import { Form4FilterFields, Form8KItemFields } from './AlertFilters'
 
 const CHANNEL_NAMES = { discord: 'Discord', slack: 'Slack', email: 'Email' }
 
-/** Subscriptions grouped by company, in the order they were first added. */
+/** Subscriptions grouped by company, in the order they were first added; keyword alerts on
+ * every company form a group of their own. */
 function byCompany(subscriptions: Subscription[]) {
-  const groups = new Map<number, Subscription[]>()
+  const groups = new Map<number | 'any', Subscription[]>()
   for (const s of subscriptions) {
-    groups.set(s.company.cik, [...(groups.get(s.company.cik) ?? []), s])
+    const key = s.company?.cik ?? 'any'
+    groups.set(key, [...(groups.get(key) ?? []), s])
   }
   return [...groups.values()]
+}
+
+/** "“buyback”" for a keyword alert, for labels and the list. */
+function quoted(query: string) {
+  return `\u201c${query}\u201d`
 }
 
 function formsLabel(forms: string[]) {
@@ -83,15 +90,21 @@ function Groups({
         {byCompany(subscriptions).map((group) => {
           const { company } = group[0]
           return (
-            <li key={company.cik} className={styles.item}>
+            <li key={company?.cik ?? 'any'} className={styles.item}>
               <div>
-                <Link
-                  to={`/companies/${company.ticker}`}
-                  className={styles.ticker}
-                >
-                  {company.ticker}
-                </Link>{' '}
-                {company.name}
+                {company ? (
+                  <>
+                    <Link
+                      to={`/companies/${company.ticker}`}
+                      className={styles.ticker}
+                    >
+                      {company.ticker}
+                    </Link>{' '}
+                    {company.name}
+                  </>
+                ) : (
+                  <strong>Any watchlist company</strong>
+                )}
               </div>
               <ul className={styles.destinations}>
                 {group.map((subscription) => (
@@ -122,7 +135,13 @@ function Destination({ subscription, onRemove, removing }: DestinationProps) {
   const editButton = useRef<HTMLButtonElement>(null)
   const update = useUpdateSubscription()
   const channel = CHANNEL_NAMES[subscription.channel]
-  const label = `${subscription.company.ticker} ${channel} alert`
+  const subject = [
+    subscription.company?.ticker,
+    subscription.query && quoted(subscription.query),
+  ]
+    .filter(Boolean)
+    .join(' ')
+  const label = `${subject} ${channel} alert`
   const filters = [
     form4FilterLabel(subscription),
     form8kItemsLabel(subscription),
@@ -162,6 +181,9 @@ function Destination({ subscription, onRemove, removing }: DestinationProps) {
       <div className={styles.row}>
         <span>
           {channel} <span className={styles.target}>{subscription.target}</span>{' '}
+          {subscription.query && (
+            <span>mentioning {quoted(subscription.query)}</span>
+          )}{' '}
           <span className="muted">({formsLabel(subscription.form_types)})</span>
           {filters && <span className="muted"> · {filters}</span>}
         </span>
@@ -235,7 +257,8 @@ function LastDelivery({ subscription }: { subscription: Subscription }) {
     <Link to={`/filings/${last.accession_no}`}>
       {when}{' '}
       <span className="visually-hidden">
-        (the {subscription.company.ticker} filing alerted)
+        (the {subscription.company ? `${subscription.company.ticker} ` : ''}
+        filing alerted)
       </span>
     </Link>
   )

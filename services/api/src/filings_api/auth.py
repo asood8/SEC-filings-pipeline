@@ -94,17 +94,18 @@ def upsert_user(session: Session, identity: GoogleIdentity) -> User:
 
 def _move_email_alerts(session: Session, user_id: int, email: str) -> None:
     """Email alerts only go to the account's own address, so they follow it. That leaves one
-    email subscription per company; extras from older data (to other addresses) are merged into
-    the first rather than colliding with it on the unique constraint."""
+    email subscription per company and query (keyword alerts); extras from older data (to other
+    addresses) are merged into the first rather than colliding with it on the unique
+    constraint."""
     subscriptions = session.scalars(
         sa.select(Subscription)
         .where(Subscription.user_id == user_id, Subscription.channel == Channel.EMAIL)
         .order_by(Subscription.id)
         .with_for_update()
     ).all()
-    kept: dict[int, Subscription] = {}
+    kept: dict[tuple[int | None, str | None], Subscription] = {}
     for subscription in subscriptions:
-        first = kept.setdefault(subscription.cik, subscription)
+        first = kept.setdefault((subscription.cik, subscription.query), subscription)
         if first is not subscription:
             # Empty form_types means every form type.
             both = first.form_types and subscription.form_types

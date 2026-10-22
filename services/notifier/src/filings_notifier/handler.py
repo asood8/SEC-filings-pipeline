@@ -40,6 +40,7 @@ from filings_common.db import (
     Channel,
     Company,
     Filing,
+    FilingSearch,
     FilingStatus,
     Form4Filing,
     Form4Transaction,
@@ -153,7 +154,16 @@ class NotificationHandler:
                 Subscription.form8k_items,
             )
             .where(
-                Subscription.cik.in_(ciks),
+                # A company's subscriptions, and keyword alerts on every company (cik NULL).
+                Subscription.cik.in_(ciks) | Subscription.cik.is_(None),
+                # Keyword alerts: the filing's search document must match the query.
+                Subscription.query.is_(None)
+                | sa.exists().where(
+                    FilingSearch.accession_no == alert.accession_no,
+                    FilingSearch.tsv.op("@@")(
+                        sa.func.websearch_to_tsquery("english", Subscription.query)
+                    ),
+                ),
                 Subscription.created_at <= discovered_at,
                 # No form types means all of them; otherwise the filing's must be listed.
                 (sa.func.cardinality(Subscription.form_types) == 0)

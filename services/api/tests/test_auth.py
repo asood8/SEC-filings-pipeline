@@ -169,17 +169,28 @@ def test_email_change_merges_older_email_subscriptions(
                 user_id=user["id"], cik=789019, channel=Channel.EMAIL, target="ada@example.com"
             )
         )
+        # Keyword alerts merge by query: the two "buyback" ones become one; "resign" stays.
+        for target, query in [
+            ("ada@example.com", "buyback"),
+            ("ada.work@example.com", "buyback"),
+            ("ada@example.com", "resign"),
+        ]:
+            session.add(
+                Subscription(user_id=user["id"], query=query, channel=Channel.EMAIL, target=target)
+            )
 
     sign_in(client, google.token(email="ada@newmail.example"))
     with session_factory(seeded)() as session:
         rows = session.execute(
-            sa.select(Subscription.cik, Subscription.target, Subscription.form_types).order_by(
-                Subscription.cik
-            )
+            sa.select(
+                Subscription.cik, Subscription.query, Subscription.target, Subscription.form_types
+            ).order_by(Subscription.cik.nulls_last(), Subscription.query)
         ).all()
     assert [tuple(r) for r in rows] == [
-        (320193, "ada@newmail.example", ["10-K", "4", "8-K"]),
-        (789019, "ada@newmail.example", []),
+        (320193, None, "ada@newmail.example", ["10-K", "4", "8-K"]),
+        (789019, None, "ada@newmail.example", []),
+        (None, "buyback", "ada@newmail.example", []),
+        (None, "resign", "ada@newmail.example", []),
     ]
 
 

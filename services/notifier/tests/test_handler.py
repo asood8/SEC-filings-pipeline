@@ -25,6 +25,7 @@ from filings_common.db import (
 )
 from filings_common.events import FilingReady, Topic
 from filings_common.parsed import InvestorCall
+from filings_common.search import SearchDocument, upsert_document
 from filings_notifier.channels import Alert, DeliveryError, PermanentDeliveryError
 from filings_notifier.handler import NotificationHandler, PendingAlertsError
 
@@ -487,3 +488,83 @@ def test_8k_item_filters_choose_which_subscriptions_are_alerted(
     assert officers in sent
     assert earnings not in sent  # it reports 5.02, not 2.02
     assert [target for target, _ in fakes[Channel.EMAIL].sent] == ["ops@example.com"]  # every 8-K
+
+
+def test_keyword_alerts_match_the_filings_search_document(
+    clean_db: Engine, world: dict[str, int]
+) -> None:
+    accession_no = "0000320193-26-000092"
+    early = datetime(2026, 1, 1, tzinfo=UTC)
+    hooks = {
+        "any buyback": "https://discord.com/api/webhooks/7/any-buyback",
+        "apple buyback": "https://discord.com/api/webhooks/8/apple-buyback",
+        "any dividend": "https://discord.com/api/webhooks/9/any-dividend",
+        "other company": "https://discord.com/api/webhooks/10/lennar-buyback",
+    }
+    with session_factory(clean_db).begin() as session:
+        user_id = session.scalar(sa.select(User.id).where(User.email == "ops@example.com"))
+        session.add(
+            Filing(
+                accession_no=accession_no,
+                cik=320193,
+                form_type="8-K",
+                filed_at=date(2026, 10, 1),
+                primary_doc_url="https://www.sec.gov/aapl-buyback.htm",
+                raw_object_key="filings/aapl-buyback.htm",
+                status=FilingStatus.READY,
+            )
+        )
+        session.flush()
+        summary = Summary(
+            accession_no=accession_no,
+            provider="gemini",
+            model="gemini-flash",
+            prompt_version=1,
+            summary={
+                "headline": "Apple authorizes a $110 billion buyback",
+                "summary": "Apple's board authorized repurchasing up to $110 billion of stock.",
+                "key_points": [],
+            },
+        )
+        session.add(summary)
+        session.flush()
+        upsert_document(
+            session,
+            accession_no,
+            summary.id,
+            SearchDocument(
+                title="Apple authorizes a $110 billion buyback",
+                company="Apple Inc.",
+                body="Apple's board authorized repurchasing up to $110 billion of stock.",
+                ticker="AAPL",
+            ),
+        )
+        for name, cik, query in [
+            ("any buyback", None, "buybacks"),  # stemmed: matches "buyback"
+            ("apple buyback", 320193, "buyback OR dividend"),
+            ("any dividend", None, "dividend"),
+            ("other company", 920760, "buyback"),
+        ]:
+            session.add(
+                Subscription(
+                    user_id=user_id,
+                    cik=cik,
+                    query=query,
+                    channel=Channel.DISCORD,
+                    target=hooks[name],
+                    created_at=early,
+                )
+            )
+        summary_id = summary.id
+    fakes = senders()
+    event = FilingReady(
+        accession_no=accession_no, cik=320193, form_type="8-K", summary_id=summary_id
+    )
+    NotificationHandler(session_factory(clean_db), fakes)(
+        Received(Topic.FILINGS_READY, 0, 0, accession_no, event.model_dump_json().encode())
+    )
+    sent = {target for target, _ in fakes[Channel.DISCORD].sent}
+    assert hooks["any buyback"] in sent
+    assert hooks["apple buyback"] in sent
+    assert hooks["any dividend"] not in sent  # the filing doesn't mention it
+    assert hooks["other company"] not in sent  # a keyword alert on another company

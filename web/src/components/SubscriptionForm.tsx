@@ -52,6 +52,7 @@ export function SubscriptionForm({
     initialTicker ? [initialTicker.toUpperCase()] : [],
   )
   const [filter, setFilter] = useState('')
+  const [query, setQuery] = useState('')
   const [channels, setChannels] = useState({
     discord: false,
     slack: false,
@@ -67,7 +68,9 @@ export function SubscriptionForm({
       c.name.toLowerCase().includes(needle),
   )
   const destinations = Object.values(channels).filter(Boolean).length
-  const total = tickers.length * destinations
+  const words = query.trim()
+  // With words and no companies, one keyword alert on every company per destination.
+  const total = (tickers.length || (words ? 1 : 0)) * destinations
 
   function toggleTicker(ticker: string) {
     setTickers((current) =>
@@ -96,6 +99,7 @@ export function SubscriptionForm({
     create.mutate(
       {
         tickers,
+        query: words || null,
         form_types: data.getAll('form') as SubscriptionBatchForms,
         ...readForm4Filters(data),
         form8k_items: readForm8KItems(data),
@@ -111,6 +115,7 @@ export function SubscriptionForm({
           )
           form.reset()
           setTickers([])
+          setQuery('')
           setChannels({ discord: false, slack: false, email: false })
         },
       },
@@ -145,6 +150,23 @@ export function SubscriptionForm({
           ))}
         </div>
       </fieldset>
+
+      <label>
+        Only filings mentioning (optional)
+        <input
+          type="search"
+          name="query"
+          maxLength={100}
+          placeholder='buyback, "credit facility", resign OR retire'
+          value={query}
+          onChange={(event) => setQuery(event.target.value)}
+        />
+      </label>
+      <span className="muted">
+        A keyword alert: only filings whose summary matches, with the
+        search&apos;s syntax. With no company chosen, any watchlist
+        company&apos;s.
+      </span>
 
       <fieldset>
         <legend>Forms (none checked means all)</legend>
@@ -198,7 +220,7 @@ export function SubscriptionForm({
           {create.isPending
             ? 'Saving…'
             : total === 0
-              ? 'Choose companies and where to send'
+              ? 'Choose companies or words, and where to send'
               : `Add ${total} alert${total === 1 ? '' : 's'}`}
         </button>
       </p>

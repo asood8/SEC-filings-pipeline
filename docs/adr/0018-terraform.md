@@ -1,6 +1,6 @@
 # ADR-0018: Infrastructure as code with Terraform
 
-- **Status:** Proposed
+- **Status:** Accepted (2026-10-22)
 - **Date:** 2026-10-07
 
 ## Context

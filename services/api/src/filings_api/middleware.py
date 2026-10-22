@@ -1,4 +1,5 @@
-"""Per-client rate limiting and response caching, both shared through Redis, and a CSRF check.
+"""Per-client rate limiting and response caching, both shared through Redis, a CSRF check, and a
+limit on request body size.
 
 Rate limiting and caching fail open: if Redis is unreachable, requests are served uncached and
 unlimited rather than failing. After an error, Redis is skipped for a few seconds, so an outage
@@ -14,7 +15,9 @@ from urllib.parse import urlencode, urlsplit
 import redis
 from fastapi import Request, Response
 from fastapi.responses import JSONResponse
+from starlette.datastructures import Headers
 from starlette.middleware.base import BaseHTTPMiddleware, RequestResponseEndpoint
+from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
 from filings_api.auth import SESSION_COOKIE_NAMES
 from filings_common.ratelimit import RedisRateLimit
@@ -30,6 +33,7 @@ UNCACHED_PATHS = PROBE_PATHS | {"/openapi.json", "/docs", "/redoc"}
 PRIVATE_PATH_PREFIXES = ("/auth", "/me", "/subscriptions")
 CACHE_PREFIX = "api-cache:v1"
 STATE_CHANGING_METHODS = frozenset({"POST", "PUT", "PATCH", "DELETE"})
+MAX_BODY_BYTES = 64 * 1024  # the largest real body, a batch of alerts, is a few KB
 
 
 class RedisBackoff:
@@ -160,9 +164,9 @@ def origin_allowed(request: Request, origin: str) -> bool:
     return origin in allowed or (bool(host) and urlsplit(origin).netloc.lower() == host)
 
 
-def _has_body(request: Request) -> bool:
-    length = request.headers.get("content-length", "").strip()
-    return "transfer-encoding" in request.headers or length not in {"", "0"}
+def _has_body(headers: Headers) -> bool:
+    length = headers.get("content-length", "").strip()
+    return "transfer-encoding" in headers or length not in {"", "0"}
 
 
 def _is_json(content_type: str | None) -> bool:
@@ -186,9 +190,58 @@ class CsrfMiddleware(BaseHTTPMiddleware):
             origin = request.headers.get("origin")
             if origin is not None and not origin_allowed(request, origin):
                 return JSONResponse({"detail": "origin not allowed"}, status_code=403)
-            if _has_body(request) and not _is_json(request.headers.get("content-type")):
+            if _has_body(request.headers) and not _is_json(request.headers.get("content-type")):
                 return JSONResponse({"detail": "request body must be JSON"}, status_code=415)
         return await call_next(request)
+
+
+class BodySizeLimitMiddleware:
+    """Refuses a request body over `max_bytes` (413) before the app reads it.
+
+    Without a limit, the API reads a whole body into memory and then parses it, so one request as
+    large as the proxy passes (100 MB through Cloudflare) could get the pod killed for running out
+    of memory. A declared Content-Length is checked first; a chunked body is counted as it
+    arrives. Plain ASGI, because a BaseHTTPMiddleware can't hold the body back from the app.
+    """
+
+    def __init__(self, app: ASGIApp, max_bytes: int = MAX_BODY_BYTES) -> None:
+        self.app = app
+        self.max_bytes = max_bytes
+
+    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        if scope["type"] != "http" or not _has_body(headers := Headers(scope=scope)):
+            await self.app(scope, receive, send)
+            return
+        length = headers.get("content-length", "").strip()
+        if length.isdigit() and int(length) > self.max_bytes:
+            await self._refuse(scope, receive, send)
+            return
+        body = bytearray()
+        while True:
+            message = await receive()
+            if message["type"] != "http.request":
+                return  # the client went away
+            body += message.get("body", b"")
+            if len(body) > self.max_bytes:
+                await self._refuse(scope, receive, send)
+                return
+            if not message.get("more_body", False):
+                break
+        replayed = False
+
+        async def replay() -> Message:
+            """The body, read already, then whatever comes next (a disconnect)."""
+            nonlocal replayed
+            if replayed:
+                return await receive()
+            replayed = True
+            return {"type": "http.request", "body": bytes(body), "more_body": False}
+
+        await self.app(scope, replay, send)
+
+    async def _refuse(self, scope: Scope, receive: Receive, send: Send) -> None:
+        response = JSONResponse({"detail": "request body too large"}, status_code=413)
+        await response(scope, receive, send)
 
 
 # Sent with every response. The API serves JSON (and its own docs page), so none of these limits a

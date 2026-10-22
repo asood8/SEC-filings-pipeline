@@ -11,6 +11,7 @@ the alert (a deleted webhook, a refused recipient: retrying would never help).
 
 import logging
 import smtplib
+import ssl
 from dataclasses import dataclass
 from datetime import date
 from email.message import EmailMessage
@@ -122,7 +123,8 @@ class SlackSender:
             f"filed {alert.filed_at.isoformat()} · {DISCLAIMER}"
         )
         payload = {
-            "text": f"[{alert.ticker}] {alert.headline} {alert.url}",  # notification fallback
+            # The notification's text, also read as markup: escaped like the blocks.
+            "text": f"[{alert.ticker}] {_slack_escape(alert.headline)} {alert.url}",
             "blocks": [
                 {
                     "type": "section",
@@ -183,7 +185,9 @@ class SmtpEmailSender:
             raise PermanentDeliveryError("not a valid email address")
         try:
             with smtplib.SMTP(self._host, self._port, timeout=self._timeout) as smtp:
-                smtp.starttls()
+                # A verifying context: smtplib's default accepts any certificate, which would hand
+                # the credentials and the alert to anyone on the network path.
+                smtp.starttls(context=ssl.create_default_context())
                 smtp.login(self._username, self._password)
                 smtp.send_message(_email_message(target, alert, self._sender))
         except smtplib.SMTPRecipientsRefused as exc:

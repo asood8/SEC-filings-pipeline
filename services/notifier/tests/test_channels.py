@@ -1,6 +1,7 @@
 import json
 import logging
 import smtplib
+import ssl
 from dataclasses import replace
 from datetime import UTC, date, datetime
 from typing import Any, ClassVar
@@ -70,8 +71,16 @@ def test_discord_payload_never_mentions_anyone() -> None:
 def test_slack_payload_escapes_markup() -> None:
     transport, requests = recorder(httpx2.Response(200, text="ok"))
     SlackSender(transport=transport).send(SLACK, ALERT)
-    section = json.loads(requests[0].content)["blocks"][0]["text"]["text"]
+    payload = json.loads(requests[0].content)
+    section = payload["blocks"][0]["text"]["text"]
     assert section.startswith(f"*<{ALERT.url}|Apple names &lt;new&gt; CFO &amp; more @everyone>*")
+    assert payload["text"].startswith("[AAPL] Apple names &lt;new&gt; CFO &amp; more")
+
+
+def test_slack_fallback_text_cant_mention_the_channel() -> None:
+    transport, requests = recorder(httpx2.Response(200, text="ok"))
+    SlackSender(transport=transport).send(SLACK, replace(ALERT, headline="Results <!channel>"))
+    assert json.loads(requests[0].content)["text"].startswith("[AAPL] Results &lt;!channel&gt; ")
 
 
 @pytest.mark.parametrize(
@@ -128,6 +137,7 @@ def test_the_log_backend_masks_the_recipient(caplog: pytest.LogCaptureFixture) -
 class FakeSmtp:
     sent: ClassVar[list[Any]] = []
     refuse: ClassVar[bool] = False
+    tls: ClassVar[ssl.SSLContext | None] = None
 
     def __init__(self, host: str, port: int, timeout: float) -> None:
         self.host = host
@@ -138,8 +148,8 @@ class FakeSmtp:
     def __exit__(self, *exc: object) -> None:
         return None
 
-    def starttls(self) -> None:
-        pass
+    def starttls(self, *, context: ssl.SSLContext | None = None) -> None:
+        FakeSmtp.tls = context
 
     def login(self, username: str, password: str) -> None:
         pass
@@ -160,6 +170,9 @@ def test_smtp_email(monkeypatch: pytest.MonkeyPatch) -> None:
     [message] = FakeSmtp.sent
     assert message["Subject"] == f"[AAPL] {ALERT.headline}"
     assert ALERT.url in message.get_content()
+    # The mail server's certificate and name are checked (smtplib's default checks neither).
+    assert FakeSmtp.tls is not None
+    assert (FakeSmtp.tls.verify_mode, FakeSmtp.tls.check_hostname) == (ssl.CERT_REQUIRED, True)
 
     FakeSmtp.refuse = True
     with pytest.raises(PermanentDeliveryError, match=r"recipient refused \(SMTP 550\)") as error:

@@ -3,6 +3,8 @@ import { type FormEvent, useState } from 'react'
 import { useCreateSubscriptions } from '../api/account'
 import type { Destination, Subscription, User } from '../api/client'
 import { watchlistQuery } from '../api/queries'
+import { readForm4Filters } from '../lib/form4Filters'
+import { Form4FilterFields } from './Form4Filters'
 import { ErrorMessage } from './QueryStatus'
 import styles from './Subscriptions.module.css'
 
@@ -95,6 +97,7 @@ export function SubscriptionForm({
       {
         tickers,
         form_types: data.getAll('form') as SubscriptionBatchForms,
+        ...readForm4Filters(data),
         destinations: chosen,
       },
       {
@@ -152,6 +155,11 @@ export function SubscriptionForm({
           <input type="checkbox" name="form" value="8-K" /> Current reports
           (8-K)
         </label>
+      </fieldset>
+
+      <fieldset>
+        <legend>Which insider trades</legend>
+        <Form4FilterFields />
       </fieldset>
 
       <fieldset>

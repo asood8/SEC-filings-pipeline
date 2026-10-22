@@ -56,6 +56,8 @@ const APPLE_ALERT: Subscription = {
   id: 7,
   company: { cik: 320193, ticker: 'AAPL', name: 'Apple Inc.' },
   form_types: [],
+  form4_trades: 'all',
+  form4_min_value: null,
   channel: 'discord',
   target: 'https://discord.com/api/webhooks/123/…abcd',
   created_at: '2026-10-06T00:00:00Z',
@@ -150,6 +152,8 @@ describe('AlertsPage', () => {
     expect(sent).toEqual({
       tickers: ['MSFT', 'AAPL'],
       form_types: ['8-K'],
+      form4_trades: 'all', // every Form 4 unless a filter is chosen
+      form4_min_value: null,
       destinations: [
         { channel: 'discord', target_from: 7 },
         {
@@ -217,7 +221,9 @@ describe('AlertsPage', () => {
       'GET /subscriptions': () => subscriptions,
       'PATCH /subscriptions/7': async (_url, request) => {
         patched = await request.json()
-        subscriptions = [{ ...subscriptions[0], form_types: ['4'] }]
+        subscriptions = [
+          { ...subscriptions[0], ...(patched as Partial<Subscription>) },
+        ]
         return subscriptions[0]
       },
       '/companies': () => WATCHLIST,
@@ -229,22 +235,37 @@ describe('AlertsPage', () => {
     )
     await userEvent.click(
       screen.getByRole('button', {
-        name: 'Edit the forms for the AAPL Discord alert',
+        name: 'Edit the forms and filters for the AAPL Discord alert',
       }),
     )
     const form = screen.getByRole('form', {
       name: 'Forms for the AAPL Discord alert',
     })
     await userEvent.click(within(form).getByLabelText('Form 4'))
+    await userEvent.selectOptions(
+      within(form).getByLabelText('Insider trades (Form 4)'),
+      'Open-market purchases only',
+    )
+    await userEvent.type(
+      within(form).getByLabelText(/Only when those trades total at least/),
+      '100000',
+    )
     await userEvent.click(within(form).getByRole('button', { name: 'Save' }))
     expect(await screen.findByText('(Form 4)')).toBeInTheDocument()
-    expect(patched).toEqual({ form_types: ['4'] })
+    expect(
+      screen.getByText('· Form 4: purchases only, $100,000 or more'),
+    ).toBeInTheDocument()
+    expect(patched).toEqual({
+      form_types: ['4'],
+      form4_trades: 'purchases',
+      form4_min_value: 100000,
+    })
     expect(
       screen.queryByRole('form', { name: 'Forms for the AAPL Discord alert' }),
     ).not.toBeInTheDocument()
     // Focus returns to the button that opened the form.
     const edit = screen.getByRole('button', {
-      name: 'Edit the forms for the AAPL Discord alert',
+      name: 'Edit the forms and filters for the AAPL Discord alert',
     })
     expect(edit).toHaveFocus()
     expect(edit).toHaveAttribute('aria-expanded', 'false')
@@ -259,7 +280,7 @@ describe('AlertsPage', () => {
     renderRoute('/alerts')
 
     const edit = await screen.findByRole('button', {
-      name: 'Edit the forms for the AAPL Discord alert',
+      name: 'Edit the forms and filters for the AAPL Discord alert',
     })
     await userEvent.click(edit)
     expect(edit).toHaveAttribute('aria-expanded', 'true')

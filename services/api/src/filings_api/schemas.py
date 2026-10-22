@@ -5,6 +5,7 @@ from typing import Annotated, Literal
 
 from pydantic import AfterValidator, BaseModel, ConfigDict, Field
 
+from filings_common.alert_filters import Form4Trades
 from filings_common.db import Channel, FilingStatus
 from filings_common.parsed import CallKind
 
@@ -290,6 +291,15 @@ _TARGET_HELP = (
     "A Discord or Slack webhook URL. For email, your account's address: the default, and the only "
     "one allowed."
 )
+_FORM4_TRADES_HELP = (
+    "Form 4s only: alert about every one (all), only those reporting open-market buys or sells "
+    "(open_market, SEC codes P and S), or only purchases (purchases). Other forms ignore it."
+)
+_FORM4_MIN_VALUE_HELP = (
+    "Form 4s only: alert only when those open-market trades total at least this many US dollars "
+    "(shares x price). A trade priced only in a footnote counts as meeting it. Null for no minimum."
+)
+Form4MinValue = Annotated[int, Field(ge=1, le=10**12)]
 
 
 class SubscriptionCreate(BaseModel):
@@ -297,6 +307,8 @@ class SubscriptionCreate(BaseModel):
 
     ticker: str = Field(min_length=1, max_length=20, examples=["AAPL"])
     form_types: FormTypes = Field(default_factory=list, description=_FORM_TYPES_HELP)
+    form4_trades: Form4Trades = Field(default="all", description=_FORM4_TRADES_HELP)
+    form4_min_value: Form4MinValue | None = Field(default=None, description=_FORM4_MIN_VALUE_HELP)
     channel: Channel
     target: str | None = Field(default=None, max_length=500, description=_TARGET_HELP)
 
@@ -307,6 +319,11 @@ class SubscriptionUpdate(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     form_types: FormTypes | None = Field(default=None, description=_FORM_TYPES_HELP)
+    form4_trades: Form4Trades | None = Field(default=None, description=_FORM4_TRADES_HELP)
+    form4_min_value: Form4MinValue | None = Field(
+        default=None,
+        description=_FORM4_MIN_VALUE_HELP + " To remove a minimum, send null explicitly.",
+    )
     channel: Channel | None = Field(
         default=None,
         description="A new channel needs a new `target`, except email, which uses your address.",
@@ -335,6 +352,8 @@ class SubscriptionOut(BaseModel):
     id: int
     company: CompanyRef
     form_types: list[str] = Field(description="Empty means every form.")
+    form4_trades: Form4Trades = Field(description=_FORM4_TRADES_HELP)
+    form4_min_value: int | None = Field(description=_FORM4_MIN_VALUE_HELP)
     channel: Channel
     target: str = Field(
         description=(
@@ -373,6 +392,8 @@ class SubscriptionBatch(BaseModel):
         min_length=1, max_length=25, examples=[["AAPL", "MSFT"]]
     )
     form_types: FormTypes = Field(default_factory=list, description=_FORM_TYPES_HELP)
+    form4_trades: Form4Trades = Field(default="all", description=_FORM4_TRADES_HELP)
+    form4_min_value: Form4MinValue | None = Field(default=None, description=_FORM4_MIN_VALUE_HELP)
     destinations: list[Destination] = Field(min_length=1, max_length=5)
 
 

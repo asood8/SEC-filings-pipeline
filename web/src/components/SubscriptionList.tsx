@@ -5,6 +5,8 @@ import type { Subscription } from '../api/client'
 import { formatDateTime, formLabel } from '../lib/format'
 import { ErrorMessage } from './QueryStatus'
 import styles from './Subscriptions.module.css'
+import { form4FilterLabel, readForm4Filters } from '../lib/form4Filters'
+import { Form4FilterFields } from './Form4Filters'
 
 const CHANNEL_NAMES = { discord: 'Discord', slack: 'Slack', email: 'Email' }
 
@@ -116,6 +118,7 @@ function Destination({ subscription, onRemove, removing }: DestinationProps) {
   const update = useUpdateSubscription()
   const channel = CHANNEL_NAMES[subscription.channel]
   const label = `${subscription.company.ticker} ${channel} alert`
+  const filters = form4FilterLabel(subscription)
 
   /** Closes the edit form, putting focus back on the button that opened it. */
   function close() {
@@ -125,11 +128,10 @@ function Destination({ subscription, onRemove, removing }: DestinationProps) {
 
   function save(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
-    const forms = new FormData(event.currentTarget).getAll('form') as (
-      '4' | '8-K'
-    )[]
+    const data = new FormData(event.currentTarget)
+    const forms = data.getAll('form') as ('4' | '8-K')[]
     update.mutate(
-      { id: subscription.id, form_types: forms },
+      { id: subscription.id, form_types: forms, ...readForm4Filters(data) },
       { onSuccess: close },
     )
   }
@@ -146,6 +148,7 @@ function Destination({ subscription, onRemove, removing }: DestinationProps) {
         <span>
           {channel} <span className={styles.target}>{subscription.target}</span>{' '}
           <span className="muted">({formsLabel(subscription.form_types)})</span>
+          {filters && <span className="muted"> · {filters}</span>}
         </span>
         <span className={styles.actions}>
           <button
@@ -153,9 +156,9 @@ function Destination({ subscription, onRemove, removing }: DestinationProps) {
             type="button"
             onClick={() => setEditing(!editing)}
             aria-expanded={editing}
-            aria-label={`Edit the forms for the ${label}`}
+            aria-label={`Edit the forms and filters for the ${label}`}
           >
-            Edit forms
+            Edit
           </button>
           <button
             type="button"
@@ -194,6 +197,10 @@ function Destination({ subscription, onRemove, removing }: DestinationProps) {
             8-K
           </label>
           <span className="muted">None checked means all forms.</span>
+          <Form4FilterFields
+            trades={subscription.form4_trades}
+            minValue={subscription.form4_min_value}
+          />
           <button type="submit" disabled={update.isPending}>
             {update.isPending ? 'Saving…' : 'Save'}
           </button>

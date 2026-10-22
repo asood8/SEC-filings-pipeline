@@ -187,6 +187,17 @@ resource "oci_core_instance" "k3s" {
     are_legacy_imds_endpoints_disabled = true
   }
 
+  # Oracle judges idleness by CPU, network, and memory, and sees memory only through the Oracle
+  # Cloud Agent's monitoring plugin. Memory is what keeps this VM above the 20% line (the stack
+  # holds about half of it; CPU is idle between 8-Ks), so the plugin must be on.
+  agent_config {
+    is_monitoring_disabled = false
+    plugins_config {
+      name          = "Compute Instance Monitoring"
+      desired_state = "ENABLED"
+    }
+  }
+
   # Restart the VM after an infrastructure failure.
   availability_config {
     recovery_action = "RESTORE_INSTANCE"

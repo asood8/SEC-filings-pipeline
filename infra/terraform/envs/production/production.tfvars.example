@@ -29,7 +29,7 @@ ssh_authorized_keys = "ssh-ed25519 AAAA...replace-me you@laptop"
 
 # --- Cloudflare ---
 cloudflare_account_id = "0123456789abcdef0123456789abcdef"
-domain                = "example.com" # the zone must already be active in the account
+# domain              = "example.com" # optional: leave unset until the zone is active in the account
 # api_subdomain = "api"
 # web_subdomain = "app"
 # r2_location   = "enam"   # nearest to the VM: apac, eeur, enam, weur, wnam, oc

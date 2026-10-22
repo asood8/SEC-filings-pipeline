@@ -538,6 +538,13 @@ loaded models and the data stores should keep memory above 20% of 12 GB (their r
 up to 4.5 GiB); the risk is a VM that is stopped, or whose workloads are down, for a week.
 
 - **Check:** the OCI console, Compute, Instances, the instance, Metrics; or `kubectl top node`.
+  Memory utilization must have data there: Oracle sees memory only through the Oracle Cloud
+  Agent's monitoring plugin, which Terraform enables. If the chart is empty after the first boot,
+  the agent isn't running (`sudo snap services oracle-cloud-agent` on the VM), and the VM's
+  safety margin is gone: CPU and network are usually under 20%.
+- **Not a keep-alive job:** burning CPU to look busy would take the cores the LLM needs. Memory
+  is the margin, and the "Pipeline service not reporting" alert says within minutes if the
+  workloads that hold it stop, long before the 7 days.
 - **Reclaimed or stopped:** start it from the console (or `oci compute instance action --action
   START --instance-id "$(terraform output -raw vm_instance_id)"` with the OCI CLI). k3s starts at
   boot and Argo CD resyncs; the boot and block volumes are kept.

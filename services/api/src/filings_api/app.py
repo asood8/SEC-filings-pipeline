@@ -20,6 +20,7 @@ from filings_api.embedding_cache import QueryEmbeddingCache
 from filings_api.google import GoogleIdTokenVerifier, GoogleSigningKeys
 from filings_api.middleware import (
     PROBE_PATHS,
+    BodySizeLimitMiddleware,
     CacheMiddleware,
     CsrfMiddleware,
     RateLimitMiddleware,
@@ -177,9 +178,11 @@ def create_app(
     app.state.cookie_secure = settings.cookie_secure
     app.state.allowed_origins = frozenset(settings.cors_origins)
     # Starlette runs the last-added middleware first, so requests pass through these bottom-up:
-    # CORS, then the rate limit, the CSRF check, and the cache.
+    # CORS, then the rate limit, the body size limit, the CSRF check, and the cache. An oversized
+    # body still spends the client's rate limit.
     app.add_middleware(CacheMiddleware)
     app.add_middleware(CsrfMiddleware)
+    app.add_middleware(BodySizeLimitMiddleware)
     app.add_middleware(RateLimitMiddleware)
     # CORS goes outermost, deliberately:
     # - It answers preflight requests itself, so they don't spend the client's rate limit.

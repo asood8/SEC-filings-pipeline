@@ -150,7 +150,8 @@ def _email_message(target: str, alert: Alert, sender: str) -> EmailMessage:
     message = EmailMessage()
     message["From"] = sender
     message["To"] = target
-    message["Subject"] = f"[{alert.ticker}] {alert.headline}"
+    # One line: a line break would make the header invalid (FilingSummary already removes them).
+    message["Subject"] = " ".join(f"[{alert.ticker}] {alert.headline}".split())
     points = "\n".join(f"- {p}" for p in alert.key_points)
     call = f"{alert.investor_call.describe()}\n\n" if alert.investor_call else ""
     message.set_content(

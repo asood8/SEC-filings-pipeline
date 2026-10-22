@@ -103,6 +103,21 @@ describe('FilingPage', () => {
     expect(await screen.findByText(/Check these numbers/)).toHaveTextContent(
       '9.9 billion',
     )
+    expect(screen.queryByText(/Check these names/)).not.toBeInTheDocument()
+  })
+
+  it('flags names the filing never uses', async () => {
+    const detail = filingDetail()
+    mockApi({
+      '/filings/0000320193-26-000001': () => ({
+        ...detail,
+        summary: { ...detail.summary!, ungrounded_names: ['Whitfield'] },
+      }),
+    })
+    renderRoute('/filings/0000320193-26-000001')
+    expect(await screen.findByText(/Check these names/)).toHaveTextContent(
+      "Check these names against the original: Whitfield. The summary uses them, but the filing's text doesn't.",
+    )
   })
 
   it('explains a Form 4 filed about another company', async () => {

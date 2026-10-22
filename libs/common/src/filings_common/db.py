@@ -270,6 +270,9 @@ class Summary(Base):
     # Numbers in an LLM summary not found in the text the model was given (grounding check):
     # [] = all found; NULL = not checked (template summaries compute totals by design).
     ungrounded_numbers: Mapped[list[str] | None] = mapped_column(ARRAY(sa.Text()))
+    # Capitalized words in an LLM summary the text never uses (an invented name, say); NULL =
+    # not checked (template summaries, and those written before the check, 2026-10-22).
+    ungrounded_names: Mapped[list[str] | None] = mapped_column(ARRAY(sa.Text()))
     created_at: Mapped[datetime] = mapped_column(server_default=sa.func.now())
 
 

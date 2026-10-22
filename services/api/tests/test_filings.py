@@ -160,6 +160,7 @@ def test_8k_detail_has_items_exhibits_and_grounding_flags(client: TestClient, id
         }
     ]
     assert detail["summary"]["ungrounded_numbers"] == ["9.9 billion"]
+    assert detail["summary"]["ungrounded_names"] == ["Whitfield"]
     assert detail["form4"] is None
 
 

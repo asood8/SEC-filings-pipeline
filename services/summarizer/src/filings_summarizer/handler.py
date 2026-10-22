@@ -97,6 +97,8 @@ class SummaryHandler:
                 span.set_attribute(
                     "filings.summary.ungrounded_numbers", len(result.ungrounded_numbers)
                 )
+            if result.ungrounded_names is not None:
+                span.set_attribute("filings.summary.ungrounded_names", len(result.ungrounded_names))
         search_document = build_document(
             result.summary,
             company_name=context.company_name,
@@ -110,6 +112,12 @@ class SummaryHandler:
                 event.accession_no,
                 ", ".join(result.ungrounded_numbers),
             )
+        if result.ungrounded_names:
+            logger.warning(
+                "%s summary has names not found in the filing: %s",
+                event.accession_no,
+                ", ".join(result.ungrounded_names),
+            )
 
         with self._sessions.begin() as session:
             values = {
@@ -119,6 +127,7 @@ class SummaryHandler:
                 "prompt_version": result.prompt_version,
                 "summary": result.summary.model_dump(mode="json"),
                 "ungrounded_numbers": result.ungrounded_numbers,
+                "ungrounded_names": result.ungrounded_names,
             }
             stmt = pg_insert(Summary).values(**values)
             summary_id = session.execute(
@@ -127,6 +136,7 @@ class SummaryHandler:
                     set_={
                         "summary": stmt.excluded.summary,
                         "ungrounded_numbers": stmt.excluded.ungrounded_numbers,
+                        "ungrounded_names": stmt.excluded.ungrounded_names,
                         "created_at": sa.func.now(),
                     },
                 ).returning(Summary.id)

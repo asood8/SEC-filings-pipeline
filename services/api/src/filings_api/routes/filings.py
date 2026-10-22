@@ -108,6 +108,7 @@ def get_filing(
                 prompt_version=summary.prompt_version,
                 created_at=summary.created_at,
                 ungrounded_numbers=summary.ungrounded_numbers,
+                ungrounded_names=summary.ungrounded_names,
             )
             if summary is not None
             else None

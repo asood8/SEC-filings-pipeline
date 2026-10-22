@@ -1046,6 +1046,11 @@ export interface components {
              * @description Numbers in an LLM summary that don't appear in the filing text, worth verifying. Empty when all were found; null when not checked (template summaries).
              */
             ungrounded_numbers: string[] | null;
+            /**
+             * Ungrounded Names
+             * @description Capitalized words in an LLM summary that the filing text never uses, such as an invented name, worth verifying. Empty when all were found; null when not checked (template summaries, and summaries written before this check).
+             */
+            ungrounded_names?: string[] | null;
         };
         /** TradeTotals */
         TradeTotals: {

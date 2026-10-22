@@ -39,7 +39,7 @@ On a live run against EDGAR, for a watchlist of 35 large US companies:
   behind a failover chain (a local model, then Gemini's free tier). Stopping the local model
   mid-run moved the remaining work to Gemini automatically, and the local model took over again
   once it was back. A grounding check flags any number in an LLM summary that doesn't appear in
-  the filing.
+  the filing, and any name the filing never uses.
 - **Alerts** reached a real Discord channel: on 2026-10-08 SEC accepted an Apple Form 4 at
   18:30:32 ET; discovery found it at 18:38:44 (it polls every 10 minutes), and the alert reached
   Discord at 18:39:05, 8½ minutes after acceptance. Replaying that filing from discovery and from

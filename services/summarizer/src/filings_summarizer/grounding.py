@@ -12,6 +12,11 @@ not spellings, so these all count as found:
 
 Numbers glued to letters ("Q3", "FY27") are ignored. A flagged number is not necessarily wrong;
 it is one a reader should verify.
+
+The same idea applies to names (`ungrounded_names`): a capitalized word in the summary that the
+source never uses, such as a person the model invented, is flagged. See that function for what
+counts; it can't catch a real name in the wrong role ("Oracle cancels Ellison's plan" when
+Ellison cancelled it).
 """
 
 import bisect
@@ -147,3 +152,52 @@ def ungrounded_numbers(summary_text: str, source: str) -> list[str]:
     for text in flagged:
         unique.setdefault(text.lower(), text)
     return list(unique.values())
+
+
+_WORD = re.compile(r"[A-Za-z][A-Za-z'\u2019]*")
+# Sentences, and the summary's separate parts: a key point starts its own sentence.
+_SENTENCE_BREAK = re.compile(r"(?<=[.!?:;])\s+|\n")
+_CALENDAR_WORDS = frozenset(
+    [
+        *("january", "february", "march", "april", "may", "june", "july", "august"),
+        *("september", "october", "november", "december"),
+        *("monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"),
+    ]
+)
+
+
+def _stem(word: str) -> str:
+    """A crude stem, so "Elects" matches "elected" and "Ellison's" matches "Ellison"."""
+    word = re.sub(r"['\u2019]s$", "", word.lower())
+    for suffix in ("ing", "ed", "es", "s", "d"):
+        if word.endswith(suffix) and len(word) - len(suffix) >= 3:
+            return word[: -len(suffix)]
+    return word
+
+
+def _title_case(text: str) -> bool:
+    words = re.findall(r"[A-Za-z]{4,}", text)
+    return bool(words) and sum(w[0].isupper() for w in words) > len(words) / 2
+
+
+def ungrounded_names(headline: str, summary: str, key_points: list[str], source: str) -> list[str]:
+    """Capitalized words in the summary that `source` never uses, in order of appearance.
+
+    Only words that look like names count: capitalized, at least three letters, not starting a
+    sentence or key point, not all capitals (CEO, NVDA), and not a month or weekday. A headline in
+    Title Case is skipped, since every word in it is capitalized; one in sentence case is
+    checked (a short headline that is mostly names reads as Title Case, but the summary repeats
+    its names). Words are compared by a crude stem, so inflections don't count as new names. On the
+    22 local 8-K summaries this flagged nothing (2026-10-22).
+    """
+    stems = {_stem(word) for word in _WORD.findall(source)}
+    parts = ([] if _title_case(headline) else [headline]) + [summary, *key_points]
+    flagged: dict[str, str] = {}
+    for sentence in _SENTENCE_BREAK.split("\n".join(parts)):
+        for i, word in enumerate(_WORD.findall(sentence)):
+            if i == 0 or not word[0].isupper() or len(word) < 3 or word.isupper():
+                continue
+            if word.lower() in _CALENDAR_WORDS or _stem(word) in stems:
+                continue
+            flagged.setdefault(word.lower(), word)
+    return list(flagged.values())

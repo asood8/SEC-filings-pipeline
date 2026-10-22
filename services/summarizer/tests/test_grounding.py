@@ -2,7 +2,12 @@
 
 import pytest
 
-from filings_summarizer.grounding import figure_value, states_value, ungrounded_numbers
+from filings_summarizer.grounding import (
+    figure_value,
+    states_value,
+    ungrounded_names,
+    ungrounded_numbers,
+)
 
 AMAZON_NOTES = (
     "closed the sale of £1,250,000,000 aggregate principal amount of its 5.200% notes due 2029,"
@@ -101,3 +106,45 @@ def test_figure_value_reads_one_written_figure() -> None:
 )
 def test_states_value(text: str, value: float, stated: bool) -> None:
     assert states_value(text, value) is stated
+
+
+# Excerpt quoted from Oracle's 8-K of 2026-09-14 (Larry Ellison's trading plan).
+ORACLE = (
+    "On September 12, 2026, Lawrence J. Ellison, Oracle's Chairman and Chief Technology Officer, "
+    "terminated a trading plan adopted under Rule 10b5-1. Safra A. Catz, Chief Executive Officer, "
+    "elected to remain on the board."
+)
+
+
+def test_an_invented_name_is_flagged() -> None:
+    names = ungrounded_names(
+        "Oracle's Ellison ends his trading plan",
+        "Lawrence Ellison terminated a trading plan, said CFO Jordan Whitfield.",
+        [],
+        ORACLE,
+    )
+    assert names == ["Jordan", "Whitfield"]
+
+
+def test_names_and_words_the_filing_uses_are_not() -> None:
+    names = ungrounded_names(
+        "Ellison Terminates His Trading Plan",  # Title Case: every word is capitalized, skipped
+        "Oracle's Chairman, Lawrence Ellison, terminated his Rule 10b5-1 plan on September 12. "
+        "Safra Catz elects to stay.",  # inflections of the filing's words aren't new names
+        ["Ellison's plan was terminated", "CEO Catz remains on the Board"],  # key points start
+        ORACLE,
+    )
+    assert names == []
+
+
+def test_a_headline_in_sentence_case_is_checked() -> None:
+    headline = "Oracle says its finance chief Jordan Whitfield will resign"
+    assert ungrounded_names(headline, "", [], ORACLE) == ["Jordan", "Whitfield"]
+    # A short one that is mostly names reads as Title Case and is skipped; the summary text,
+    # which repeats the name, is still checked.
+    assert ungrounded_names("Oracle's Jordan Whitfield resigns", "", [], ORACLE) == []
+
+
+def test_each_flagged_name_is_listed_once() -> None:
+    summary = "Whitfield said so. Then Whitfield left; whitfield is lowercase here."
+    assert ungrounded_names("", summary, [], ORACLE) == ["Whitfield"]

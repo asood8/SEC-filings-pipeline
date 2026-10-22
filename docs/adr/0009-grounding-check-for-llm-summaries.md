@@ -34,6 +34,22 @@ value appears nowhere in that prompt.
   one. The summary is still stored and announced, and the flag is available to show a caution
   marker in the API and frontend.
 
+### Names (added 2026-10-22)
+
+The same check for names: a capitalized word in an 8-K summary that the text the model was given
+never uses, such as a person the model invented, is stored in `summaries.ungrounded_names`
+(migration 0485ad731202), returned by the API, and shown on the filing page ("Check these names
+against the original"). What counts as a name, so ordinary words don't fire it: capitalized, at
+least three letters, not starting a sentence or key point, not all capitals (CEO, NVDA), not a
+month or weekday, and compared by a crude stem ("Elects" matches "elected", "Ellison's"
+matches "Ellison"). A Title Case headline is skipped, since all its words are capitalized.
+
+Measured on the 22 local 8-K summaries before it was enabled: a first version that took
+capitalized phrases flagged 13 (mostly Title Case headlines and verbs like "Elects"); this one
+flags none. Like the number check, it can't catch a real name in the wrong role: the labeled
+errors in config/summary_eval.json (Oracle's actor, Chevron's roles) use names the filing has.
+Summaries written before it have NULL, "not checked".
+
 ## Alternatives considered
 
 - **Rejecting flagged summaries** (fail over, or retry). With only one provider available, retries

@@ -107,6 +107,7 @@ def test_llm_summarizer_records_the_answering_provider() -> None:
     )
     assert provider.prompts[0].startswith("Company: Adobe Inc. (ADBE)")
     assert result.ungrounded_numbers == []  # "99.1" is in the filing
+    assert result.ungrounded_names == []
 
 
 def test_llm_summarizer_flags_numbers_the_filing_does_not_state() -> None:
@@ -118,6 +119,17 @@ def test_llm_summarizer_flags_numbers_the_filing_does_not_state() -> None:
     summarizer = Form8KLlmSummarizer(FailoverChain([StubProvider(answer)]))
     result = summarizer.summarize(adobe().model_dump(mode="json"), CONTEXT)
     assert result.ungrounded_numbers == ["9.9 billion"]
+
+
+def test_llm_summarizer_flags_names_the_filing_does_not_use() -> None:
+    answer = {
+        "headline": "Adobe reports results",
+        "summary": "Adobe published results, said its new CFO Jordan Whitfield.",
+        "key_points": ["Press release furnished as Exhibit 99.1"],
+    }
+    summarizer = Form8KLlmSummarizer(FailoverChain([StubProvider(answer)]))
+    result = summarizer.summarize(adobe().model_dump(mode="json"), CONTEXT)
+    assert result.ungrounded_names == ["Jordan", "Whitfield"]
 
 
 def test_llm_summarizer_rejects_a_malformed_payload() -> None:

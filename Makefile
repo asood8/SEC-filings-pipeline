@@ -1,5 +1,5 @@
 .DEFAULT_GOAL := help
-.PHONY: help setup sync up down ps logs llm-up llm-down obs-up obs-down migrate backup-drill api pipeline images lint fmt test audit web-install web web-types web-check loadtest api-loadtest tf-check tf-fmt k8s-tools k8s-check
+.PHONY: help setup sync up down ps logs llm-up llm-down obs-up obs-down migrate backup-drill api pipeline images lint fmt test audit web-install web web-types web-check loadtest api-loadtest tf-check tf-init tf-plan tf-apply tf-fmt k8s-tools k8s-check
 
 help: ## List targets
 	@grep -E '^[a-z0-9-]+:.*## ' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*## "} {printf "  %-12s %s\n", $$1, $$2}'
@@ -122,6 +122,20 @@ tf-check: ## Check the Terraform code: format, validate, tests on mock providers
 	terraform -chdir=$(TF_ENV) validate
 	terraform -chdir=$(TF_ENV) test
 	$(TF_DIR)/check-free-tier.sh
+
+# Production runs read credentials from TF_ENV_FILE (`export NAME=value` lines; see
+# infra/terraform/README.md, "First apply"), the variables from production.tfvars, and the state
+# bucket's endpoint from production.s3.tfbackend (both gitignored).
+TF_ENV_FILE ?= $(HOME)/.config/filings/terraform.env
+
+tf-init: ## Connect Terraform to its state in R2 (production.s3.tfbackend; credentials from TF_ENV_FILE)
+	set -a; . $(TF_ENV_FILE); set +a; terraform -chdir=$(TF_ENV) init -input=false -lockfile=readonly -backend-config=production.s3.tfbackend
+
+tf-plan: ## Plan production from production.tfvars into production.tfplan; read it before tf-apply
+	set -a; . $(TF_ENV_FILE); set +a; terraform -chdir=$(TF_ENV) plan -input=false -var-file=production.tfvars -out=production.tfplan
+
+tf-apply: ## Apply exactly the plan tf-plan saved
+	set -a; . $(TF_ENV_FILE); set +a; terraform -chdir=$(TF_ENV) apply -input=false production.tfplan
 
 tf-fmt: ## Format the Terraform code
 	terraform -chdir=$(TF_DIR) fmt -recursive

@@ -42,7 +42,7 @@ infra/terraform/
   modules/atlas/        project, M0 cluster, database user, IP access list
   modules/grafana/      folders, dashboards, alert rule groups (read from deploy/grafana)
   envs/production/      versions.tf, providers.tf, main.tf, variables.tf, outputs.tf,
-                        terraform.tfvars.example, .terraform.lock.hcl
+                        production.tfvars.example, .terraform.lock.hcl
   envs/production/tests/  `terraform test` files, run against mock providers
   check-free-tier.sh    resource-type allowlist (see guardrails)
   README.md             operator guide: accounts, tokens, first apply, secrets
@@ -139,7 +139,9 @@ capacity might not be available to create it again. Rebuilding is a deliberate
   back to its own environment variable (`CLOUDFLARE_API_TOKEN`, `MONGODB_ATLAS_CLIENT_ID` and
   `_SECRET`, `GRAFANA_AUTH`) or, for OCI, the API key in `~/.oci/config`. Exporting them in the
   shell keeps them off the disk; a `*.tfvars` file also works and is gitignored.
-- **`terraform.tfvars.example`** is the committed template, with placeholders only.
+- **`production.tfvars.example`** is the committed template, with placeholders only. The filled-in
+  copy is `production.tfvars`, not `terraform.tfvars`, because `terraform test` loads the latter
+  automatically and the tests must run on their own inputs.
 - **Generated secrets** (the Atlas password, the tunnel token) are sensitive outputs. They reach
   the cluster as SealedSecrets: the operator pipes `terraform output -raw` into `kubectl create
   secret --dry-run=client` and `kubeseal`, and commits only the sealed result (README,
@@ -154,7 +156,10 @@ losing it means Terraform no longer knows what it manages (recoverable with `ter
 but tedious). Leaving the backend block out also lets `init -backend=false`, `validate`, and
 `test` run with no backend configured at all.
 
-Moving it is an open decision for the user. The free options, in the README:
+*Decided 2026-10-22:* the state moved to a private R2 bucket, `filings-tfstate`, through the
+`s3` backend with Terraform's lock file (R2 supports the conditional writes it needs). The bucket
+and its token are made by hand; the account's endpoint stays out of git in a `.tfbackend` file
+(infra/terraform/README.md, "State"). The free options that were considered:
 
 - **OCI Object Storage** (Always Free includes 20 GB), in a private bucket made by hand, through
   Terraform's native `oci` backend or the S3-compatible `s3` backend (which OpenTofu also has).

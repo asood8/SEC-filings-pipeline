@@ -64,7 +64,8 @@ budget alert in each account that has a card on file.
   backups off the provider that runs the VM, and reads out of it are free.
 - **The Oracle home region.** Chosen at sign-up and permanent; Always Free resources exist only
   there. Pick one near you with a reputation for A1 capacity.
-- **Where the state lives** (see [State](#state)).
+- ~~**Where the state lives**~~ Decided 2026-10-22: the R2 bucket `filings-tfstate` (see
+  [State](#state)).
 - ~~**Pages from GitHub or from CI**~~ Decided 2026-10-21: from GitHub
   (`pages_github_integration`, the default). Cloudflare builds the site on every push to `main`
   that changes `web/`, with the Pages GitHub app installed on the repository; no Cloudflare token
@@ -115,11 +116,15 @@ sealed) and the bootstrap's clone needs one too.
 
 ```
 cd infra/terraform/envs/production
-cp terraform.tfvars.example terraform.tfvars   # gitignored; fill in the IDs and the domain
-export CLOUDFLARE_API_TOKEN=... MONGODB_ATLAS_CLIENT_ID=... MONGODB_ATLAS_CLIENT_SECRET=... GRAFANA_AUTH=...
-terraform init
-terraform plan -out=tfplan
-terraform apply tfplan
+cp production.tfvars.example production.tfvars                # gitignored; fill in the IDs
+cp production.s3.tfbackend.example production.s3.tfbackend    # gitignored; the account ID
+cd -
+# Credentials, one per line as `export NAME=value`, in ~/.config/filings/terraform.env (chmod 600):
+#   CLOUDFLARE_API_TOKEN, MONGODB_ATLAS_CLIENT_ID, MONGODB_ATLAS_CLIENT_SECRET, GRAFANA_AUTH,
+#   and the state bucket's R2 token as AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY.
+make tf-init     # terraform init -backend-config=production.s3.tfbackend
+make tf-plan     # terraform plan -var-file=production.tfvars -out=production.tfplan
+make tf-apply    # terraform apply production.tfplan: exactly what the plan showed
 ```
 
 Read the plan before applying it: one A1 instance with 2 OCPU and 12 GB, one 100 GB volume,
@@ -197,43 +202,28 @@ and keep it outside git. After a VM rebuild, restore it before sealing anything 
 ## State
 
 Terraform's state records what it created, and it **contains secrets** (the Atlas password, the
-tunnel token). By default it is a local file, `envs/production/terraform.tfstate`, gitignored.
-Keep it private and back it up (an encrypted copy, or a password manager): without it,
-Terraform no longer knows what it manages.
+tunnel token). It lives in a private R2 bucket, `filings-tfstate` (decided 2026-10-22): off the
+laptop and off Oracle, free, and locked during each run with a lock file (R2 supports the
+conditional writes that needs). The bucket and its token are made by hand once, because
+Terraform needs them before it can run:
 
-Moving it is a decision for you. Free options:
+1. In R2, create the bucket `filings-tfstate`, then an API token with **Object Read & Write**
+   on that bucket only. Export its Access Key ID and Secret Access Key as `AWS_ACCESS_KEY_ID`
+   and `AWS_SECRET_ACCESS_KEY`.
+2. `cp production.s3.tfbackend.example production.s3.tfbackend` (gitignored) and put your
+   Cloudflare account ID in the endpoint.
+3. `terraform init -backend-config=production.s3.tfbackend`.
 
-- **OCI Object Storage** (20 GB in Always Free), in a private bucket made by hand, through
-  Terraform's native `oci` backend (reuses `~/.oci/config`), or the `s3` backend against OCI's
-  S3-compatible endpoint (works with OpenTofu too; needs an OCI "customer secret key"):
-
-  ```hcl
-  terraform {
-    backend "s3" {
-      bucket                      = "filings-terraform-state"
-      key                         = "production/terraform.tfstate"
-      region                      = "us-ashburn-1"
-      endpoints                   = { s3 = "https://<namespace>.compat.objectstorage.us-ashburn-1.oraclecloud.com" }
-      use_path_style              = true
-      skip_region_validation      = true
-      skip_credentials_validation = true
-      skip_requesting_account_id  = true
-      skip_metadata_api_check     = true
-      skip_s3_checksum            = true
-    }
-  }
-  ```
-
-- **Cloudflare R2**, through the same `s3` backend, in its own bucket.
-- **HCP Terraform's free plan**, which stores state remotely and can run plans.
-- **OpenTofu with state encryption**, which encrypts the state before writing it anywhere.
-
-To switch, add the backend block to `envs/production/versions.tf` and run
-`terraform init -migrate-state`.
+The other options considered were a local file (lost with the laptop), OCI Object Storage (lost
+with the Oracle account it describes), HCP Terraform's free plan (another vendor, Terraform
+only), and OpenTofu's state encryption (a passphrase to never lose). R2 doesn't version objects,
+so a state that matters is worth a copy (`terraform state pull > state.json`, kept private) before
+risky changes.
 
 ## Later changes
 
-- **Re-apply** after editing variables: `terraform plan`, then `terraform apply`.
+- **Re-apply** after editing variables: `make tf-plan`, read it, then `make tf-apply`. A bare
+  `terraform apply` doesn't read `production.tfvars` and asks for every variable.
 - **cloud-init changes don't reach the running VM** (the instance ignores them, so a new Ubuntu
   image or a bootstrap edit can't replace it by accident). Rebuild deliberately with
   `terraform apply -replace=module.oci.oci_core_instance.k3s`: the block volume and its data

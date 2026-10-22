@@ -1,4 +1,4 @@
-# Inputs of the production environment. Copy terraform.tfvars.example to terraform.tfvars
+# Inputs of the production environment. Copy production.tfvars.example to production.tfvars
 # (gitignored) and fill it in. Free-tier limits are enforced by the modules' own validations.
 
 # --- Oracle Cloud ---------------------------------------------------------------------------
@@ -49,7 +49,7 @@ variable "ssh_ingress_cidr" {
 }
 
 variable "ssh_authorized_keys" {
-  description = "Public SSH key(s) for the ubuntu user. Not a secret, but personal: set it in terraform.tfvars."
+  description = "Public SSH key(s) for the ubuntu user. Not a secret, but personal: set it in production.tfvars."
   type        = string
   default     = ""
 }

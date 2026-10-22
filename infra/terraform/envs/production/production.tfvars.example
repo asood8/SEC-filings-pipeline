@@ -1,5 +1,7 @@
-# Template for terraform.tfvars (gitignored, like every *.tfvars file). Copy it and fill it in:
-#   cp terraform.tfvars.example terraform.tfvars
+# Template for production.tfvars (gitignored, like every *.tfvars file). Copy it and fill it in:
+#   cp production.tfvars.example production.tfvars
+# Not terraform.tfvars: `terraform test` loads that file automatically, and the tests must run on
+# their own inputs, not yours. make tf-plan passes -var-file=production.tfvars.
 # Every value below is a placeholder. The repository is public: never commit a filled-in copy.
 #
 # Credentials are better left out of this file entirely and exported in the shell instead, so

@@ -108,8 +108,8 @@ Making the repository public turns the workflow on with no other change. A test
   so the arm64 build does the same work as the amd64 one.
 - **Actions** at their current major versions in October 2026: `docker/setup-buildx-action@v4`,
   `docker/login-action@v4`, `docker/metadata-action@v6`, `docker/build-push-action@v7`,
-  `actions/checkout@v7`, `actions/upload-artifact@v7`, `actions/download-artifact@v8`. CI pins
-  actions the same way, by major version.
+  `actions/checkout@v7`, `actions/upload-artifact@v7`, `actions/download-artifact@v8`, each
+  pinned to the commit of its latest release, as in CI ([Consequences](#consequences)).
 - **Build context.** The checkout, not build-push-action's default Git context, so
   `.dockerignore` (an allowlist, ADR-0014) decides what the build sees.
 - **Layer cache** in the GitHub Actions cache (`type=gha`, free, 10 GB per repository), one scope
@@ -388,9 +388,12 @@ deploys with the same tags.
   rebuilt when deployed again).
 - **Rollbacks** are a run started by hand for an older commit, or an older deploy commit pushed
   back to `production` ([Rollbacks](#rollbacks)), followed by a fix on `main`.
-- **Actions are pinned by major version**, as in CI. A compromised tag of a third-party action
-  would run in a job that can push packages or push to `production`; pinning to commit SHAs (with
-  Renovate or Dependabot to update them) is stronger and can come later.
+- **Actions are pinned to commit SHAs** (since 2026-10-22; before, by major version), in every
+  workflow, with the version in a comment. A tag can be moved to other code, by the action's
+  owner or by someone who took over their account, and that code would run in a job that can
+  push packages or push to `production`; a commit SHA can't change. Updates are by hand for now
+  ([runbook](../runbook.md#updating-a-github-action)); Renovate or Dependabot could open them as
+  pull requests, which is still an open decision.
 - **Revisit** if the repository stays private (QEMU on amd64 runners within the free minutes, or
   building elsewhere), if a second environment appears (a `staging` branch and overlay, deployed
   the same way), or if deploys should wait for a human (a GitHub environment with a reviewer).

@@ -115,7 +115,7 @@ def test_text_is_escaped_and_long_lines_folded() -> None:
     event = ical.Event(
         uid="x@sec-filings",
         summary="A, B; C\\D",
-        description="line one\nline two " + "é" * 60,
+        description="line one\nline two\r" + "é" * 60,
         day=date(2026, 10, 28),
     )
     text = ical.calendar([event], name="Test", now=datetime(2026, 10, 22, tzinfo=UTC))
@@ -127,4 +127,4 @@ def test_text_is_escaped_and_long_lines_folded() -> None:
         for line in lines
         if line.startswith(("DESCRIPTION", " "))
     )
-    assert description == "DESCRIPTION:line one\\nline two " + "é" * 60
+    assert description == "DESCRIPTION:line one\\nline two\\n" + "é" * 60

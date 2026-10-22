@@ -441,6 +441,19 @@ the repository changed. It is separate from CI, so a failure doesn't block deplo
    the `Makefile`; remove it once a fix is out. `npm audit` can't skip a single advisory: replace
    or drop the package.
 
+## Updating a GitHub Action
+
+Every `uses:` in `.github/workflows/` names a commit SHA, with the version it was in a comment
+([ADR-0019](adr/0019-image-ci-and-deploy.md#consequences)): a tag can be moved to other code, a
+SHA can't. To move to a newer version, read its release notes, then:
+
+```
+gh api repos/<owner>/<action>/commits/<tag> --jq .sha   # e.g. actions/checkout, v7.0.2
+```
+
+Replace the SHA in every workflow that uses the action, update the version comment, and open a
+pull request: CI runs the changed workflows, and `actionlint` (pre-commit) checks their syntax.
+
 ## SEC 429s and fair access
 
 SEC's rules for automated access: **at most 10 requests per second**, and a **User-Agent naming
@@ -591,6 +604,12 @@ that availability domain right now. The configuration is fine.
 
 - Run `terraform apply` again later (everything else is already created), or for a new instance
   try another `oci_availability_domain_number` in regions that have several.
+- Or let `scripts/retry-vm-capacity.sh` do both: every 5 minutes it plans with the next
+  availability domain, checks the plan does nothing but finish the VM (the instance, its volume
+  attachment, Atlas's entry for its IP, and moving the still-empty data volume to that domain),
+  and applies it, for up to 24 hours (`INTERVAL`, `MAX_HOURS`). It stops at the first success and
+  records the domain in `production.tfvars`. Ashburn took over 80 attempts across a day in
+  October 2026; the laptop must stay awake for it.
 - Don't terminate or `-replace` a working VM casually: a new one needs capacity again.
 - Don't upgrade the account to pay-as-you-go to get capacity: the project must cost $0, and an
   upgraded account bills what exceeds the free allowance instead of refusing it.

@@ -78,12 +78,18 @@ budget alert in each account that has a card on file.
 
 ### Accounts and credentials (manual, once)
 
+**The GitHub app, without a Worker.** Connecting Git from the Workers side of "Create" makes a
+Worker project that builds every push of this repository and fails ("Workers Builds" checks on
+GitHub). If one was made, delete the Worker (its Settings) and the build connection it leaves,
+or remove the repository from the app (GitHub, Settings, Applications) until the Pages project
+exists. Terraform makes the Pages project; nothing else needs to be created in the dashboard.
+
 Each is an account action, which is why Terraform doesn't do it (ADR-0018, "What stays manual").
 
 | Service | Create by hand | Terraform reads it from |
 |---|---|---|
 | Oracle Cloud | Free Tier account; an API signing key for your user (Console: My profile, API keys, or `oci setup config`) | `~/.oci/config` (profile `oci_config_file_profile`); `oci_tenancy_ocid` and `oci_region` in tfvars |
-| Cloudflare | Account; the domain added as a zone (nameservers switched, zone active); R2 enabled; the Pages GitHub app installed on the repository (Workers & Pages, connect to Git, once); an API token (below) | `CLOUDFLARE_API_TOKEN`; `cloudflare_account_id` and `domain` in tfvars |
+| Cloudflare | Account; the domain added as a zone (nameservers switched, zone active); R2 enabled; the Pages GitHub app installed on the repository (Workers & Pages, Create, the **Pages** tab, Connect to Git, once; then leave without creating a project); an API token (below) | `CLOUDFLARE_API_TOKEN`; `cloudflare_account_id` and `domain` in tfvars |
 | MongoDB Atlas | Account and organization; an organization service account with the Organization Project Creator role | `MONGODB_ATLAS_CLIENT_ID`, `MONGODB_ATLAS_CLIENT_SECRET`; `atlas_org_id` in tfvars |
 | Grafana Cloud | Account and a stack; a service account in the stack with the Admin role (alerting provisioning needs it) and a token | `GRAFANA_AUTH`; `grafana_url` in tfvars |
 | Google Cloud | Add `https://app.<domain>` to the existing OAuth client's authorized JavaScript origins | not used by Terraform |

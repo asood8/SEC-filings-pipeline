@@ -48,7 +48,9 @@ Sign-in and subscription management (the API side of Phase 4) are decided separa
   - Slack text is escaped.
   - Email addresses that could inject headers are rejected.
 - **Email backends:** SMTP with STARTTLS, which Oracle Cloud Email Delivery offers on the free tier
-  (`EMAIL_BACKEND=smtp`), or `log` for development. The log backend writes the email to the log
+  (`EMAIL_BACKEND=smtp`), or `log` for development. STARTTLS checks the server's certificate and
+  name (fixed 2026-10-22: Python's `smtplib` checks neither unless given a context, so anyone on
+  the network path could have read the SMTP password). The log backend writes the email to the log
   instead of sending it, so no mail-catcher service is needed. It masks the recipient
   (`a***@example.com`; added 2026-10-07) and names the filing's accession number: logs are kept
   and may be shipped elsewhere, where users' addresses don't belong, and the first letter, the

@@ -86,6 +86,10 @@ The constraints:
     requests; non-browser clients aren't affected.
   - Request bodies must be JSON (415 otherwise). HTML forms can only send form or text bodies,
     and cross-origin JSON requires a preflight that only allowed origins pass.
+- **Request bodies are capped at 64 KiB** (413 otherwise; added 2026-10-22), before the app
+  reads them. The largest real body, a batch of alerts, is a few KB; without a cap, one
+  unauthenticated request as large as Cloudflare passes (100 MB) would be held in memory and
+  parsed, enough to get the API pod killed. A chunked body is counted as it arrives.
 
 ### Subscriptions
 

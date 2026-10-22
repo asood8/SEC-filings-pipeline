@@ -1,5 +1,6 @@
+import asyncio
 import time
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
 from typing import Any
 
 import pytest
@@ -8,7 +9,12 @@ from fastapi.responses import JSONResponse
 from fastapi.testclient import TestClient
 
 from filings_api.app import api_redis_client
-from filings_api.middleware import RedisBackoff, is_private_path
+from filings_api.middleware import (
+    MAX_BODY_BYTES,
+    BodySizeLimitMiddleware,
+    RedisBackoff,
+    is_private_path,
+)
 
 ClientFactory = Callable[..., TestClient]
 
@@ -207,7 +213,67 @@ def test_bodyless_requests_need_no_content_type(client: TestClient) -> None:
     assert client.delete("/me").status_code == 401  # past the check; not signed in
 
 
-# --- CORS -----------------------------------------------------------------------------------
+# --- Request body size ---------------------------------------------------------------------
+
+JSON = {"Content-Type": "application/json"}
+
+
+def test_oversized_bodies_are_refused(client: TestClient) -> None:
+    body = b'{"credential": "' + b"x" * MAX_BODY_BYTES + b'"}'
+    origin = {"Origin": "http://localhost:3000"}
+    response = client.post("/auth/google", content=body, headers=JSON | origin)
+    assert response.status_code == 413
+    assert response.json() == {"detail": "request body too large"}
+    assert response.headers["Access-Control-Allow-Origin"] == origin["Origin"]  # readable
+
+
+def test_chunked_bodies_are_counted_too(client: TestClient) -> None:
+    def chunks() -> Iterator[bytes]:
+        yield b'{"credential": "'
+        for _ in range(MAX_BODY_BYTES // 1024 + 1):
+            yield b"x" * 1024
+        yield b'"}'
+
+    assert client.post("/auth/google", content=chunks(), headers=JSON).status_code == 413
+
+
+def test_bodies_up_to_the_limit_reach_the_app(client: TestClient) -> None:
+    body = b'{"credential": "x"}'
+    body += b" " * (MAX_BODY_BYTES - len(body))  # JSON allows trailing whitespace
+    response = client.post("/auth/google", content=body, headers=JSON)
+    assert response.status_code == 401  # read and parsed; the made-up credential is rejected
+
+
+@pytest.mark.parametrize(("chunks", "status"), [(3, 200), (5, 413)])
+def test_a_streamed_body_is_held_back_until_it_fits(chunks: int, status: int) -> None:
+    seen: list[bytes] = []
+
+    async def app(scope: Any, receive: Any, send: Any) -> None:
+        seen.append((await receive())["body"])
+        await JSONResponse({})(scope, receive, send)
+
+    async def run() -> list[Any]:
+        messages = [
+            {"type": "http.request", "body": b"x" * 10, "more_body": n < chunks - 1}
+            for n in range(chunks)
+        ]
+        sent: list[Any] = []
+
+        async def receive() -> Any:
+            return messages.pop(0)
+
+        async def send(message: Any) -> None:
+            sent.append(message)
+
+        scope = {"type": "http", "method": "POST", "headers": [(b"transfer-encoding", b"chunked")]}
+        await BodySizeLimitMiddleware(app, max_bytes=40)(scope, receive, send)
+        return sent
+
+    assert asyncio.run(run())[0]["status"] == status
+    assert seen == ([b"x" * 30] if status == 200 else [])  # whole, or never reaches the app
+
+
+# --- CORS ----------------------------------------------------------------------------------
 
 
 def preflight(client: TestClient, origin: str) -> Any:

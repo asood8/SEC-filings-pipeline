@@ -441,6 +441,19 @@ the repository changed. It is separate from CI, so a failure doesn't block deplo
    the `Makefile`; remove it once a fix is out. `npm audit` can't skip a single advisory: replace
    or drop the package.
 
+## Updating a GitHub Action
+
+Every `uses:` in `.github/workflows/` names a commit SHA, with the version it was in a comment
+([ADR-0019](adr/0019-image-ci-and-deploy.md#consequences)): a tag can be moved to other code, a
+SHA can't. To move to a newer version, read its release notes, then:
+
+```
+gh api repos/<owner>/<action>/commits/<tag> --jq .sha   # e.g. actions/checkout, v7.0.2
+```
+
+Replace the SHA in every workflow that uses the action, update the version comment, and open a
+pull request: CI runs the changed workflows, and `actionlint` (pre-commit) checks their syntax.
+
 ## SEC 429s and fair access
 
 SEC's rules for automated access: **at most 10 requests per second**, and a **User-Agent naming

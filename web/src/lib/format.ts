@@ -26,6 +26,28 @@ const easternFormat = new Intl.DateTimeFormat('en-US', {
   timeZone: 'America/New_York',
 })
 
+const easternClockFormat = new Intl.DateTimeFormat('en-US', {
+  timeStyle: 'short',
+  timeZone: 'America/New_York',
+})
+
+/** Only the time, on the market's clock: "5:30 PM ET". */
+export function formatEasternClock(isoDateTime: string): string {
+  return `${easternClockFormat.format(new Date(isoDateTime))} ET`
+}
+
+const weekdayFormat = new Intl.DateTimeFormat('en-US', {
+  weekday: 'long',
+  month: 'long',
+  day: 'numeric',
+  timeZone: 'UTC',
+})
+
+/** A date-only value with its weekday: "Wednesday, October 28". */
+export function formatWeekday(isoDate: string): string {
+  return weekdayFormat.format(new Date(`${isoDate}T00:00:00Z`))
+}
+
 /** A timestamp on the market's clock, as companies announce calls: "Oct 21, 2026, 5:30 PM ET". */
 export function formatEasternTime(isoDateTime: string): string {
   return `${easternFormat.format(new Date(isoDateTime))} ET`

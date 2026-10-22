@@ -42,6 +42,7 @@ export function Layout() {
               Latest
             </NavLink>
             <NavLink to="/insiders">Insider trades</NavLink>
+            <NavLink to="/calls">Calls</NavLink>
             <NavLink to="/companies">Companies</NavLink>
             <NavLink to="/search">Search</NavLink>
             <NavLink to="/alerts">Alerts</NavLink>

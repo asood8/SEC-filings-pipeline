@@ -1,0 +1,23 @@
+.day {
+  margin-top: 1.5rem;
+}
+
+.calls {
+  display: grid;
+  gap: 0.6rem;
+  margin: 0.5rem 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.call {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem 0.75rem;
+  align-items: baseline;
+}
+
+.time {
+  min-width: 7rem;
+  font-variant-numeric: tabular-nums;
+}

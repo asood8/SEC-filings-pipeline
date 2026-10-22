@@ -23,7 +23,7 @@ The services need Postgres (with pgvector), Redpanda, Valkey, and MongoDB to run
   `pgvector/pgvector:0.8.7-pg18`, `redpandadata/redpanda:v26.2.3`, and `valkey/valkey:9.1.2-alpine`.
   All three publish amd64 and arm64 builds.
 - **Local stand-ins for managed services:**
-  - MongoDB Atlas → `mongo:8.0.32` with authentication on, like Atlas. Keep the major version
+  - MongoDB Atlas → `mongo:8.2.12` with authentication on, like Atlas. Keep the major version
     aligned with the Atlas cluster when it is created in Phase 7.
   - Cloudflare R2 → the local-filesystem `ObjectStore` implementation (Phase 1).
   - Production LLM → Ollama on the host (Phase 2).

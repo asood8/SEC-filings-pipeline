@@ -58,17 +58,18 @@ budget alert in each account that has a card on file.
 - **The domain.** The tunnel's stable hostname, the website, and the sign-in cookie all need one
   domain on Cloudflare (about $10 a year, the project's only accepted cost). It is the
   `domain` variable; the API is `api.<domain>` and the website `app.<domain>` by default.
-- **R2 and a payment method.** Cloudflare asks for a payment method when R2 is first enabled,
-  even on the free tier. The alternative is to keep raw filings and backups elsewhere (the
-  services use an S3 interface, so any S3-compatible free store works) and drop the R2
-  resources.
+- ~~**R2 and a payment method.**~~ Decided 2026-10-21: R2, with a payment method on file.
+  Cloudflare asks for one when R2 is first enabled, even on the free tier; usage stays far below
+  it (raw filings were 7.5 MB for a month of the watchlist, and the database 17 MB). R2 keeps the
+  backups off the provider that runs the VM, and reads out of it are free.
 - **The Oracle home region.** Chosen at sign-up and permanent; Always Free resources exist only
   there. Pick one near you with a reputation for A1 capacity.
 - **Where the state lives** (see [State](#state)).
-- **Pages from GitHub or from CI** (`pages_github_integration`): Cloudflare builds the site on
-  every push to `main` that changes `web/` (needs the Cloudflare Pages GitHub app on the
-  repository), or a CI job deploys it with Wrangler (needs a Cloudflare token in GitHub's
-  secrets, and a workflow that doesn't exist yet). A project can't switch between the two later.
+- ~~**Pages from GitHub or from CI**~~ Decided 2026-10-21: from GitHub
+  (`pages_github_integration`, the default). Cloudflare builds the site on every push to `main`
+  that changes `web/`, with the Pages GitHub app installed on the repository; no Cloudflare token
+  goes into GitHub's secrets. A Wrangler deploy from CI would gate the site on CI directly, but a
+  project can't switch between the two later.
 
 ### Accounts and credentials (manual, once)
 

@@ -71,7 +71,7 @@ services:
 
   mongodb:
     # Stand-in for MongoDB Atlas M0, which production uses. Keep the major version aligned with Atlas.
-    image: mongo:8.0.32
+    image: mongo:8.0.34
     command: ["mongod", "--wiredTigerCacheSizeGB", "0.25"]
     environment:
       MONGO_INITDB_ROOT_USERNAME: ${MONGO_USER:?copy .env.example to .env}

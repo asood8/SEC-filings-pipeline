@@ -14,6 +14,7 @@ from filings_common.db import (
     Filing,
     FilingStatus,
     Form4Filing,
+    Form4Transaction,
     Form8KFiling,
     Notification,
     NotificationStatus,
@@ -346,3 +347,76 @@ def test_an_8k_alert_carries_the_call_it_announces(clean_db: Engine, world: dict
         starts_at=datetime(2026, 10, 29, 21, 0, tzinfo=UTC),
         webcast_url="https://investor.apple.com",
     )
+
+
+def test_form4_filters_choose_which_subscriptions_are_alerted(
+    clean_db: Engine, world: dict[str, int]
+) -> None:
+    # Berkshire bought Lennar stock ($80,000) and had shares withheld for taxes.
+    early = datetime(2026, 1, 1, tzinfo=UTC)  # before the filing was discovered
+    hooks = {
+        "purchases": "https://discord.com/api/webhooks/2/purchases",
+        "over 50k": "https://discord.com/api/webhooks/3/over-50k",
+        "over 100k": "https://discord.com/api/webhooks/4/over-100k",
+    }
+    with session_factory(clean_db).begin() as session:
+        user_id = session.scalar(sa.select(User.id).where(User.email == "ops@example.com"))
+        session.add_all(
+            [
+                Form4Transaction(
+                    accession_no=FORM4,
+                    line=1,
+                    is_derivative=False,
+                    security_title="Common Stock",
+                    code="P",
+                    shares=1_000,
+                    price_per_share=80.0,
+                    acquired_disposed="A",
+                ),
+                Form4Transaction(
+                    accession_no=FORM4,
+                    line=2,
+                    is_derivative=False,
+                    security_title="Common Stock",
+                    code="F",
+                    shares=50,
+                    price_per_share=80.0,
+                    acquired_disposed="D",
+                ),
+                Subscription(
+                    user_id=user_id,
+                    cik=920760,
+                    form_types=["4"],
+                    channel=Channel.DISCORD,
+                    target=hooks["purchases"],
+                    form4_trades="purchases",
+                    created_at=early,
+                ),
+                Subscription(
+                    user_id=user_id,
+                    cik=920760,
+                    form_types=["4"],
+                    channel=Channel.DISCORD,
+                    target=hooks["over 50k"],
+                    form4_trades="open_market",
+                    form4_min_value=50_000,
+                    created_at=early,
+                ),
+                Subscription(
+                    user_id=user_id,
+                    cik=920760,
+                    form_types=["4"],
+                    channel=Channel.DISCORD,
+                    target=hooks["over 100k"],
+                    form4_min_value=100_000,
+                    created_at=early,
+                ),
+            ]
+        )
+    fakes = senders()
+    NotificationHandler(session_factory(clean_db), fakes)(ready_event(world["summary_id"]))
+    sent = {target for target, _ in fakes[Channel.DISCORD].sent}
+    assert hooks["purchases"] in sent
+    assert hooks["over 50k"] in sent
+    assert hooks["over 100k"] not in sent  # $80,000 is below its minimum
+    assert DISCORD in sent  # the unfiltered subscription still gets it

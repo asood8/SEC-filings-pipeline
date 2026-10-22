@@ -97,15 +97,24 @@ def test_create_list_change_and_delete(sign_in: SignIn) -> None:
     subscription = created.json()
     assert subscription["company"] == {"cik": 320193, "ticker": "AAPL", "name": "Apple Inc."}
     assert subscription["form_types"] == ["4", "8-K"]  # deduplicated and sorted
+    # Every Form 4 by default.
+    assert (subscription["form4_trades"], subscription["form4_min_value"]) == ("all", None)
     assert (subscription["channel"], subscription["target"]) == ("discord", DISCORD_MASKED)
     assert alice.get("/subscriptions").json() == [subscription]
 
     path = f"/subscriptions/{subscription['id']}"
     changes: list[tuple[dict[str, Any], dict[str, Any]]] = [
         ({"form_types": ["8-K"]}, {"form_types": ["8-K"]}),
+        (
+            {"form4_trades": "purchases", "form4_min_value": 100_000},
+            {"form4_trades": "purchases", "form4_min_value": 100_000},
+        ),
+        # Omitted, the Form 4 filters keep their values.
         ({"channel": "slack", "target": SLACK}, {"channel": "slack", "target": SLACK_MASKED}),
         ({"channel": "email"}, {"channel": "email", "target": ALICE_EMAIL}),  # own address
         ({"form_types": []}, {"form_types": []}),  # every form
+        ({"form4_min_value": None}, {"form4_min_value": None}),  # an explicit null removes it
+        ({"form4_trades": "all"}, {"form4_trades": "all"}),
         ({}, {}),
     ]
     for change, expected in changes:
@@ -200,6 +209,8 @@ def test_email_alerts_go_only_to_the_account_address(sign_in: SignIn) -> None:
         ({"target": None}, "target is required: a Discord webhook URL, https://discord.com/"),
         ({"cik": 320193}, "Extra inputs are not permitted"),  # refused, not silently ignored
         ({"ticker": ""}, "at least 1 character"),
+        ({"form4_trades": "everything"}, "Input should be 'all', 'open_market' or 'purchases'"),
+        ({"form4_min_value": 0}, "greater than or equal to 1"),
     ],
 )
 def test_invalid_subscriptions_are_refused(
@@ -416,6 +427,21 @@ def test_batch_creates_every_combination(sign_in: SignIn) -> None:
     assert all(s["form_types"] == ["8-K"] for s in created)
     assert response.json()["existing"] == []
     assert len(alice.get("/subscriptions").json()) == 6
+
+
+def test_batch_applies_the_form4_filters_to_every_subscription(sign_in: SignIn) -> None:
+    alice = sign_in("alice")
+    response = batch(
+        alice,
+        tickers=["AAPL", "BRK-B"],
+        form_types=["4"],
+        form4_trades="open_market",
+        form4_min_value=50_000,
+    )
+    assert response.status_code == 201, response.text
+    created = response.json()["created"]
+    assert len(created) == 2
+    assert {(s["form4_trades"], s["form4_min_value"]) for s in created} == {("open_market", 50_000)}
 
 
 def test_batch_leaves_existing_subscriptions_alone(sign_in: SignIn) -> None:

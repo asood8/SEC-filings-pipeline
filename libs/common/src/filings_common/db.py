@@ -386,6 +386,10 @@ class Subscription(Base):
         # Subscribing twice to the same thing would send every alert twice.
         sa.UniqueConstraint("user_id", "cik", "channel", "target"),
         sa.Index("ix_subscriptions_cik", "cik"),
+        sa.CheckConstraint(
+            "form4_trades IN ('all', 'open_market', 'purchases')", name="form4_trades"
+        ),
+        sa.CheckConstraint("form4_min_value > 0", name="form4_min_value_positive"),
     )
 
     id: Mapped[int] = mapped_column(sa.BigInteger, sa.Identity(always=True), primary_key=True)
@@ -399,6 +403,11 @@ class Subscription(Base):
     )
     channel: Mapped[Channel] = mapped_column(_text_enum(Channel, "channel"))
     target: Mapped[str]
+    # Form 4s only (filings_common.alert_filters): which trades a Form 4 must report to be
+    # alerted (all, open_market, purchases), and a minimum dollar value for them. Other forms
+    # ignore both.
+    form4_trades: Mapped[str] = mapped_column(server_default="all")
+    form4_min_value: Mapped[int | None] = mapped_column(sa.BigInteger)
     created_at: Mapped[datetime] = mapped_column(server_default=sa.func.now())
 
 

@@ -836,6 +836,18 @@ export interface components {
              * @description Alert only about these forms; empty means every form.
              */
             form_types?: ("4" | "8-K")[];
+            /**
+             * Form4 Trades
+             * @description Form 4s only: alert about every one (all), only those reporting open-market buys or sells (open_market, SEC codes P and S), or only purchases (purchases). Other forms ignore it.
+             * @default all
+             * @enum {string}
+             */
+            form4_trades: "all" | "open_market" | "purchases";
+            /**
+             * Form4 Min Value
+             * @description Form 4s only: alert only when those open-market trades total at least this many US dollars (shares x price). A trade priced only in a footnote counts as meeting it. Null for no minimum.
+             */
+            form4_min_value?: number | null;
             /** Destinations */
             destinations: components["schemas"]["Destination"][];
         };
@@ -861,6 +873,18 @@ export interface components {
              * @description Alert only about these forms; empty means every form.
              */
             form_types?: ("4" | "8-K")[];
+            /**
+             * Form4 Trades
+             * @description Form 4s only: alert about every one (all), only those reporting open-market buys or sells (open_market, SEC codes P and S), or only purchases (purchases). Other forms ignore it.
+             * @default all
+             * @enum {string}
+             */
+            form4_trades: "all" | "open_market" | "purchases";
+            /**
+             * Form4 Min Value
+             * @description Form 4s only: alert only when those open-market trades total at least this many US dollars (shares x price). A trade priced only in a footnote counts as meeting it. Null for no minimum.
+             */
+            form4_min_value?: number | null;
             channel: components["schemas"]["Channel"];
             /**
              * Target
@@ -878,6 +902,17 @@ export interface components {
              * @description Empty means every form.
              */
             form_types: string[];
+            /**
+             * Form4 Trades
+             * @description Form 4s only: alert about every one (all), only those reporting open-market buys or sells (open_market, SEC codes P and S), or only purchases (purchases). Other forms ignore it.
+             * @enum {string}
+             */
+            form4_trades: "all" | "open_market" | "purchases";
+            /**
+             * Form4 Min Value
+             * @description Form 4s only: alert only when those open-market trades total at least this many US dollars (shares x price). A trade priced only in a footnote counts as meeting it. Null for no minimum.
+             */
+            form4_min_value: number | null;
             channel: components["schemas"]["Channel"];
             /**
              * Target
@@ -902,6 +937,16 @@ export interface components {
              * @description Alert only about these forms; empty means every form.
              */
             form_types?: ("4" | "8-K")[] | null;
+            /**
+             * Form4 Trades
+             * @description Form 4s only: alert about every one (all), only those reporting open-market buys or sells (open_market, SEC codes P and S), or only purchases (purchases). Other forms ignore it.
+             */
+            form4_trades?: ("all" | "open_market" | "purchases") | null;
+            /**
+             * Form4 Min Value
+             * @description Form 4s only: alert only when those open-market trades total at least this many US dollars (shares x price). A trade priced only in a footnote counts as meeting it. Null for no minimum. To remove a minimum, send null explicitly.
+             */
+            form4_min_value?: number | null;
             /** @description A new channel needs a new `target`, except email, which uses your address. */
             channel?: components["schemas"]["Channel"] | null;
             /**

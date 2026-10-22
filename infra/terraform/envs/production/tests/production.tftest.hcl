@@ -98,3 +98,21 @@ run "refuses_a_malformed_region" {
 
   expect_failures = [var.oci_region]
 }
+
+run "a_first_apply_without_a_domain" {
+  command = plan
+
+  variables {
+    domain = null
+  }
+
+  assert {
+    condition     = output.api_url == null && output.web_url == null
+    error_message = "Without a domain there are no public URLs."
+  }
+
+  assert {
+    condition     = output.api_cors_origins == "[]"
+    error_message = "Without a website, the API allows no browser origins."
+  }
+}

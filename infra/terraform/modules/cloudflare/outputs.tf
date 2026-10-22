@@ -1,16 +1,16 @@
 output "api_url" {
-  description = "Public URL of the API (through the tunnel)."
-  value       = "https://${local.api_hostname}"
+  description = "Public URL of the API (through the tunnel); null without a domain."
+  value       = local.api_url
 }
 
 output "web_url" {
-  description = "Public URL of the website (Pages custom domain)."
-  value       = "https://${local.web_hostname}"
+  description = "Public URL of the website (Pages custom domain); null without a domain."
+  value       = local.web_url
 }
 
 output "pages_dev_url" {
-  description = "The website's default pages.dev address."
-  value       = "https://${cloudflare_pages_project.web.subdomain}"
+  description = "The website's default pages.dev address; null without a domain."
+  value       = one([for project in cloudflare_pages_project.web : "https://${project.subdomain}"])
 }
 
 output "tunnel_id" {

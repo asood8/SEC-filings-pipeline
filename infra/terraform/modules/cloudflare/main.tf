@@ -10,8 +10,14 @@
 # - Installing the Cloudflare Pages GitHub app on the repository, before the first apply.
 
 locals {
-  api_hostname = "${var.api_subdomain}.${var.zone_name}"
-  web_hostname = "${var.web_subdomain}.${var.zone_name}"
+  # Without a domain (zone_name null) only the account-level pieces exist: the tunnel, serving
+  # nothing yet, and the R2 buckets. The DNS records and the website wait for the domain: the
+  # site would have no API to call, and sign-in needs both on one domain (ADR-0013).
+  has_domain   = var.zone_name != null
+  api_hostname = local.has_domain ? "${var.api_subdomain}.${var.zone_name}" : null
+  web_hostname = local.has_domain ? "${var.web_subdomain}.${var.zone_name}" : null
+  api_url      = local.has_domain ? "https://${local.api_hostname}" : null
+  web_url      = local.has_domain ? "https://${local.web_hostname}" : null
 
   # The api Service, reached by cloudflared from inside the cluster. Plain HTTP is fine: the hop
   # never leaves the node, and Cloudflare terminates TLS for visitors.
@@ -22,7 +28,7 @@ locals {
   # GOOGLE_CLIENT_ID is left out while empty, which builds the site with sign-in switched off.
   pages_env_vars = merge(
     {
-      VITE_API_BASE_URL = { type = "plain_text", value = "https://${local.api_hostname}" }
+      VITE_API_BASE_URL = { type = "plain_text", value = local.api_url }
       NODE_VERSION      = { type = "plain_text", value = var.node_version }
     },
     var.google_client_id == "" ? {} : {
@@ -32,6 +38,8 @@ locals {
 }
 
 data "cloudflare_zone" "main" {
+  count = local.has_domain ? 1 : 0
+
   filter = {
     name = var.zone_name
   }
@@ -53,16 +61,18 @@ resource "cloudflare_zero_trust_tunnel_cloudflared_config" "api" {
   tunnel_id  = cloudflare_zero_trust_tunnel_cloudflared.api.id
 
   config = {
-    ingress = [
+    # Without a domain, only the catch-all: cloudflared runs, but nothing is public yet.
+    ingress = slice([
       {
         hostname = local.api_hostname
         service  = local.api_service_url
       },
       # cloudflared requires a final catch-all rule: anything else gets a 404.
       {
-        service = "http_status:404"
+        hostname = null
+        service  = "http_status:404"
       },
-    ]
+    ], local.has_domain ? 0 : 1, 2)
   }
 }
 
@@ -73,7 +83,9 @@ data "cloudflare_zero_trust_tunnel_cloudflared_token" "api" {
 }
 
 resource "cloudflare_dns_record" "api" {
-  zone_id = data.cloudflare_zone.main.id
+  count = local.has_domain ? 1 : 0
+
+  zone_id = data.cloudflare_zone.main[0].id
   name    = local.api_hostname
   type    = "CNAME"
   content = "${cloudflare_zero_trust_tunnel_cloudflared.api.id}.cfargotunnel.com"
@@ -130,6 +142,8 @@ resource "cloudflare_r2_bucket_lifecycle" "backups" {
 # --- Pages: the website ----------------------------------------------------------------------
 
 resource "cloudflare_pages_project" "web" {
+  count = local.has_domain ? 1 : 0
+
   account_id        = var.account_id
   name              = var.pages_project_name
   production_branch = var.production_branch
@@ -163,16 +177,20 @@ resource "cloudflare_pages_project" "web" {
 
 # The website on https://app.<zone>: Pages issues the certificate once the CNAME below resolves.
 resource "cloudflare_pages_domain" "web" {
+  count = local.has_domain ? 1 : 0
+
   account_id   = var.account_id
-  project_name = cloudflare_pages_project.web.name
+  project_name = cloudflare_pages_project.web[0].name
   name         = local.web_hostname
 }
 
 resource "cloudflare_dns_record" "web" {
-  zone_id = data.cloudflare_zone.main.id
+  count = local.has_domain ? 1 : 0
+
+  zone_id = data.cloudflare_zone.main[0].id
   name    = local.web_hostname
   type    = "CNAME"
-  content = cloudflare_pages_project.web.subdomain
+  content = cloudflare_pages_project.web[0].subdomain
   proxied = true
   ttl     = 1
   comment = "Cloudflare Pages: the filings website (Terraform)"

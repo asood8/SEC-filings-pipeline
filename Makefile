@@ -115,12 +115,16 @@ TF_ENV := $(TF_DIR)/envs/production
 # Providers are large (about 700 MB in all); keep one downloaded copy for every checkout.
 export TF_PLUGIN_CACHE_DIR ?= $(HOME)/.terraform.d/plugin-cache
 
+# The checks use their own working directory (TF_DATA_DIR), so they never touch the production
+# backend that tf-init connects, and need no credentials.
+TF_CHECK := TF_DATA_DIR=.terraform-check
+
 tf-check: ## Check the Terraform code: format, validate, tests on mock providers, free-tier allowlist (no accounts; creates nothing)
 	@mkdir -p $(TF_PLUGIN_CACHE_DIR)
 	terraform -chdir=$(TF_DIR) fmt -recursive -check -diff
-	terraform -chdir=$(TF_ENV) init -backend=false -input=false -lockfile=readonly
-	terraform -chdir=$(TF_ENV) validate
-	terraform -chdir=$(TF_ENV) test
+	$(TF_CHECK) terraform -chdir=$(TF_ENV) init -backend=false -input=false -lockfile=readonly
+	$(TF_CHECK) terraform -chdir=$(TF_ENV) validate
+	$(TF_CHECK) terraform -chdir=$(TF_ENV) test
 	$(TF_DIR)/check-free-tier.sh
 
 # Production runs read credentials from TF_ENV_FILE (`export NAME=value` lines; see

@@ -133,6 +133,17 @@ edited cloud-init file would replace the VM: k3s state and the public IP would b
 capacity might not be available to create it again. Rebuilding is a deliberate
 `terraform apply -replace=module.oci.oci_core_instance.k3s`; the block volume survives it.
 
+### Without a domain (added 2026-10-22)
+
+The domain is the one piece that costs money, and it can come later. With `domain` unset, the
+Cloudflare module makes only what doesn't need a zone: the tunnel (cloudflared connects, and the
+tunnel answers every request with a 404) and the R2 buckets. No zone is looked up, so the
+Cloudflare token needs no zone permissions yet, and no DNS records or Pages project are made: the
+website would have no API to call, and its sign-in cookie needs both on one domain (ADR-0013).
+The pipeline itself (discovery to Discord alerts) needs no domain. Setting `domain` later and
+applying adds the API's hostname, the DNS records, and the website, and `api_cors_origins` goes
+from `[]` to the website's origin. Tests cover both cases.
+
 ### Credentials and secrets
 
 - **Provider credentials** are sensitive variables that default to null, so each provider falls

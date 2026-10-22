@@ -81,8 +81,9 @@ variable "cloudflare_account_id" {
 }
 
 variable "domain" {
-  description = "The domain, already added to Cloudflare as a zone (an open decision, brief §12)."
+  description = "The domain, already added to Cloudflare as a zone. Leave it unset (null) until there is one: everything else is created, and the website and the API's public hostname follow on the apply that sets it (brief §12)."
   type        = string
+  default     = null
 }
 
 variable "api_subdomain" {

@@ -39,6 +39,7 @@ Thumbs.db
 # (they hold credentials; the committed *.tfvars.example files are the templates), plans, and
 # crash logs. The dependency lock file, .terraform.lock.hcl, is committed on purpose.
 .terraform/
+.terraform-check/
 *.tfstate
 *.tfstate.*
 *.tfvars

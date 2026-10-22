@@ -58,6 +58,10 @@ budget alert in each account that has a card on file.
 - **The domain.** The tunnel's stable hostname, the website, and the sign-in cookie all need one
   domain on Cloudflare (about $10 a year, the project's only accepted cost). It is the
   `domain` variable; the API is `api.<domain>` and the website `app.<domain>` by default.
+  It can come later (2026-10-22): leave `domain` unset and the first apply makes everything
+  else, with the tunnel serving nothing yet and no DNS records or website. The pipeline and its
+  Discord alerts need no domain. The apply that sets it adds the rest; the Cloudflare token then
+  needs the zone permissions below too.
 - ~~**R2 and a payment method.**~~ Decided 2026-10-21: R2, with a payment method on file.
   Cloudflare asks for one when R2 is first enabled, even on the free tier; usage stays far below
   it (raw filings were 7.5 MB for a month of the watchlist, and the database 17 MB). R2 keeps the
@@ -128,8 +132,8 @@ make tf-apply    # terraform apply production.tfplan: exactly what the plan show
 ```
 
 Read the plan before applying it: one A1 instance with 2 OCPU and 12 GB, one 100 GB volume,
-networking, two R2 buckets, a tunnel, two DNS records, a Pages project, an M0 cluster, and the
-Grafana folder, dashboards, and rule groups. Nothing else.
+networking, two R2 buckets, a tunnel, an M0 cluster, and the Grafana folder, dashboards, and rule
+groups, plus two DNS records and a Pages project once `domain` is set. Nothing else.
 
 - **"Out of host capacity"** when creating the instance is Oracle running out of A1 hosts, not
   a configuration error. Everything else is already created; run `terraform apply` again later,

@@ -23,8 +23,8 @@ On a live run against EDGAR, for a watchlist of 35 large US companies:
 - **Parsing** turned every Form 4 into structured transactions and split every 8-K into its
   numbered items, plus the text of its EX-99 press releases. When an 8-K announces a call, its
   day, time, and webcast link are shown on the filing's page, in alerts, and on an Upcoming calls
-  page with a calendar feed ("Q&A session:
-  Oct 21, 2026, 5:30 pm ET, https://ir.tesla.com"): 9 of the 22 8-Ks do, and all 9 were read
+  page with a calendar feed ("Q&A session: Oct 21, 2026, 5:30 pm ET, https://ir.tesla.com"):
+  9 of the 22 8-Ks do, and all 9 were read
   correctly.
 - **Insider trades** are queryable line by line (646 transactions in 256 Form 4s), and each
   insider is shown with their role ("Amy Hood (EVP, CFO)"). A filing's page lists its trades,

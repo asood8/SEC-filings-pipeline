@@ -27,6 +27,7 @@ def _escape(text: str) -> str:
         .replace(",", "\\,")
         .replace("\r\n", "\\n")
         .replace("\n", "\\n")
+        .replace("\r", "\\n")  # a lone carriage return would end the line too
     )
 
 

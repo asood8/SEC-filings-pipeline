@@ -196,3 +196,17 @@ def test_no_call_no_call_field() -> None:
     DiscordSender(transport=transport).send(DISCORD, ALERT)
     names = [f["name"] for f in json.loads(requests[0].content)["embeds"][0]["fields"]]
     assert names == ["Company", "Form", "Filed"]
+
+
+def test_a_line_break_in_a_headline_cant_break_the_email(monkeypatch: pytest.MonkeyPatch) -> None:
+    # A Subject header can't hold a line break; building the message would raise and stall the
+    # filing's other alerts. Alerts normally come from FilingSummary, which removes them.
+    monkeypatch.setattr(smtplib, "SMTP", FakeSmtp)
+    FakeSmtp.sent, FakeSmtp.refuse = [], False
+    alert = replace(ALERT, headline="Apple names a new CFO\nBcc: someone@example.com")
+    SmtpEmailSender(host="smtp", port=587, username="u", password="p", sender="a@example.com").send(
+        "ops@example.com", alert
+    )
+    [message] = FakeSmtp.sent
+    assert message["Subject"] == "[AAPL] Apple names a new CFO Bcc: someone@example.com"
+    assert message["Bcc"] is None

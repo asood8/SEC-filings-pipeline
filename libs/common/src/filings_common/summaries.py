@@ -1,9 +1,23 @@
 """The summary shape every summarizer produces, whether a template or an LLM writes it."""
 
-from pydantic import BaseModel, Field
+from typing import Annotated
+
+from pydantic import AfterValidator, BaseModel, Field
+
+
+def _one_line(text: str) -> str:
+    """Runs of whitespace, line breaks included, become one space. An LLM can put a line break
+    in a headline, and a headline becomes an email's Subject header, which can't hold one."""
+    line = " ".join(text.split())
+    if not line:
+        raise ValueError("must not be blank")
+    return line
+
+
+OneLine = Annotated[str, AfterValidator(_one_line)]
 
 
 class FilingSummary(BaseModel):
-    headline: str = Field(min_length=1, max_length=200)
+    headline: OneLine = Field(min_length=1, max_length=200)
     summary: str = Field(min_length=1)
-    key_points: list[str] = Field(default_factory=list, max_length=8)
+    key_points: list[OneLine] = Field(default_factory=list, max_length=8)

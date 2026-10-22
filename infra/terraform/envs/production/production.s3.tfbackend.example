@@ -1,0 +1,4 @@
+# Template for production.s3.tfbackend (gitignored): the R2 endpoint of the state bucket.
+#   cp production.s3.tfbackend.example production.s3.tfbackend
+# Put in your Cloudflare account ID (the 32 characters after dash.cloudflare.com/).
+endpoints = { s3 = "https://0123456789abcdef0123456789abcdef.r2.cloudflarestorage.com" }

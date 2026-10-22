@@ -1,6 +1,6 @@
 # ADR-0018: Infrastructure as code with Terraform
 
-- **Status:** Proposed
+- **Status:** Accepted (2026-10-22)
 - **Date:** 2026-10-07
 
 ## Context
@@ -42,7 +42,7 @@ infra/terraform/
   modules/atlas/        project, M0 cluster, database user, IP access list
   modules/grafana/      folders, dashboards, alert rule groups (read from deploy/grafana)
   envs/production/      versions.tf, providers.tf, main.tf, variables.tf, outputs.tf,
-                        terraform.tfvars.example, .terraform.lock.hcl
+                        production.tfvars.example, .terraform.lock.hcl
   envs/production/tests/  `terraform test` files, run against mock providers
   check-free-tier.sh    resource-type allowlist (see guardrails)
   README.md             operator guide: accounts, tokens, first apply, secrets
@@ -93,8 +93,17 @@ Four layers, all of which run without credentials:
 
 The account settings matter as much as the code: the Oracle account must stay on the Free tier
 (an upgraded account bills what exceeds the allowance instead of refusing it), and Cloudflare
-asks for a payment method when R2 is enabled, even on the free tier (an open decision in the
-README).
+asks for a payment method when R2 is enabled, even on the free tier (accepted 2026-10-21).
+
+**Usage, not just configuration (added 2026-10-22).** The layers above keep every resource free,
+but R2 also bills by use past its monthly allowance (10 GB of storage, 1 million Class A and 10
+million Class B operations), with no spending cap. Normal use is a few percent of that, so the
+risk is a bug writing in a loop, or years of growth. A daily job, `filings-r2-usage`
+(`deploy/k8s/base/r2-usage.yaml`), reads Cloudflare's own numbers from its GraphQL Analytics
+API with a token that can only read analytics, and exports the fraction of each allowance used;
+Grafana alerts past half of any of them, and if the job stops reporting. It counts on the safe
+side: current storage, operations over 30 days, and unknown operation types as Class A.
+Cloudflare's own budget alerts exist for pay-as-you-go accounts only, and don't cap either.
 
 ### Bootstrapping the VM: cloud-init
 
@@ -133,13 +142,26 @@ edited cloud-init file would replace the VM: k3s state and the public IP would b
 capacity might not be available to create it again. Rebuilding is a deliberate
 `terraform apply -replace=module.oci.oci_core_instance.k3s`; the block volume survives it.
 
+### Without a domain (added 2026-10-22)
+
+The domain is the one piece that costs money, and it can come later. With `domain` unset, the
+Cloudflare module makes only what doesn't need a zone: the tunnel (cloudflared connects, and the
+tunnel answers every request with a 404) and the R2 buckets. No zone is looked up, so the
+Cloudflare token needs no zone permissions yet, and no DNS records or Pages project are made: the
+website would have no API to call, and its sign-in cookie needs both on one domain (ADR-0013).
+The pipeline itself (discovery to Discord alerts) needs no domain. Setting `domain` later and
+applying adds the API's hostname, the DNS records, and the website, and `api_cors_origins` goes
+from `[]` to the website's origin. Tests cover both cases.
+
 ### Credentials and secrets
 
 - **Provider credentials** are sensitive variables that default to null, so each provider falls
   back to its own environment variable (`CLOUDFLARE_API_TOKEN`, `MONGODB_ATLAS_CLIENT_ID` and
   `_SECRET`, `GRAFANA_AUTH`) or, for OCI, the API key in `~/.oci/config`. Exporting them in the
   shell keeps them off the disk; a `*.tfvars` file also works and is gitignored.
-- **`terraform.tfvars.example`** is the committed template, with placeholders only.
+- **`production.tfvars.example`** is the committed template, with placeholders only. The filled-in
+  copy is `production.tfvars`, not `terraform.tfvars`, because `terraform test` loads the latter
+  automatically and the tests must run on their own inputs.
 - **Generated secrets** (the Atlas password, the tunnel token) are sensitive outputs. They reach
   the cluster as SealedSecrets: the operator pipes `terraform output -raw` into `kubectl create
   secret --dry-run=client` and `kubeseal`, and commits only the sealed result (README,
@@ -154,7 +176,10 @@ losing it means Terraform no longer knows what it manages (recoverable with `ter
 but tedious). Leaving the backend block out also lets `init -backend=false`, `validate`, and
 `test` run with no backend configured at all.
 
-Moving it is an open decision for the user. The free options, in the README:
+*Decided 2026-10-22:* the state moved to a private R2 bucket, `filings-tfstate`, through the
+`s3` backend with Terraform's lock file (R2 supports the conditional writes it needs). The bucket
+and its token are made by hand; the account's endpoint stays out of git in a `.tfbackend` file
+(infra/terraform/README.md, "State"). The free options that were considered:
 
 - **OCI Object Storage** (Always Free includes 20 GB), in a private bucket made by hand, through
   Terraform's native `oci` backend or the S3-compatible `s3` backend (which OpenTofu also has).

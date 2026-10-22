@@ -227,6 +227,16 @@ class TelemetrySettings(BaseSettings):
         return None if isinstance(value, str) and not value.strip() else value
 
 
+class R2UsageSettings(BaseSettings):
+    """The daily R2 free-tier check (`filings-r2-usage`): the Cloudflare account, and a token
+    that can only read its analytics (Account Analytics: Read)."""
+
+    model_config = _config("CLOUDFLARE_")
+
+    account_id: str
+    analytics_token: SecretStr
+
+
 class ObjectStoreSettings(BaseSettings):
     """Where raw filings are stored: a local directory in development, R2 (S3 API) in production."""
 

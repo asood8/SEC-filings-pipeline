@@ -43,13 +43,53 @@ run "the_tunnel_routes_the_api_hostname_to_the_api_service" {
   }
 
   assert {
-    condition     = cloudflare_dns_record.api.name == "api.example.com" && cloudflare_dns_record.api.type == "CNAME" && cloudflare_dns_record.api.proxied
+    condition     = cloudflare_dns_record.api[0].name == "api.example.com" && cloudflare_dns_record.api[0].type == "CNAME" && cloudflare_dns_record.api[0].proxied
     error_message = "The API hostname must be a proxied CNAME to the tunnel."
   }
 
   assert {
     condition     = output.api_url == "https://api.example.com" && output.web_url == "https://app.example.com"
     error_message = "The public URLs should follow the subdomain variables."
+  }
+}
+
+run "without_a_domain_only_the_tunnel_and_the_buckets_are_made" {
+  command = plan
+
+  module {
+    source = "../../modules/cloudflare"
+  }
+
+  variables {
+    zone_name = null
+  }
+
+  assert {
+    condition     = length(data.cloudflare_zone.main) == 0 && length(cloudflare_dns_record.api) == 0 && length(cloudflare_dns_record.web) == 0
+    error_message = "Without a domain, no zone is looked up and no DNS records are made."
+  }
+
+  assert {
+    condition     = length(cloudflare_pages_project.web) == 0 && length(cloudflare_pages_domain.web) == 0
+    error_message = "Without a domain, the website waits: it would have no API to call."
+  }
+
+  assert {
+    condition = (
+      length(cloudflare_zero_trust_tunnel_cloudflared_config.api.config.ingress) == 1
+      && cloudflare_zero_trust_tunnel_cloudflared_config.api.config.ingress[0].service == "http_status:404"
+    )
+    error_message = "Without a domain, the tunnel exists but serves only the catch-all 404."
+  }
+
+  assert {
+    condition     = output.api_url == null && output.web_url == null && output.pages_dev_url == null
+    error_message = "Without a domain there are no public URLs."
+  }
+
+  assert {
+    condition     = cloudflare_r2_bucket.raw.name == "filings-raw" && cloudflare_r2_bucket.backups.name == "filings-backups"
+    error_message = "The R2 buckets don't depend on the domain."
   }
 }
 
@@ -95,35 +135,35 @@ run "pages_builds_web_from_github_with_the_public_settings" {
 
   assert {
     condition = (
-      cloudflare_pages_project.web.build_config.root_dir == "web" &&
-      cloudflare_pages_project.web.build_config.build_command == "npm ci && npm run build" &&
-      cloudflare_pages_project.web.build_config.destination_dir == "dist"
+      cloudflare_pages_project.web[0].build_config.root_dir == "web" &&
+      cloudflare_pages_project.web[0].build_config.build_command == "npm ci && npm run build" &&
+      cloudflare_pages_project.web[0].build_config.destination_dir == "dist"
     )
     error_message = "Pages must build web/ with npm ci && npm run build into web/dist."
   }
 
   assert {
-    condition     = cloudflare_pages_project.web.deployment_configs.production.env_vars["VITE_API_BASE_URL"].value == "https://api.example.com"
+    condition     = cloudflare_pages_project.web[0].deployment_configs.production.env_vars["VITE_API_BASE_URL"].value == "https://api.example.com"
     error_message = "The website must call the API on its public hostname."
   }
 
   assert {
-    condition     = cloudflare_pages_project.web.deployment_configs.production.env_vars["GOOGLE_CLIENT_ID"].value == "1234567890-abc.apps.googleusercontent.com"
+    condition     = cloudflare_pages_project.web[0].deployment_configs.production.env_vars["GOOGLE_CLIENT_ID"].value == "1234567890-abc.apps.googleusercontent.com"
     error_message = "The Google client ID must reach the build."
   }
 
   assert {
-    condition     = cloudflare_pages_project.web.source.type == "github" && cloudflare_pages_project.web.source.config.path_includes == tolist(["web/**"])
+    condition     = cloudflare_pages_project.web[0].source.type == "github" && cloudflare_pages_project.web[0].source.config.path_includes == tolist(["web/**"])
     error_message = "Pages should build from GitHub, only when web/ changes."
   }
 
   assert {
-    condition     = cloudflare_pages_project.web.source.config.preview_deployment_setting == "none"
+    condition     = cloudflare_pages_project.web[0].source.config.preview_deployment_setting == "none"
     error_message = "Preview builds are off by default, to save the free plan's builds."
   }
 
   assert {
-    condition     = cloudflare_pages_domain.web.name == "app.example.com"
+    condition     = cloudflare_pages_domain.web[0].name == "app.example.com"
     error_message = "The website is served on app.<domain>, beside the API (ADR-0013's cookie)."
   }
 }
@@ -136,7 +176,7 @@ run "sign_in_is_left_out_of_the_build_until_a_client_id_is_set" {
   }
 
   assert {
-    condition     = !contains(keys(cloudflare_pages_project.web.deployment_configs.production.env_vars), "GOOGLE_CLIENT_ID")
+    condition     = !contains(keys(cloudflare_pages_project.web[0].deployment_configs.production.env_vars), "GOOGLE_CLIENT_ID")
     error_message = "An empty GOOGLE_CLIENT_ID should not be sent to Pages."
   }
 }
@@ -153,7 +193,7 @@ run "direct_upload_project_without_github" {
   }
 
   assert {
-    condition     = cloudflare_pages_project.web.source == null
+    condition     = cloudflare_pages_project.web[0].source == null
     error_message = "Without the GitHub integration, the project has no source."
   }
 }

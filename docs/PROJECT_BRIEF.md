@@ -168,7 +168,7 @@ Each phase ends with something runnable, tests passing, and docs updated. Check 
   - k6 load test of the API. _Done on the laptop (`make loadtest`, numbers in the README); a run against the VM waits for Phase 7._
   - Local model benchmark (speed vs summary quality across 2–3 small models/quantizations on the A1 VM). _The tool is done (`filings-benchmark`, with summary quality scored against 22 hand-labeled 8-Ks; laptop numbers in the README); the A1 run is pending._
   - Backups, data retention, runbook. _Done: the nightly backup CronJob and a restore drill (`make backup-drill`), outbox pruning and a retention and capacity analysis (runbook, "Capacity planning", with every regular query measured on 10 years of synthetic data for 500 companies and the slow ones fixed), and the runbook (`docs/runbook.md`). The first production backup and restore drill wait for Phase 7._
-  - README with architecture diagram and real metrics, ADRs complete. _The README has the diagram and the load-test and benchmark numbers; production metrics wait for Phase 7, and ADR-0018 and ADR-0019 are still Proposed._
+  - README with architecture diagram and real metrics, ADRs complete. _The README has the diagram and the load-test and benchmark numbers; production metrics wait for Phase 7; ADR-0018 and ADR-0019 were accepted on 2026-10-22._
 
 ## 9. Free-tier facts (checked October 2026; re-verify)
 

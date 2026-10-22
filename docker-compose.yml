@@ -71,7 +71,9 @@ services:
 
   mongodb:
     # Stand-in for MongoDB Atlas M0, which production uses. Keep the major version aligned with Atlas.
-    image: mongo:8.0.34
+    # 8.2, not 8.0: mongod 8.0 (8.0.32 and 8.0.34 tried) refuses to start on Linux 6.19 and newer,
+    # the kernel of GitHub's runners (SERVER-121912).
+    image: mongo:8.2.12
     command: ["mongod", "--wiredTigerCacheSizeGB", "0.25"]
     environment:
       MONGO_INITDB_ROOT_USERNAME: ${MONGO_USER:?copy .env.example to .env}

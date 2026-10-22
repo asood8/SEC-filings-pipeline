@@ -280,8 +280,21 @@ class InsiderTrades(BaseModel):
     )
 
 
+class SnippetPartOut(BaseModel):
+    text: str
+    match: bool = Field(description="One of the query's words, or a form of it.")
+
+
 class SearchResultOut(FilingOut):
     score: float = Field(description="Higher is better; comparable within one response only.")
+    snippet: list[SnippetPartOut] = Field(
+        default_factory=list,
+        description=(
+            "The passage of the summary that best matches the query, in parts, the matching "
+            "words marked. Plain text: show `match` parts highlighted. Empty for a filing not "
+            "yet summarized."
+        ),
+    )
 
 
 class SearchResponse(BaseModel):

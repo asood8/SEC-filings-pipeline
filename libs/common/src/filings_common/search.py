@@ -13,6 +13,9 @@
   calibration between the two: each list contributes 1 / (k + rank), except that a Form 4's
   semantic rank counts half (SEMANTIC_FORM_WEIGHTS).
 
+- Snippets (`snippets`): the passage of each result's summary that best matches the query, with
+  the matching words marked, from Postgres's `ts_headline`.
+
 `filings-search-eval` (search_eval.py) measures ranking changes on a labeled query set.
 """
 
@@ -117,6 +120,67 @@ class SearchHit:
     accession_no: str
     score: float
     form_type: str | None = None
+
+
+@dataclass(frozen=True)
+class SnippetPart:
+    text: str
+    match: bool  # one of the query's words (or a form of it: "trades" for "trading")
+
+
+# ts_headline marks matches with these; they are removed from the text first, so they can't
+# appear in it otherwise.
+_MARK_START, _MARK_STOP = "\u27e6", "\u27e7"
+_HEADLINE_OPTIONS = (
+    f"StartSel={_MARK_START}, StopSel={_MARK_STOP}, MaxWords=30, MinWords=12, MaxFragments=2, "
+    'FragmentDelimiter=" \u2026 "'
+)
+
+
+def _highlight_query(text: str) -> str | None:
+    """The query's words joined with OR, for highlighting: ts_headline marks words only where a
+    whole AND query matches, but a result may match some words (the relaxed keyword search) or
+    none (semantic search). Excluded words (-word) and OR itself are left out. Only letters and
+    digits remain, so the result can't be tsquery syntax."""
+    words = [
+        word
+        for token in text.split()
+        if not token.startswith("-") and token != "OR"
+        for word in re.findall(r"[A-Za-z0-9]+", token)
+    ]
+    return " | ".join(words) or None
+
+
+def snippets(
+    session: Session, accession_nos: Sequence[str], text: str
+) -> dict[str, list[SnippetPart]]:
+    """Each filing's best-matching passage of its summary, split into marked and unmarked parts.
+    A filing whose summary has none of the words gets its first words, unmarked."""
+    query = _highlight_query(text)
+    if not accession_nos or query is None:
+        return {}
+    cleaned = sa.func.translate(FilingSearch.body, _MARK_START + _MARK_STOP, "")
+    headline = sa.func.ts_headline(
+        "english", cleaned, sa.func.to_tsquery("english", query), _HEADLINE_OPTIONS
+    )
+    rows = session.execute(
+        sa.select(FilingSearch.accession_no, headline).where(
+            FilingSearch.accession_no.in_(accession_nos)
+        )
+    ).all()
+    return {accession_no: _parts(passage) for accession_no, passage in rows}
+
+
+def _parts(passage: str) -> list[SnippetPart]:
+    parts = []
+    for piece in re.split(
+        f"({_MARK_START}[^{_MARK_STOP}]*{_MARK_STOP})", " ".join(passage.split())
+    ):
+        if piece.startswith(_MARK_START):
+            parts.append(SnippetPart(piece[1:-1], match=True))
+        elif piece:
+            parts.append(SnippetPart(piece, match=False))
+    return parts
 
 
 def keywords_for(text: str) -> str:

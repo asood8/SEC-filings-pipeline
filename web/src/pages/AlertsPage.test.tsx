@@ -58,6 +58,7 @@ const APPLE_ALERT: Subscription = {
   form_types: [],
   form4_trades: 'all',
   form4_min_value: null,
+  form8k_items: [],
   channel: 'discord',
   target: 'https://discord.com/api/webhooks/123/…abcd',
   created_at: '2026-10-06T00:00:00Z',
@@ -154,6 +155,7 @@ describe('AlertsPage', () => {
       form_types: ['8-K'],
       form4_trades: 'all', // every Form 4 unless a filter is chosen
       form4_min_value: null,
+      form8k_items: [], // every 8-K
       destinations: [
         { channel: 'discord', target_from: 7 },
         {
@@ -250,15 +252,21 @@ describe('AlertsPage', () => {
       within(form).getByLabelText(/Only when those trades total at least/),
       '100000',
     )
+    await userEvent.click(
+      within(form).getByLabelText('2.02 Results of operations (earnings)'),
+    )
     await userEvent.click(within(form).getByRole('button', { name: 'Save' }))
     expect(await screen.findByText('(Form 4)')).toBeInTheDocument()
     expect(
-      screen.getByText('· Form 4: purchases only, $100,000 or more'),
+      screen.getByText(
+        '· Form 4: purchases only, $100,000 or more · 8-K: 2.02',
+      ),
     ).toBeInTheDocument()
     expect(patched).toEqual({
       form_types: ['4'],
       form4_trades: 'purchases',
       form4_min_value: 100000,
+      form8k_items: ['2.02'],
     })
     expect(
       screen.queryByRole('form', { name: 'Forms for the AAPL Discord alert' }),

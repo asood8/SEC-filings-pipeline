@@ -80,6 +80,7 @@ def _subscription_out(
         form_types=subscription.form_types,
         form4_trades=subscription.form4_trades,
         form4_min_value=subscription.form4_min_value,
+        form8k_items=subscription.form8k_items,
         channel=subscription.channel,
         target=masked_target(subscription.channel, subscription.target),
         created_at=subscription.created_at,
@@ -243,6 +244,7 @@ def create_subscription(
         form_types=body.form_types,
         form4_trades=body.form4_trades,
         form4_min_value=body.form4_min_value,
+        form8k_items=body.form8k_items,
         channel=body.channel,
         target=target,
     )
@@ -328,6 +330,7 @@ def create_subscriptions(
                         form_types=list(body.form_types),
                         form4_trades=body.form4_trades,
                         form4_min_value=body.form4_min_value,
+                        form8k_items=list(body.form8k_items),
                         channel=channel,
                         target=target,
                     )
@@ -377,6 +380,8 @@ def update_subscription(
         subscription.form4_trades = body.form4_trades
     if "form4_min_value" in body.model_fields_set:  # null removes the minimum
         subscription.form4_min_value = body.form4_min_value
+    if body.form8k_items is not None:
+        subscription.form8k_items = list(body.form8k_items)
     subscription.channel, subscription.target = channel, target
     _commit(session, company)
     last = _last_deliveries(session, [subscription.id])

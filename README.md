@@ -142,7 +142,8 @@ worth a look:
 - **Exactly-once alerts**: one notification row per (subscription, filing), delivered under a
   row lock, so redeliveries and full replays never alert twice; webhook targets are restricted
   to official Discord and Slack URLs. Form 4 alerts can be narrowed to open-market trades or
-  purchases, above a dollar value, so routine filings (tax withholding, awards) stay quiet.
+  purchases, above a dollar value, so routine filings (tax withholding, awards) stay quiet, and
+  8-K alerts to chosen items (earnings, officer changes, ...).
   ([ADR-0012](docs/adr/0012-notifier-and-exactly-once-alerts.md))
 - **Sign-in without handling passwords**: Google's ID token is verified against Google's
   published keys, then exchanged for the API's own HttpOnly session cookie; only a hash of each

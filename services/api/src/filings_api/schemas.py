@@ -7,7 +7,7 @@ from pydantic import AfterValidator, BaseModel, ConfigDict, Field
 
 from filings_common.alert_filters import Form4Trades
 from filings_common.db import Channel, FilingStatus
-from filings_common.parsed import CallKind
+from filings_common.parsed import ITEM_TITLES, CallKind
 
 # The forms a subscription can choose to be alerted about: the ones the pipeline parses and
 # summarizes. A form the pipeline learns later must be added here before anyone can pick it.
@@ -302,6 +302,22 @@ _FORM4_MIN_VALUE_HELP = (
 Form4MinValue = Annotated[int, Field(ge=1, le=10**12)]
 
 
+def _known_items(items: list[str]) -> list[str]:
+    unknown = [item for item in items if item not in ITEM_TITLES]
+    if unknown:
+        raise ValueError(f"unknown 8-K item(s): {', '.join(unknown)} (e.g. 2.02 or 5.02)")
+    return sorted(set(items))
+
+
+Form8KItems = Annotated[
+    list[Annotated[str, Field(max_length=5)]], Field(max_length=40), AfterValidator(_known_items)
+]
+_FORM8K_ITEMS_HELP = (
+    "8-Ks only: alert only when the 8-K reports one of these items, e.g. 2.02 (results) or 5.02 "
+    "(officer changes); empty means every 8-K. Other forms ignore it."
+)
+
+
 class SubscriptionCreate(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -309,6 +325,7 @@ class SubscriptionCreate(BaseModel):
     form_types: FormTypes = Field(default_factory=list, description=_FORM_TYPES_HELP)
     form4_trades: Form4Trades = Field(default="all", description=_FORM4_TRADES_HELP)
     form4_min_value: Form4MinValue | None = Field(default=None, description=_FORM4_MIN_VALUE_HELP)
+    form8k_items: Form8KItems = Field(default_factory=list, description=_FORM8K_ITEMS_HELP)
     channel: Channel
     target: str | None = Field(default=None, max_length=500, description=_TARGET_HELP)
 
@@ -324,6 +341,7 @@ class SubscriptionUpdate(BaseModel):
         default=None,
         description=_FORM4_MIN_VALUE_HELP + " To remove a minimum, send null explicitly.",
     )
+    form8k_items: Form8KItems | None = Field(default=None, description=_FORM8K_ITEMS_HELP)
     channel: Channel | None = Field(
         default=None,
         description="A new channel needs a new `target`, except email, which uses your address.",
@@ -354,6 +372,7 @@ class SubscriptionOut(BaseModel):
     form_types: list[str] = Field(description="Empty means every form.")
     form4_trades: Form4Trades = Field(description=_FORM4_TRADES_HELP)
     form4_min_value: int | None = Field(description=_FORM4_MIN_VALUE_HELP)
+    form8k_items: list[str] = Field(description=_FORM8K_ITEMS_HELP)
     channel: Channel
     target: str = Field(
         description=(
@@ -394,6 +413,7 @@ class SubscriptionBatch(BaseModel):
     form_types: FormTypes = Field(default_factory=list, description=_FORM_TYPES_HELP)
     form4_trades: Form4Trades = Field(default="all", description=_FORM4_TRADES_HELP)
     form4_min_value: Form4MinValue | None = Field(default=None, description=_FORM4_MIN_VALUE_HELP)
+    form8k_items: Form8KItems = Field(default_factory=list, description=_FORM8K_ITEMS_HELP)
     destinations: list[Destination] = Field(min_length=1, max_length=5)
 
 

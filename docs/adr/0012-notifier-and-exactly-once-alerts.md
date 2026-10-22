@@ -73,6 +73,14 @@ one extra alert. The filters change who is alerted about a filing, not how often
 exactly-once rule above still holds (migration 478b6b568519 adds the columns with check
 constraints).
 
+### 8-K item filters (added 2026-10-22)
+
+An 8-K can report anything from earnings (2.02) to a bylaw change (5.03). A subscription can
+list the items it wants (`form8k_items`); an 8-K is alerted when it reports any of them, and the
+empty list (the default, and every existing subscription) means every 8-K. The API accepts any
+item in SEC's list; the website offers the 15 that say what happened, leaving out 9.01
+(financial statements and exhibits), which comes with most 8-Ks. Migration be5a237b919d.
+
 ## Alternatives considered
 
 - **Dedupe in Redis.** It's lost on eviction or restart, and can't show what was delivered. The

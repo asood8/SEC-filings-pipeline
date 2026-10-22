@@ -1,6 +1,6 @@
 import pytest
 
-from filings_common.alert_filters import FORM4_TRADES, TradeLine, wants_form4
+from filings_common.alert_filters import FORM4_TRADES, TradeLine, wants_8k, wants_form4
 
 SALE = TradeLine("S", 1_000, 250.0)  # $250,000
 PURCHASE = TradeLine("P", 100, 50.0)  # $5,000
@@ -44,3 +44,17 @@ def test_wants_form4(
 def test_the_choices_match_the_database_check() -> None:
     # subscriptions.form4_trades has CHECK (form4_trades IN ('all', 'open_market', 'purchases')).
     assert FORM4_TRADES == ("all", "open_market", "purchases")
+
+
+@pytest.mark.parametrize(
+    ("items", "filing_items", "wanted"),
+    [
+        ([], ["5.02", "9.01"], True),  # no items chosen: every 8-K
+        (["2.02"], ["2.02", "9.01"], True),
+        (["2.02", "5.02"], ["5.02"], True),  # any one of them is enough
+        (["2.02"], ["5.02", "9.01"], False),
+        (["2.02"], [], False),
+    ],
+)
+def test_wants_8k(items: list[str], filing_items: list[str], wanted: bool) -> None:
+    assert wants_8k(items, filing_items) is wanted

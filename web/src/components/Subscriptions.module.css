@@ -150,3 +150,9 @@
   gap: 0.35rem;
   margin-left: 1.6rem;
 }
+
+.items {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(15rem, 1fr));
+  gap: 0.3rem 1rem;
+}

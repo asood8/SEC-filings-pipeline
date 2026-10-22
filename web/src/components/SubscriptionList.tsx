@@ -5,8 +5,13 @@ import type { Subscription } from '../api/client'
 import { formatDateTime, formLabel } from '../lib/format'
 import { ErrorMessage } from './QueryStatus'
 import styles from './Subscriptions.module.css'
-import { form4FilterLabel, readForm4Filters } from '../lib/form4Filters'
-import { Form4FilterFields } from './Form4Filters'
+import {
+  form4FilterLabel,
+  form8kItemsLabel,
+  readForm4Filters,
+  readForm8KItems,
+} from '../lib/alertFilters'
+import { Form4FilterFields, Form8KItemFields } from './AlertFilters'
 
 const CHANNEL_NAMES = { discord: 'Discord', slack: 'Slack', email: 'Email' }
 
@@ -118,7 +123,12 @@ function Destination({ subscription, onRemove, removing }: DestinationProps) {
   const update = useUpdateSubscription()
   const channel = CHANNEL_NAMES[subscription.channel]
   const label = `${subscription.company.ticker} ${channel} alert`
-  const filters = form4FilterLabel(subscription)
+  const filters = [
+    form4FilterLabel(subscription),
+    form8kItemsLabel(subscription),
+  ]
+    .filter(Boolean)
+    .join(' · ')
 
   /** Closes the edit form, putting focus back on the button that opened it. */
   function close() {
@@ -131,7 +141,12 @@ function Destination({ subscription, onRemove, removing }: DestinationProps) {
     const data = new FormData(event.currentTarget)
     const forms = data.getAll('form') as ('4' | '8-K')[]
     update.mutate(
-      { id: subscription.id, form_types: forms, ...readForm4Filters(data) },
+      {
+        id: subscription.id,
+        form_types: forms,
+        ...readForm4Filters(data),
+        form8k_items: readForm8KItems(data),
+      },
       { onSuccess: close },
     )
   }
@@ -201,6 +216,7 @@ function Destination({ subscription, onRemove, removing }: DestinationProps) {
             trades={subscription.form4_trades}
             minValue={subscription.form4_min_value}
           />
+          <Form8KItemFields items={subscription.form8k_items} />
           <button type="submit" disabled={update.isPending}>
             {update.isPending ? 'Saving…' : 'Save'}
           </button>

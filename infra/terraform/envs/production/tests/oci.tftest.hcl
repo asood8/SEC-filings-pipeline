@@ -189,6 +189,22 @@ run "the_metadata_service_requires_v2" {
   }
 }
 
+run "oracle_can_see_the_memory_that_keeps_the_vm_from_looking_idle" {
+  command = plan
+
+  module {
+    source = "../../modules/oci"
+  }
+
+  assert {
+    condition = (
+      oci_core_instance.k3s.agent_config[0].is_monitoring_disabled == false
+      && one([for p in oci_core_instance.k3s.agent_config[0].plugins_config : p.desired_state if p.name == "Compute Instance Monitoring"]) == "ENABLED"
+    )
+    error_message = "Oracle must see the VM's memory use (the monitoring plugin), or a quiet week looks idle."
+  }
+}
+
 # --- Paid configurations are refused ---------------------------------------------------------
 
 run "refuses_a_shape_other_than_a1_flex" {

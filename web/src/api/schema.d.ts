@@ -861,6 +861,21 @@ export interface components {
              * @description Higher is better; comparable within one response only.
              */
             score: number;
+            /**
+             * Snippet
+             * @description The passage of the summary that best matches the query, in parts, the matching words marked. Plain text: show `match` parts highlighted. Empty for a filing not yet summarized.
+             */
+            snippet?: components["schemas"]["SnippetPartOut"][];
+        };
+        /** SnippetPartOut */
+        SnippetPartOut: {
+            /** Text */
+            text: string;
+            /**
+             * Match
+             * @description One of the query's words, or a form of it.
+             */
+            match: boolean;
         };
         /**
          * SubscriptionBatch

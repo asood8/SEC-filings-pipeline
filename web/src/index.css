@@ -9,6 +9,7 @@
   --accent-soft: #e8eefc;
   --warn-bg: #fff7e6;
   --warn-border: #f0c36d;
+  --highlight: #ffe88a; /* search matches: 12.1:1 with --text */
   --radius: 8px;
   --sans: system-ui, 'Segoe UI', Roboto, sans-serif;
   --mono: ui-monospace, 'SFMono-Regular', Consolas, monospace;
@@ -32,6 +33,7 @@
     --accent-soft: #1d2a4a;
     --warn-bg: #2e2510;
     --warn-border: #8a6d2c;
+    --highlight: #5a4a12; /* 7.1:1 with --text */
   }
 }
 

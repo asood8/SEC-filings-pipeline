@@ -29,6 +29,37 @@ describe('SearchPage', () => {
     expect(requests[0].searchParams.get('mode')).toBe('semantic')
   })
 
+  it("shows each result's matching passage, the query words marked", async () => {
+    mockApi({
+      '/search': () => ({
+        query: 'new cfo',
+        mode: 'hybrid',
+        degraded: false,
+        items: [
+          {
+            ...filing(),
+            score: 0.5,
+            snippet: [
+              { text: 'Apple appointed a ', match: false },
+              { text: 'new', match: true },
+              { text: ' ', match: false },
+              { text: 'CFO', match: true },
+              { text: ' effective January 1.', match: false },
+            ],
+          },
+        ],
+      }),
+    })
+    renderRoute('/search?q=new%20cfo')
+
+    const passage = await screen.findByText(/Apple appointed a/)
+    expect(passage).toHaveTextContent(
+      'Apple appointed a new CFO effective January 1.',
+    )
+    const marks = passage.querySelectorAll('mark')
+    expect([...marks].map((m) => m.textContent)).toEqual(['new', 'CFO'])
+  })
+
   it('submits the form into the URL', async () => {
     const requests = mockApi({
       '/search': () => ({

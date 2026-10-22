@@ -5,10 +5,16 @@ from fastapi import APIRouter, Depends, Query, Request, Response
 
 from filings_api.embedding_cache import QueryEmbeddingCache
 from filings_api.queries import CikFilter, EmbedderDep, SessionDep, filing_select, to_filing_out
-from filings_api.schemas import SearchResponse, SearchResultOut
+from filings_api.schemas import SearchResponse, SearchResultOut, SnippetPartOut
 from filings_common.db import Filing
 from filings_common.embeddings import Embedder, EmbeddingError
-from filings_common.search import SearchHit, hybrid_search, keyword_search, semantic_search
+from filings_common.search import (
+    SearchHit,
+    hybrid_search,
+    keyword_search,
+    semantic_search,
+    snippets,
+)
 
 logger = logging.getLogger(__name__)
 router = APIRouter(tags=["search"])
@@ -83,12 +89,20 @@ def search(
         filing_select().where(Filing.accession_no.in_([h.accession_no for h in hits]))
     ).all()
     filings = {row[0].accession_no: to_filing_out(*row) for row in rows}
+    passages = snippets(session, [h.accession_no for h in hits], q)
     return SearchResponse(
         query=q,
         mode=used,
         degraded=used != mode,
         items=[
-            SearchResultOut(**filings[h.accession_no].model_dump(), score=h.score)
+            SearchResultOut(
+                **filings[h.accession_no].model_dump(),
+                score=h.score,
+                snippet=[
+                    SnippetPartOut(text=part.text, match=part.match)
+                    for part in passages.get(h.accession_no, [])
+                ],
+            )
             for h in hits
             if h.accession_no in filings
         ],

@@ -262,6 +262,22 @@ data: 500 companies, 10 years, 452,000 filings; runbook, "Capacity planning", ha
 - **No index on `companies (ticker)`.** Ticker lookups and the companies list read the 8,000-row
   ticker map whole in under 2 ms, and it doesn't grow with history.
 
+### Snippets (added 2026-10-22)
+
+Each search result carries `snippet`: the passage of its summary that best matches the query,
+from Postgres's `ts_headline` (at most two fragments of about 30 words), split into parts with
+the matching words marked (`match: true`). The website shows them under the headline, matches in
+`<mark>`. Three choices:
+
+- *The query is OR-ed for highlighting.* `ts_headline` marks words only where the whole query
+  matches, but a result may match only some words (the relaxed keyword search) or none (semantic
+  search). The query's words are joined with `|` (excluded `-words` left out), keeping only
+  letters and digits, so nothing a user types becomes tsquery syntax.
+- *Plain-text parts, not HTML.* The text is LLM output: returning parts lets every client
+  render the marks itself, and nothing in a summary can inject markup.
+- *Only for the returned results*, at most 50 short summaries per request, so the cost is small.
+  The marker characters are stripped from the text first, so they can't appear in it.
+
 ## Alternatives considered
 
 - **A dedicated search engine (OpenSearch, Meilisearch).** Another always-on service on a 12 GB VM,

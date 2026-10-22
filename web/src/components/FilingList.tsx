@@ -1,10 +1,11 @@
 import { Link } from 'react-router'
-import type { Filing } from '../api/client'
+import type { Filing, SearchResult } from '../api/client'
 import { formatDate, formLabel } from '../lib/format'
 import styles from './FilingList.module.css'
 
 type Props = {
-  filings: Filing[]
+  /** Search results also carry a snippet of their summary, shown under the headline. */
+  filings: (Filing & Partial<Pick<SearchResult, 'snippet'>>)[]
   /** Hide the company on a company's own page. */
   showCompany?: boolean
 }
@@ -24,6 +25,13 @@ export function FilingList({ filings, showCompany = true }: Props) {
               </span>
             )}
           </Link>
+          {filing.snippet && filing.snippet.length > 0 && (
+            <p className={styles.snippet}>
+              {filing.snippet.map((part, i) =>
+                part.match ? <mark key={i}>{part.text}</mark> : part.text,
+              )}
+            </p>
+          )}
           <div className={styles.meta}>
             {showCompany && (
               <>

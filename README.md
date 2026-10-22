@@ -35,6 +35,7 @@ On a live run against EDGAR, for a watchlist of 35 large US companies:
 - **Search** finds filings by keyword (Postgres full-text search) and by meaning (pgvector
   embeddings from a local model), combined into one ranking: "trading plan cancelled" finds
   Oracle's 8-K about Larry Ellison's plan, and "debt offering" finds Amazon's note offering.
+  Each result shows the passage of its summary that matches, with the query's words marked.
 - **Summarization** wrote every summary: Form 4s with a deterministic template, 8-Ks with an LLM
   behind a failover chain (a local model, then Gemini's free tier). Stopping the local model
   mid-run moved the remaining work to Gemini automatically, and the local model took over again

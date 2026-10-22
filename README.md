@@ -22,9 +22,9 @@ On a live run against EDGAR, for a watchlist of 35 large US companies:
   across workers through Redis. Running it again creates no duplicates.
 - **Parsing** turned every Form 4 into structured transactions and split every 8-K into its
   numbered items, plus the text of its EX-99 press releases. When an 8-K announces a call, its
-  day, time, and webcast link are shown on the filing's page and in alerts ("Q&A session:
-  Oct 21, 2026, 5:30 pm ET, https://ir.tesla.com"): 9 of the 22 8-Ks do, and all 9 were read
-  correctly.
+  day, time, and webcast link are shown on the filing's page, in alerts, and on an Upcoming calls
+  page with a calendar feed ("Q&A session: Oct 21, 2026, 5:30 pm ET, https://ir.tesla.com"):
+  9 of the 22 8-Ks do, and all 9 were read correctly.
 - **Insider trades** are queryable line by line (646 transactions in 256 Form 4s), and each
   insider is shown with their role ("Amy Hood (EVP, CFO)"). A filing's page lists its trades,
   and a company's page totals 90 days of insider buying and selling by owner:
@@ -141,7 +141,10 @@ worth a look:
   [ADR-0009](docs/adr/0009-grounding-check-for-llm-summaries.md))
 - **Exactly-once alerts**: one notification row per (subscription, filing), delivered under a
   row lock, so redeliveries and full replays never alert twice; webhook targets are restricted
-  to official Discord and Slack URLs. ([ADR-0012](docs/adr/0012-notifier-and-exactly-once-alerts.md))
+  to official Discord and Slack URLs. Form 4 alerts can be narrowed to open-market trades or
+  purchases, above a dollar value, so routine filings (tax withholding, awards) stay quiet, and
+  8-K alerts to chosen items (earnings, officer changes, ...).
+  ([ADR-0012](docs/adr/0012-notifier-and-exactly-once-alerts.md))
 - **Sign-in without handling passwords**: Google's ID token is verified against Google's
   published keys, then exchanged for the API's own HttpOnly session cookie; only a hash of each
   session token is stored. ([ADR-0013](docs/adr/0013-sign-in-and-sessions.md))
@@ -200,8 +203,10 @@ JavaScript origins; no secret needed) in `.env` as `GOOGLE_CLIENT_ID`. Open the 
 The API: `GET /search?q=...` (hybrid by default; `mode=keyword|semantic`), `GET /filings`,
 `GET /filings/{accession_no}` (with a Form 4's transaction lines), `GET /companies`,
 `GET /companies/{ticker}`, `GET /companies/{ticker}/insider-activity?days=90` (insiders'
-purchases and sales per owner, grouped by owner CIK), and `GET /insider-trades?side=buy&days=30`
-(the largest purchases or sales across companies, one row per Form 4). A Form 4's reporting
+purchases and sales per owner, grouped by owner CIK), `GET /insider-trades?side=buy&days=30`
+(the largest purchases or sales across companies, one row per Form 4), and `GET /calls?days=60`
+(the earnings calls and other investor events 8-Ks announce, also as an iCalendar feed to
+subscribe to, `GET /calls.ics`). A Form 4's reporting
 owners come with the name as filed and a readable one ("COOK TIMOTHY D" as "Timothy D Cook"),
 and with who they are to the company: a short `relationship` ("Executive Chair, Director",
 "EVP, CFO", "10% owner") and the filing's boxes and titles as filed (`is_director`,

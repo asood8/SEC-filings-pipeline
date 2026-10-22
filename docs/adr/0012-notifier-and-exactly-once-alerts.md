@@ -54,6 +54,33 @@ Sign-in and subscription management (the API side of Phase 4) are decided separa
   and may be shipped elsewhere, where users' addresses don't belong, and the first letter, the
   domain, and the filing are enough to follow an alert.
 
+### Form 4 filters (added 2026-10-22)
+
+Most Form 4s report routine events (shares withheld for taxes, stock awards, option exercises,
+gifts), so an alert on every one is mostly noise. A subscription can narrow its Form 4 alerts:
+
+- `form4_trades`: `all` (the default, and every existing subscription), `open_market` (the
+  filing reports a stock purchase or sale, SEC codes P and S, the same lines the insider pages
+  total), or `purchases` (code P).
+- `form4_min_value`: only when those trades total at least this many US dollars (shares x
+  price). With `all`, a minimum still needs open-market trades, the only ones with a market
+  value.
+
+The rule lives in `filings_common.alert_filters` and runs in the notifier after the usual
+company and form-type match; other forms ignore both settings. A price given only in a footnote
+is unknown, and such a trade counts as meeting the minimum: missing a large trade is worse than
+one extra alert. The filters change who is alerted about a filing, not how often, so the
+exactly-once rule above still holds (migration 478b6b568519 adds the columns with check
+constraints).
+
+### 8-K item filters (added 2026-10-22)
+
+An 8-K can report anything from earnings (2.02) to a bylaw change (5.03). A subscription can
+list the items it wants (`form8k_items`); an 8-K is alerted when it reports any of them, and the
+empty list (the default, and every existing subscription) means every 8-K. The API accepts any
+item in SEC's list; the website offers the 15 that say what happened, leaving out 9.01
+(financial statements and exhibits), which comes with most 8-Ks. Migration be5a237b919d.
+
 ## Alternatives considered
 
 - **Dedupe in Redis.** It's lost on eviction or restart, and can't show what was delivered. The

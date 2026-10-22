@@ -93,6 +93,13 @@ added to alerts ("Q&A session: Oct 21, 2026, 5:30 pm ET, https://ir.tesla.com").
   without a date (or only in a later advisory) isn't recorded.
 - *Existing 8-Ks* get theirs from MongoDB with `filings-rebuild-key-fields --form-type 8-K`, with
   no SEC requests and no events.
+- *Upcoming calls (added 2026-10-22):* `GET /calls` lists the calls from today (US Eastern) to
+  60 days ahead (at most 120), one per company and day: when two 8-Ks announce the same call
+  (Adobe a week ahead without a time, then on the day with one), the one with a start time,
+  then the later filing. `GET /calls.ics` is the same as an iCalendar feed (RFC 5545, written by
+  `filings_api.ical`, no new dependency), the next 120 days and the last 30, for "subscribe by
+  URL" in a calendar app: a timed call is an hour long, one without a time an all-day event. The
+  website's Calls page shows the list and links the feed.
 - *The call's content* (a transcript, a summary of the Q&A) is deferred: it would mean fetching
   each company's webcast audio, a speech-to-text model, summaries in parts (a transcript is far
   longer than the LLM's context), and checking the sites' terms. See the brief's open decisions.

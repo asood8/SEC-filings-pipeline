@@ -5,8 +5,9 @@ from typing import Annotated, Literal
 
 from pydantic import AfterValidator, BaseModel, ConfigDict, Field
 
+from filings_common.alert_filters import Form4Trades
 from filings_common.db import Channel, FilingStatus
-from filings_common.parsed import CallKind
+from filings_common.parsed import ITEM_TITLES, CallKind
 
 # The forms a subscription can choose to be alerted about: the ones the pipeline parses and
 # summarizes. A form the pipeline learns later must be added here before anyone can pick it.
@@ -137,6 +138,24 @@ class InvestorCallOut(BaseModel):
     )
     webcast_url: str | None = Field(
         description="Where the filing says to listen, usually the company's investor site."
+    )
+
+
+class UpcomingCall(InvestorCallOut):
+    ticker: str
+    company_name: str
+    accession_no: str = Field(description="The 8-K that announced it.")
+
+
+class UpcomingCalls(BaseModel):
+    since: date = Field(description="Today in US Eastern time: calls from this day on.")
+    until: date = Field(description="The last day included.")
+    items: list[UpcomingCall] = Field(
+        description=(
+            "By day, then start time (calls without a time last that day), then ticker. One "
+            "per company and day: when two 8-Ks announce the same call, the one with a start "
+            "time, then the later one."
+        )
     )
 
 
@@ -290,6 +309,31 @@ _TARGET_HELP = (
     "A Discord or Slack webhook URL. For email, your account's address: the default, and the only "
     "one allowed."
 )
+_FORM4_TRADES_HELP = (
+    "Form 4s only: alert about every one (all), only those reporting open-market buys or sells "
+    "(open_market, SEC codes P and S), or only purchases (purchases). Other forms ignore it."
+)
+_FORM4_MIN_VALUE_HELP = (
+    "Form 4s only: alert only when those open-market trades total at least this many US dollars "
+    "(shares x price). A trade priced only in a footnote counts as meeting it. Null for no minimum."
+)
+Form4MinValue = Annotated[int, Field(ge=1, le=10**12)]
+
+
+def _known_items(items: list[str]) -> list[str]:
+    unknown = [item for item in items if item not in ITEM_TITLES]
+    if unknown:
+        raise ValueError(f"unknown 8-K item(s): {', '.join(unknown)} (e.g. 2.02 or 5.02)")
+    return sorted(set(items))
+
+
+Form8KItems = Annotated[
+    list[Annotated[str, Field(max_length=5)]], Field(max_length=40), AfterValidator(_known_items)
+]
+_FORM8K_ITEMS_HELP = (
+    "8-Ks only: alert only when the 8-K reports one of these items, e.g. 2.02 (results) or 5.02 "
+    "(officer changes); empty means every 8-K. Other forms ignore it."
+)
 
 
 class SubscriptionCreate(BaseModel):
@@ -297,6 +341,9 @@ class SubscriptionCreate(BaseModel):
 
     ticker: str = Field(min_length=1, max_length=20, examples=["AAPL"])
     form_types: FormTypes = Field(default_factory=list, description=_FORM_TYPES_HELP)
+    form4_trades: Form4Trades = Field(default="all", description=_FORM4_TRADES_HELP)
+    form4_min_value: Form4MinValue | None = Field(default=None, description=_FORM4_MIN_VALUE_HELP)
+    form8k_items: Form8KItems = Field(default_factory=list, description=_FORM8K_ITEMS_HELP)
     channel: Channel
     target: str | None = Field(default=None, max_length=500, description=_TARGET_HELP)
 
@@ -307,6 +354,12 @@ class SubscriptionUpdate(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     form_types: FormTypes | None = Field(default=None, description=_FORM_TYPES_HELP)
+    form4_trades: Form4Trades | None = Field(default=None, description=_FORM4_TRADES_HELP)
+    form4_min_value: Form4MinValue | None = Field(
+        default=None,
+        description=_FORM4_MIN_VALUE_HELP + " To remove a minimum, send null explicitly.",
+    )
+    form8k_items: Form8KItems | None = Field(default=None, description=_FORM8K_ITEMS_HELP)
     channel: Channel | None = Field(
         default=None,
         description="A new channel needs a new `target`, except email, which uses your address.",
@@ -335,6 +388,9 @@ class SubscriptionOut(BaseModel):
     id: int
     company: CompanyRef
     form_types: list[str] = Field(description="Empty means every form.")
+    form4_trades: Form4Trades = Field(description=_FORM4_TRADES_HELP)
+    form4_min_value: int | None = Field(description=_FORM4_MIN_VALUE_HELP)
+    form8k_items: list[str] = Field(description=_FORM8K_ITEMS_HELP)
     channel: Channel
     target: str = Field(
         description=(
@@ -373,6 +429,9 @@ class SubscriptionBatch(BaseModel):
         min_length=1, max_length=25, examples=[["AAPL", "MSFT"]]
     )
     form_types: FormTypes = Field(default_factory=list, description=_FORM_TYPES_HELP)
+    form4_trades: Form4Trades = Field(default="all", description=_FORM4_TRADES_HELP)
+    form4_min_value: Form4MinValue | None = Field(default=None, description=_FORM4_MIN_VALUE_HELP)
+    form8k_items: Form8KItems = Field(default_factory=list, description=_FORM8K_ITEMS_HELP)
     destinations: list[Destination] = Field(min_length=1, max_length=5)
 
 

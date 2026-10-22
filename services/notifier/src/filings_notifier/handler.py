@@ -34,6 +34,7 @@ from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.orm import Session, sessionmaker
 
 from filings_common import metrics, telemetry
+from filings_common.alert_filters import OPEN_MARKET_CODES, TradeLine, wants_8k, wants_form4
 from filings_common.consumer import PermanentError, Received
 from filings_common.db import (
     Channel,
@@ -41,6 +42,7 @@ from filings_common.db import (
     Filing,
     FilingStatus,
     Form4Filing,
+    Form4Transaction,
     Form8KFiling,
     Notification,
     NotificationStatus,
@@ -144,7 +146,12 @@ class NotificationHandler:
         if form4 is not None:
             ciks.add(form4.issuer_cik)
         query = (
-            sa.select(Subscription.id)
+            sa.select(
+                Subscription.id,
+                Subscription.form4_trades,
+                Subscription.form4_min_value,
+                Subscription.form8k_items,
+            )
             .where(
                 Subscription.cik.in_(ciks),
                 Subscription.created_at <= discovered_at,
@@ -154,7 +161,25 @@ class NotificationHandler:
             )
             .order_by(Subscription.id)
         )
-        return list(session.scalars(query))
+        rows = session.execute(query).all()
+        if form4 is None:
+            # 8-K item filters (filings_common.alert_filters); other forms have no items.
+            form8k = session.get(Form8KFiling, alert.accession_no)
+            filing_items = form8k.items if form8k is not None else []
+            return [
+                row.id for row in rows if form8k is None or wants_8k(row.form8k_items, filing_items)
+            ]
+        # Form 4 filters (filings_common.alert_filters): read the trade lines once, if needed.
+        lines: list[TradeLine] | None = None
+        wanted = []
+        for row in rows:
+            if row.form4_trades != "all" or row.form4_min_value is not None:
+                if lines is None:
+                    lines = _trade_lines(session, alert.accession_no)
+                if not wants_form4(row.form4_trades, row.form4_min_value, lines):
+                    continue
+            wanted.append(row.id)
+        return wanted
 
     def _deliver(self, subscription_id: int, alert: Alert) -> bool:
         """Deliver one alert. True when settled (sent, or failed for good); False to retry."""
@@ -212,3 +237,17 @@ class NotificationHandler:
             notification.sent_at = sa.func.now()
             notification.last_error = None
             return "sent", channel
+
+
+def _trade_lines(session: Session, accession_no: str) -> list[TradeLine]:
+    """A Form 4's open-market stock trades, the only lines the filters look at."""
+    rows = session.execute(
+        sa.select(
+            Form4Transaction.code, Form4Transaction.shares, Form4Transaction.price_per_share
+        ).where(
+            Form4Transaction.accession_no == accession_no,
+            Form4Transaction.is_derivative.is_(False),
+            Form4Transaction.code.in_(sorted(OPEN_MARKET_CODES)),
+        )
+    )
+    return [TradeLine(row.code, row.shares, row.price_per_share) for row in rows]

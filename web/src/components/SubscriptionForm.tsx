@@ -3,6 +3,8 @@ import { type FormEvent, useState } from 'react'
 import { useCreateSubscriptions } from '../api/account'
 import type { Destination, Subscription, User } from '../api/client'
 import { watchlistQuery } from '../api/queries'
+import { readForm4Filters, readForm8KItems } from '../lib/alertFilters'
+import { Form4FilterFields, Form8KItemFields } from './AlertFilters'
 import { ErrorMessage } from './QueryStatus'
 import styles from './Subscriptions.module.css'
 
@@ -95,6 +97,8 @@ export function SubscriptionForm({
       {
         tickers,
         form_types: data.getAll('form') as SubscriptionBatchForms,
+        ...readForm4Filters(data),
+        form8k_items: readForm8KItems(data),
         destinations: chosen,
       },
       {
@@ -153,6 +157,13 @@ export function SubscriptionForm({
           (8-K)
         </label>
       </fieldset>
+
+      <fieldset>
+        <legend>Which insider trades</legend>
+        <Form4FilterFields />
+      </fieldset>
+
+      <Form8KItemFields />
 
       <fieldset>
         <legend>Send to (one or more)</legend>

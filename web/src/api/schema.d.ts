@@ -848,6 +848,11 @@ export interface components {
              * @description Form 4s only: alert only when those open-market trades total at least this many US dollars (shares x price). A trade priced only in a footnote counts as meeting it. Null for no minimum.
              */
             form4_min_value?: number | null;
+            /**
+             * Form8K Items
+             * @description 8-Ks only: alert only when the 8-K reports one of these items, e.g. 2.02 (results) or 5.02 (officer changes); empty means every 8-K. Other forms ignore it.
+             */
+            form8k_items?: string[];
             /** Destinations */
             destinations: components["schemas"]["Destination"][];
         };
@@ -885,6 +890,11 @@ export interface components {
              * @description Form 4s only: alert only when those open-market trades total at least this many US dollars (shares x price). A trade priced only in a footnote counts as meeting it. Null for no minimum.
              */
             form4_min_value?: number | null;
+            /**
+             * Form8K Items
+             * @description 8-Ks only: alert only when the 8-K reports one of these items, e.g. 2.02 (results) or 5.02 (officer changes); empty means every 8-K. Other forms ignore it.
+             */
+            form8k_items?: string[];
             channel: components["schemas"]["Channel"];
             /**
              * Target
@@ -913,6 +923,11 @@ export interface components {
              * @description Form 4s only: alert only when those open-market trades total at least this many US dollars (shares x price). A trade priced only in a footnote counts as meeting it. Null for no minimum.
              */
             form4_min_value: number | null;
+            /**
+             * Form8K Items
+             * @description 8-Ks only: alert only when the 8-K reports one of these items, e.g. 2.02 (results) or 5.02 (officer changes); empty means every 8-K. Other forms ignore it.
+             */
+            form8k_items: string[];
             channel: components["schemas"]["Channel"];
             /**
              * Target
@@ -947,6 +962,11 @@ export interface components {
              * @description Form 4s only: alert only when those open-market trades total at least this many US dollars (shares x price). A trade priced only in a footnote counts as meeting it. Null for no minimum. To remove a minimum, send null explicitly.
              */
             form4_min_value?: number | null;
+            /**
+             * Form8K Items
+             * @description 8-Ks only: alert only when the 8-K reports one of these items, e.g. 2.02 (results) or 5.02 (officer changes); empty means every 8-K. Other forms ignore it.
+             */
+            form8k_items?: string[] | null;
             /** @description A new channel needs a new `target`, except email, which uses your address. */
             channel?: components["schemas"]["Channel"] | null;
             /**

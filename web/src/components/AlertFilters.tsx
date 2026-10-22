@@ -1,4 +1,5 @@
-import type { Form4Trades } from '../lib/form4Filters'
+import { ALERT_8K_ITEMS, type Form4Trades } from '../lib/alertFilters'
+import styles from './Subscriptions.module.css'
 
 const TRADE_CHOICES: { value: Form4Trades; label: string }[] = [
   { value: 'all', label: 'Every Form 4' },
@@ -43,5 +44,27 @@ export function Form4FilterFields({
         the filing's footnotes counts as meeting it.
       </span>
     </>
+  )
+}
+
+/** The 8-K item filters: none checked means every 8-K. */
+export function Form8KItemFields({ items = [] }: { items?: string[] }) {
+  return (
+    <fieldset>
+      <legend>Which 8-K topics (none checked means every 8-K)</legend>
+      <div className={styles.items}>
+        {ALERT_8K_ITEMS.map(({ item, label }) => (
+          <label key={item} className={styles.inline}>
+            <input
+              type="checkbox"
+              name="form8k_item"
+              value={item}
+              defaultChecked={items.includes(item)}
+            />{' '}
+            {item} {label}
+          </label>
+        ))}
+      </div>
+    </fieldset>
   )
 }

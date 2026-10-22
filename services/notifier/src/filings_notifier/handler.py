@@ -34,7 +34,7 @@ from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.orm import Session, sessionmaker
 
 from filings_common import metrics, telemetry
-from filings_common.alert_filters import OPEN_MARKET_CODES, TradeLine, wants_form4
+from filings_common.alert_filters import OPEN_MARKET_CODES, TradeLine, wants_8k, wants_form4
 from filings_common.consumer import PermanentError, Received
 from filings_common.db import (
     Channel,
@@ -146,7 +146,12 @@ class NotificationHandler:
         if form4 is not None:
             ciks.add(form4.issuer_cik)
         query = (
-            sa.select(Subscription.id, Subscription.form4_trades, Subscription.form4_min_value)
+            sa.select(
+                Subscription.id,
+                Subscription.form4_trades,
+                Subscription.form4_min_value,
+                Subscription.form8k_items,
+            )
             .where(
                 Subscription.cik.in_(ciks),
                 Subscription.created_at <= discovered_at,
@@ -158,7 +163,12 @@ class NotificationHandler:
         )
         rows = session.execute(query).all()
         if form4 is None:
-            return [row.id for row in rows]
+            # 8-K item filters (filings_common.alert_filters); other forms have no items.
+            form8k = session.get(Form8KFiling, alert.accession_no)
+            filing_items = form8k.items if form8k is not None else []
+            return [
+                row.id for row in rows if form8k is None or wants_8k(row.form8k_items, filing_items)
+            ]
         # Form 4 filters (filings_common.alert_filters): read the trade lines once, if needed.
         lines: list[TradeLine] | None = None
         wanted = []

@@ -408,6 +408,11 @@ class Subscription(Base):
     # ignore both.
     form4_trades: Mapped[str] = mapped_column(server_default="all")
     form4_min_value: Mapped[int | None] = mapped_column(sa.BigInteger)
+    # 8-Ks only: alert only when the 8-K reports one of these items (2.02, 5.02, ...); empty
+    # means every 8-K.
+    form8k_items: Mapped[list[str]] = mapped_column(
+        ARRAY(sa.Text()), server_default=sa.text("'{}'::text[]")
+    )
     created_at: Mapped[datetime] = mapped_column(server_default=sa.func.now())
 
 

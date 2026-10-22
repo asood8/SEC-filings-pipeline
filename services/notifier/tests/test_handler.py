@@ -420,3 +420,70 @@ def test_form4_filters_choose_which_subscriptions_are_alerted(
     assert hooks["over 50k"] in sent
     assert hooks["over 100k"] not in sent  # $80,000 is below its minimum
     assert DISCORD in sent  # the unfiltered subscription still gets it
+
+
+def test_8k_item_filters_choose_which_subscriptions_are_alerted(
+    clean_db: Engine, world: dict[str, int]
+) -> None:
+    accession_no = "0000320193-26-000091"  # an officer change: items 5.02 and 9.01
+    early = datetime(2026, 1, 1, tzinfo=UTC)
+    earnings = "https://discord.com/api/webhooks/5/earnings-only"
+    officers = "https://discord.com/api/webhooks/6/officers-or-earnings"
+    with session_factory(clean_db).begin() as session:
+        user_id = session.scalar(sa.select(User.id).where(User.email == "ops@example.com"))
+        session.add(
+            Filing(
+                accession_no=accession_no,
+                cik=320193,
+                form_type="8-K",
+                filed_at=date(2026, 10, 1),
+                primary_doc_url="https://www.sec.gov/aapl-502.htm",
+                raw_object_key="filings/aapl-502.htm",
+                status=FilingStatus.READY,
+            )
+        )
+        session.flush()
+        summary = Summary(
+            accession_no=accession_no,
+            provider="gemini",
+            model="gemini-flash",
+            prompt_version=1,
+            summary={"headline": "Apple names a new CFO", "summary": "...", "key_points": []},
+        )
+        session.add_all(
+            [
+                summary,
+                Form8KFiling(accession_no=accession_no, items=["5.02", "9.01"]),
+                Subscription(
+                    user_id=user_id,
+                    cik=320193,
+                    form_types=["8-K"],
+                    channel=Channel.DISCORD,
+                    target=earnings,
+                    form8k_items=["2.02"],
+                    created_at=early,
+                ),
+                Subscription(
+                    user_id=user_id,
+                    cik=320193,
+                    form_types=["8-K"],
+                    channel=Channel.DISCORD,
+                    target=officers,
+                    form8k_items=["2.02", "5.02"],
+                    created_at=early,
+                ),
+            ]
+        )
+        session.flush()
+        summary_id = summary.id
+    fakes = senders()
+    event = FilingReady(
+        accession_no=accession_no, cik=320193, form_type="8-K", summary_id=summary_id
+    )
+    NotificationHandler(session_factory(clean_db), fakes)(
+        Received(Topic.FILINGS_READY, 0, 0, accession_no, event.model_dump_json().encode())
+    )
+    sent = {target for target, _ in fakes[Channel.DISCORD].sent}
+    assert officers in sent
+    assert earnings not in sent  # it reports 5.02, not 2.02
+    assert [target for target, _ in fakes[Channel.EMAIL].sent] == ["ops@example.com"]  # every 8-K

@@ -33,3 +33,16 @@
   font-family: var(--mono);
   font-weight: 600;
 }
+
+.snippet {
+  margin: 0.25rem 0 0;
+  color: var(--muted);
+  font-size: 0.95rem;
+}
+
+.snippet mark {
+  padding: 0 0.1em;
+  border-radius: 0.2em;
+  color: var(--text);
+  background: var(--highlight);
+}

@@ -861,20 +861,42 @@ export interface components {
              * @description Higher is better; comparable within one response only.
              */
             score: number;
+            /**
+             * Snippet
+             * @description The passage of the summary that best matches the query, in parts, the matching words marked. Plain text: show `match` parts highlighted. Empty for a filing not yet summarized.
+             */
+            snippet?: components["schemas"]["SnippetPartOut"][];
+        };
+        /** SnippetPartOut */
+        SnippetPartOut: {
+            /** Text */
+            text: string;
+            /**
+             * Match
+             * @description One of the query's words, or a form of it.
+             */
+            match: boolean;
         };
         /**
          * SubscriptionBatch
-         * @description Every combination of `tickers` and `destinations`, with the same form types.
+         * @description Every combination of `tickers` and `destinations`, with the same settings; with a `query`
+         *     and no tickers, one keyword alert on every watchlist company per destination.
          */
         SubscriptionBatch: {
             /**
              * Tickers
+             * @description Optional with a `query`: none means every watchlist company.
              * @example [
              *       "AAPL",
              *       "MSFT"
              *     ]
              */
-            tickers: string[];
+            tickers?: string[];
+            /**
+             * Query
+             * @description Keyword alert: only filings whose summary matches this search, with the search's syntax ("buyback", "resign OR retire", '"credit facility"', "-routine"). Without a ticker, any watchlist company's matching filings.
+             */
+            query?: string | null;
             /**
              * Form Types
              * @description Alert only about these forms; empty means every form.
@@ -914,9 +936,15 @@ export interface components {
         SubscriptionCreate: {
             /**
              * Ticker
+             * @description The company. Optional with a `query`: without one, every watchlist company.
              * @example AAPL
              */
-            ticker: string;
+            ticker?: string | null;
+            /**
+             * Query
+             * @description Keyword alert: only filings whose summary matches this search, with the search's syntax ("buyback", "resign OR retire", '"credit facility"', "-routine"). Without a ticker, any watchlist company's matching filings.
+             */
+            query?: string | null;
             /**
              * Form Types
              * @description Alert only about these forms; empty means every form.
@@ -950,7 +978,13 @@ export interface components {
         SubscriptionOut: {
             /** Id */
             id: number;
-            company: components["schemas"]["CompanyRef"];
+            /** @description Null for a keyword alert on every watchlist company. */
+            company: components["schemas"]["CompanyRef"] | null;
+            /**
+             * Query
+             * @description A keyword alert's search; null for a plain one.
+             */
+            query: string | null;
             /**
              * Form Types
              * @description Empty means every form.
@@ -1046,6 +1080,11 @@ export interface components {
              * @description Numbers in an LLM summary that don't appear in the filing text, worth verifying. Empty when all were found; null when not checked (template summaries).
              */
             ungrounded_numbers: string[] | null;
+            /**
+             * Ungrounded Names
+             * @description Capitalized words in an LLM summary that the filing text never uses, such as an invented name, worth verifying. Empty when all were found; null when not checked (template summaries, and summaries written before this check).
+             */
+            ungrounded_names?: string[] | null;
         };
         /** TradeTotals */
         TradeTotals: {

@@ -3,7 +3,14 @@
 from datetime import date, datetime
 from typing import Annotated, Literal
 
-from pydantic import AfterValidator, BaseModel, ConfigDict, Field
+from pydantic import (
+    AfterValidator,
+    BaseModel,
+    ConfigDict,
+    Field,
+    StringConstraints,
+    model_validator,
+)
 
 from filings_common.alert_filters import Form4Trades
 from filings_common.db import Channel, FilingStatus
@@ -47,6 +54,14 @@ class SummaryOut(BaseModel):
             "Numbers in an LLM summary that don't appear in the filing text, worth verifying. "
             "Empty when all were found; null when not checked (template summaries)."
         )
+    )
+    ungrounded_names: list[str] | None = Field(
+        default=None,
+        description=(
+            "Capitalized words in an LLM summary that the filing text never uses, such as an "
+            "invented name, worth verifying. Empty when all were found; null when not checked "
+            "(template summaries, and summaries written before this check)."
+        ),
     )
 
 
@@ -272,8 +287,21 @@ class InsiderTrades(BaseModel):
     )
 
 
+class SnippetPartOut(BaseModel):
+    text: str
+    match: bool = Field(description="One of the query's words, or a form of it.")
+
+
 class SearchResultOut(FilingOut):
     score: float = Field(description="Higher is better; comparable within one response only.")
+    snippet: list[SnippetPartOut] = Field(
+        default_factory=list,
+        description=(
+            "The passage of the summary that best matches the query, in parts, the matching "
+            "words marked. Plain text: show `match` parts highlighted. Empty for a filing not "
+            "yet summarized."
+        ),
+    )
 
 
 class SearchResponse(BaseModel):
@@ -318,6 +346,12 @@ _FORM4_MIN_VALUE_HELP = (
     "(shares x price). A trade priced only in a footnote counts as meeting it. Null for no minimum."
 )
 Form4MinValue = Annotated[int, Field(ge=1, le=10**12)]
+AlertQuery = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=100)]
+_QUERY_HELP = (
+    "Keyword alert: only filings whose summary matches this search, with the search's syntax "
+    '("buyback", "resign OR retire", \'"credit facility"\', "-routine"). Without a ticker, any '
+    "watchlist company's matching filings."
+)
 
 
 def _known_items(items: list[str]) -> list[str]:
@@ -339,13 +373,26 @@ _FORM8K_ITEMS_HELP = (
 class SubscriptionCreate(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    ticker: str = Field(min_length=1, max_length=20, examples=["AAPL"])
+    ticker: str | None = Field(
+        default=None,
+        min_length=1,
+        max_length=20,
+        examples=["AAPL"],
+        description="The company. Optional with a `query`: without one, every watchlist company.",
+    )
+    query: AlertQuery | None = Field(default=None, description=_QUERY_HELP)
     form_types: FormTypes = Field(default_factory=list, description=_FORM_TYPES_HELP)
     form4_trades: Form4Trades = Field(default="all", description=_FORM4_TRADES_HELP)
     form4_min_value: Form4MinValue | None = Field(default=None, description=_FORM4_MIN_VALUE_HELP)
     form8k_items: Form8KItems = Field(default_factory=list, description=_FORM8K_ITEMS_HELP)
     channel: Channel
     target: str | None = Field(default=None, max_length=500, description=_TARGET_HELP)
+
+    @model_validator(mode="after")
+    def _has_a_subject(self) -> "SubscriptionCreate":
+        if self.ticker is None and self.query is None:
+            raise ValueError("give a ticker, a query, or both")
+        return self
 
 
 class SubscriptionUpdate(BaseModel):
@@ -386,7 +433,10 @@ class DeliveryOut(BaseModel):
 
 class SubscriptionOut(BaseModel):
     id: int
-    company: CompanyRef
+    company: CompanyRef | None = Field(
+        description="Null for a keyword alert on every watchlist company."
+    )
+    query: str | None = Field(description="A keyword alert's search; null for a plain one.")
     form_types: list[str] = Field(description="Empty means every form.")
     form4_trades: Form4Trades = Field(description=_FORM4_TRADES_HELP)
     form4_min_value: int | None = Field(description=_FORM4_MIN_VALUE_HELP)
@@ -421,18 +471,29 @@ class Destination(BaseModel):
 
 
 class SubscriptionBatch(BaseModel):
-    """Every combination of `tickers` and `destinations`, with the same form types."""
+    """Every combination of `tickers` and `destinations`, with the same settings; with a `query`
+    and no tickers, one keyword alert on every watchlist company per destination."""
 
     model_config = ConfigDict(extra="forbid")
 
     tickers: list[Annotated[str, Field(min_length=1, max_length=20)]] = Field(
-        min_length=1, max_length=25, examples=[["AAPL", "MSFT"]]
+        default_factory=list,
+        max_length=25,
+        examples=[["AAPL", "MSFT"]],
+        description="Optional with a `query`: none means every watchlist company.",
     )
+    query: AlertQuery | None = Field(default=None, description=_QUERY_HELP)
     form_types: FormTypes = Field(default_factory=list, description=_FORM_TYPES_HELP)
     form4_trades: Form4Trades = Field(default="all", description=_FORM4_TRADES_HELP)
     form4_min_value: Form4MinValue | None = Field(default=None, description=_FORM4_MIN_VALUE_HELP)
     form8k_items: Form8KItems = Field(default_factory=list, description=_FORM8K_ITEMS_HELP)
     destinations: list[Destination] = Field(min_length=1, max_length=5)
+
+    @model_validator(mode="after")
+    def _has_a_subject(self) -> "SubscriptionBatch":
+        if not self.tickers and self.query is None:
+            raise ValueError("give tickers, a query, or both")
+        return self
 
 
 class SubscriptionBatchOut(BaseModel):

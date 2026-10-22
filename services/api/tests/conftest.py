@@ -154,6 +154,7 @@ def seeded(clean_db: Engine) -> Engine:
                     "Microsoft reports record quarterly revenue",
                     "Microsoft reported record revenue and raised guidance.",
                     ungrounded_numbers=["9.9 billion"],
+                    ungrounded_names=["Whitfield"],
                 ),
                 Form4Filing(
                     accession_no=FORM4,

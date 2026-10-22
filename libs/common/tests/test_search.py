@@ -23,6 +23,7 @@ from filings_common.search import (
     SEMANTIC_FORM_WEIGHTS,
     SearchDocument,
     SearchHit,
+    _highlight_query,
     build_document,
     embed_outdated,
     hybrid_search,
@@ -31,6 +32,7 @@ from filings_common.search import (
     rebuild_index,
     reciprocal_rank_fusion,
     semantic_search,
+    snippets,
     text_sha256,
     upsert_document,
 )
@@ -521,3 +523,22 @@ def test_embedding_failure_leaves_documents_searchable_by_keyword(indexed: Engin
     assert embed_outdated(sessions, WordHashEmbedder(fail=True)) == 0
     with sessions() as session:
         assert keyword_search(session, "Acme")
+
+
+def test_highlight_query_is_every_word_or_ed_without_excluded_ones() -> None:
+    assert _highlight_query('"credit facility" -pizza OR revenue') == "credit | facility | revenue"
+    assert _highlight_query("-only -excluded") is None
+    assert _highlight_query("CFO's 10b5-1 plan") == "CFO | s | 10b5 | 1 | plan"  # no tsquery syntax
+
+
+def test_snippets_mark_the_query_words(indexed: Engine) -> None:
+    credit, ceo = FILINGS[1][0], FILINGS[0][0]
+    with session_factory(indexed)() as session:
+        found = snippets(session, [credit, ceo], "credit facility pizza")
+        excluded = snippets(session, [credit], "Acme -credit")
+    marked = [part.text for part in found[credit] if part.match]
+    assert marked == ["credit", "facility"]
+    # A summary without the words: its first words, unmarked.
+    assert found[ceo][0].text.startswith("Acme Corp appointed Jane Doe as CEO")
+    assert not any(part.match for part in found[ceo])
+    assert [part.text for part in excluded[credit] if part.match] == ["Acme"]

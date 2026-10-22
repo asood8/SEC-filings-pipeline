@@ -81,6 +81,19 @@ empty list (the default, and every existing subscription) means every 8-K. The A
 item in SEC's list; the website offers the 15 that say what happened, leaving out 9.01
 (financial statements and exhibits), which comes with most 8-Ks. Migration be5a237b919d.
 
+### Keyword alerts (added 2026-10-22)
+
+A subscription can carry a `query`: it is alerted only about filings whose search document (the
+summary, as `filing_search` indexes it) matches, with the search's syntax (`websearch_to_tsquery`:
+quotes, OR, -word; "buybacks" matches "buyback"). Its company becomes optional: without one, any
+watchlist company's matching filings. The notifier adds one condition to its subscription query,
+an `EXISTS` on the filing's search document, which the summarizer writes before it announces the
+filing. Every subscription still needs a subject (a company, a query, or both: check
+`ck_subscriptions_subject`), and the unique constraint now includes the query with NULLs equal
+(`NULLS NOT DISTINCT`), so the same keyword alert can't be added twice. A query of only stop
+words ("the") is refused, since it would never match. Exactly-once delivery is unchanged: it is
+per subscription and filing, whatever selected them. Migration a77c95f05ece.
+
 ## Alternatives considered
 
 - **Dedupe in Redis.** It's lost on eviction or restart, and can't show what was delivered. The

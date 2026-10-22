@@ -153,6 +153,7 @@ function Summary({ filing }: { filing: FilingDetail }) {
     )
   }
   const unverified = summary.ungrounded_numbers ?? []
+  const unknownNames = summary.ungrounded_names ?? []
   return (
     <section>
       <h2>Summary</h2>
@@ -168,6 +169,12 @@ function Summary({ filing }: { filing: FilingDetail }) {
         <p className="notice">
           Check these numbers against the original: {unverified.join(', ')}.
           They appear in the summary but weren't found in the filing's text.
+        </p>
+      )}
+      {unknownNames.length > 0 && (
+        <p className="notice">
+          Check these names against the original: {unknownNames.join(', ')}. The
+          summary uses them, but the filing's text doesn't.
         </p>
       )}
       <p className="muted">

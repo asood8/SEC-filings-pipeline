@@ -31,6 +31,12 @@ def test_keyword_search(client: TestClient, ids: Any) -> None:
     body = search(client, q="chief financial officer", mode="keyword")
     assert (body["mode"], body["degraded"]) == ("keyword", False)
     assert hits(body) == [ids.apple_8k]
+    # The matching words of the summary come marked, as plain text.
+    items = body["items"]
+    assert isinstance(items, list)
+    snippet = items[0]["snippet"]
+    assert "".join(part["text"] for part in snippet).startswith("Apple appointed a new CFO")
+    assert all(set(part) == {"text", "match"} for part in snippet)
 
 
 def test_semantic_search(client: TestClient, ids: Any) -> None:

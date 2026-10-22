@@ -27,7 +27,15 @@ from filings_api.middleware import (
     SecurityHeadersMiddleware,
 )
 from filings_api.readiness import DatabaseReadiness
-from filings_api.routes import auth, companies, filings, insider_trades, search, subscriptions
+from filings_api.routes import (
+    auth,
+    calls,
+    companies,
+    filings,
+    insider_trades,
+    search,
+    subscriptions,
+)
 from filings_common.config import (
     ApiSettings,
     DatabaseSettings,
@@ -208,6 +216,7 @@ def create_app(
     app.include_router(filings.router)
     app.include_router(companies.router)
     app.include_router(insider_trades.router)
+    app.include_router(calls.router)
     app.include_router(search.router)
     app.include_router(auth.router)
     app.include_router(subscriptions.router)

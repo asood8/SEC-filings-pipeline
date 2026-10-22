@@ -4,6 +4,7 @@ import type { components, paths } from './schema'
 type Schemas = components['schemas']
 export type Filing = Schemas['FilingOut']
 export type FilingDetail = Schemas['FilingDetail']
+export type UpcomingCall = Schemas['UpcomingCall']
 export type Form4Transaction = Schemas['Form4TransactionOut']
 export type InsiderActivity = Schemas['InsiderActivity']
 export type TradeTotals = Schemas['TradeTotals']

@@ -141,6 +141,24 @@ class InvestorCallOut(BaseModel):
     )
 
 
+class UpcomingCall(InvestorCallOut):
+    ticker: str
+    company_name: str
+    accession_no: str = Field(description="The 8-K that announced it.")
+
+
+class UpcomingCalls(BaseModel):
+    since: date = Field(description="Today in US Eastern time: calls from this day on.")
+    until: date = Field(description="The last day included.")
+    items: list[UpcomingCall] = Field(
+        description=(
+            "By day, then start time (calls without a time last that day), then ticker. One "
+            "per company and day: when two 8-Ks announce the same call, the one with a start "
+            "time, then the later one."
+        )
+    )
+
+
 class FilingDetail(FilingOut):
     summary: SummaryOut | None
     form4: Form4Details | None

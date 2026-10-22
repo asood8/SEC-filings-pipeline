@@ -1,4 +1,5 @@
 import type { RouteObject } from 'react-router'
+import { CallsPage } from './pages/CallsPage'
 import { Layout } from './components/Layout'
 import { AboutPage } from './pages/AboutPage'
 import { AlertsPage } from './pages/AlertsPage'
@@ -18,6 +19,7 @@ export const routes: RouteObject[] = [
     children: [
       { index: true, element: <FeedPage /> },
       { path: 'insiders', element: <InsiderTradesPage /> },
+      { path: 'calls', element: <CallsPage /> },
       { path: 'search', element: <SearchPage /> },
       { path: 'companies', element: <CompaniesPage /> },
       { path: 'companies/:ticker', element: <CompanyPage /> },

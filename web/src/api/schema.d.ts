@@ -125,6 +125,50 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/calls": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Upcoming investor calls
+         * @description Earnings calls, Q&A sessions, investor days, and conference webcasts that the watchlist's
+         *     8-Ks announce, from today (US Eastern) to `days` ahead. Read from the filings' own words;
+         *     the calls themselves are on the companies' sites.
+         */
+        get: operations["list_calls_calls_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/calls.ics": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Investor calls as a calendar feed
+         * @description The same calls as an iCalendar feed (RFC 5545), for "subscribe by URL" in Google
+         *     Calendar, Apple Calendar, or Outlook: the next 120 days and the last 30. A call with a time
+         *     is an hour long; one announced without a time is an all-day event.
+         */
+        get: operations["calls_calendar_calls_ics_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/search": {
         parameters: {
             query?: never;
@@ -1018,6 +1062,59 @@ export interface components {
              */
             unpriced_shares: number;
         };
+        /** UpcomingCall */
+        UpcomingCall: {
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "Q&A session" | "Investor Day" | "Earnings call" | "Conference call" | "Webcast";
+            /**
+             * Day
+             * Format: date
+             * @description The day of the call, as the filing gives it.
+             */
+            day: string;
+            /**
+             * Starts At
+             * @description When it starts, only if the filing gives a time and a US time zone.
+             */
+            starts_at: string | null;
+            /**
+             * Webcast Url
+             * @description Where the filing says to listen, usually the company's investor site.
+             */
+            webcast_url: string | null;
+            /** Ticker */
+            ticker: string;
+            /** Company Name */
+            company_name: string;
+            /**
+             * Accession No
+             * @description The 8-K that announced it.
+             */
+            accession_no: string;
+        };
+        /** UpcomingCalls */
+        UpcomingCalls: {
+            /**
+             * Since
+             * Format: date
+             * @description Today in US Eastern time: calls from this day on.
+             */
+            since: string;
+            /**
+             * Until
+             * Format: date
+             * @description The last day included.
+             */
+            until: string;
+            /**
+             * Items
+             * @description By day, then start time (calls without a time last that day), then ticker. One per company and day: when two 8-Ks announce the same call, the one with a start time, then the later one.
+             */
+            items: components["schemas"]["UpcomingCall"][];
+        };
         /** UserOut */
         UserOut: {
             /** Id */
@@ -1247,6 +1344,58 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_calls_calls_get: {
+        parameters: {
+            query?: {
+                /** @description How many days ahead, from today. */
+                days?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UpcomingCalls"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    calls_calendar_calls_ics_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description An iCalendar feed. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "text/calendar": unknown;
                 };
             };
         };

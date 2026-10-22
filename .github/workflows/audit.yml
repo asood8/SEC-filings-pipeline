@@ -26,7 +26,8 @@ jobs:
   audit:
     name: Dependency audit
     runs-on: ubuntu-24.04
-    timeout-minutes: 5
+    # pip-audit and npm audit query outside vulnerability databases; one run waited out 5 minutes.
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v7
 

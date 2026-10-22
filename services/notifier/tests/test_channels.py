@@ -71,8 +71,16 @@ def test_discord_payload_never_mentions_anyone() -> None:
 def test_slack_payload_escapes_markup() -> None:
     transport, requests = recorder(httpx2.Response(200, text="ok"))
     SlackSender(transport=transport).send(SLACK, ALERT)
-    section = json.loads(requests[0].content)["blocks"][0]["text"]["text"]
+    payload = json.loads(requests[0].content)
+    section = payload["blocks"][0]["text"]["text"]
     assert section.startswith(f"*<{ALERT.url}|Apple names &lt;new&gt; CFO &amp; more @everyone>*")
+    assert payload["text"].startswith("[AAPL] Apple names &lt;new&gt; CFO &amp; more")
+
+
+def test_slack_fallback_text_cant_mention_the_channel() -> None:
+    transport, requests = recorder(httpx2.Response(200, text="ok"))
+    SlackSender(transport=transport).send(SLACK, replace(ALERT, headline="Results <!channel>"))
+    assert json.loads(requests[0].content)["text"].startswith("[AAPL] Results &lt;!channel&gt; ")
 
 
 @pytest.mark.parametrize(

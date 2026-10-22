@@ -123,7 +123,8 @@ class SlackSender:
             f"filed {alert.filed_at.isoformat()} · {DISCLAIMER}"
         )
         payload = {
-            "text": f"[{alert.ticker}] {alert.headline} {alert.url}",  # notification fallback
+            # The notification's text, also read as markup: escaped like the blocks.
+            "text": f"[{alert.ticker}] {_slack_escape(alert.headline)} {alert.url}",
             "blocks": [
                 {
                     "type": "section",

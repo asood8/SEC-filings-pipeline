@@ -111,6 +111,17 @@ there were more, making the count a lower bound), needs sign-in like every alert
 nothing. On the dev data: Apple alerts would have sent 15 filings in 90 days, open-market trades
 only 8, and open-market trades of $10 million or more (Apple and NVIDIA) 4.
 
+### Saying why an alert was sent (added 2026-10-22)
+
+An alert names the company that filed, which is all a plain company alert needs. Otherwise the
+reason isn't visible: a keyword alert, a filtered one, or a Form 4 filed by someone else about
+the company followed (a Berkshire Hathaway Form 4 reaching a Lennar alert). Then the alert ends
+with the subscription in words (`alert_filters.alert_reason`), for this filing's form only:
+"Your alert: LEN", "Your alert: AAPL · Form 4: open-market trades only, $1,000,000 or more",
+"Your alert: “buyback” (any watchlist company)". Discord puts it in the footer, Slack in the
+context line, and email above the disclaimer. It is computed per subscription at delivery, so
+the shared alert content is unchanged and exactly-once delivery is untouched.
+
 ## Alternatives considered
 
 - **Dedupe in Redis.** It's lost on eviction or restart, and can't show what was delivered. The

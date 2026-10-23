@@ -23,6 +23,7 @@ URL or a personal email address), and errors by type only, since their messages 
 
 import logging
 from collections.abc import Mapping
+from dataclasses import replace
 from datetime import datetime
 from typing import Literal
 
@@ -34,7 +35,13 @@ from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.orm import Session, sessionmaker
 
 from filings_common import metrics, telemetry
-from filings_common.alert_filters import OPEN_MARKET_CODES, TradeLine, wants_8k, wants_form4
+from filings_common.alert_filters import (
+    OPEN_MARKET_CODES,
+    TradeLine,
+    alert_reason,
+    wants_8k,
+    wants_form4,
+)
 from filings_common.consumer import PermanentError, Received
 from filings_common.db import (
     Channel,
@@ -231,7 +238,24 @@ class NotificationHandler:
             try:
                 if not target_is_valid(subscription.channel, subscription.target):
                     raise PermanentDeliveryError(f"invalid {subscription.channel} target")
-                self._senders[subscription.channel].send(subscription.target, alert)
+                reason = alert_reason(
+                    alert.form_type,
+                    alert.ticker,
+                    ticker=(
+                        session.scalar(
+                            sa.select(Company.ticker).where(Company.cik == subscription.cik)
+                        )
+                        if subscription.cik is not None
+                        else None
+                    ),
+                    query=subscription.query,
+                    form4_trades=subscription.form4_trades,
+                    form4_min_value=subscription.form4_min_value,
+                    form8k_items=subscription.form8k_items,
+                )
+                self._senders[subscription.channel].send(
+                    subscription.target, replace(alert, reason=reason)
+                )
             except PermanentDeliveryError as exc:
                 notification.status = NotificationStatus.FAILED
                 notification.last_error = str(exc)[:500]

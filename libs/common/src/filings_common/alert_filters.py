@@ -13,7 +13,7 @@ A trade's value is shares x price. A price given only in a footnote is unknown; 
 such a trade passes the minimum, because missing a large trade is worse than one extra alert.
 """
 
-from collections.abc import Collection, Iterable
+from collections.abc import Collection, Iterable, Sequence
 from dataclasses import dataclass
 from typing import Literal, get_args
 
@@ -59,3 +59,37 @@ def wants_8k(items: Collection[str], filing_items: Iterable[str]) -> bool:
     """Whether a subscription interested in `items` (empty: every 8-K) is alerted about an 8-K
     reporting `filing_items`."""
     return not items or any(item in items for item in filing_items)
+
+
+def alert_reason(
+    form_type: str,
+    filer_ticker: str,
+    *,
+    ticker: str | None,
+    query: str | None,
+    form4_trades: str,
+    form4_min_value: int | None,
+    form8k_items: Sequence[str],
+) -> str | None:
+    """Why a subscription sent this filing, for the alert: "Your alert: AAPL · Form 4:
+    open-market trades only, $1,000,000 or more", or "Your alert: “buyback” (any watchlist
+    company)". Only the filters for this filing's form are named. None for a plain alert on the
+    company that filed, which the alert already names."""
+    filters = []
+    if form_type == "4":
+        trades = {"open_market": "open-market trades only", "purchases": "purchases only"}
+        parts = [trades[form4_trades]] if form4_trades in trades else []
+        if form4_min_value is not None:
+            parts.append(f"${form4_min_value:,} or more")
+        if parts:
+            filters.append(f"Form 4: {', '.join(parts)}")
+    if form_type == "8-K" and form8k_items:
+        filters.append(f"8-K: {', '.join(form8k_items)}")
+    if query is None and not filters and ticker == filer_ticker:
+        return None
+    subject = " ".join(
+        part for part in (ticker, f"“{query}”" if query else None) if part is not None
+    )
+    if ticker is None:
+        subject += " (any watchlist company)"
+    return "Your alert: " + " · ".join([subject, *filters])

@@ -163,6 +163,10 @@ def filing_status(engine: Engine) -> FilingStatus:
         return session.get_one(Filing, FORM4).status
 
 
+def sent_targets(fakes: dict[Channel, FakeSender]) -> list[str]:
+    return [target for target, _ in fakes[Channel.DISCORD].sent]
+
+
 def senders() -> dict[Channel, FakeSender]:
     return {Channel.DISCORD: FakeSender(), Channel.SLACK: FakeSender(), Channel.EMAIL: FakeSender()}
 
@@ -178,6 +182,9 @@ def test_alerts_each_matching_subscription_exactly_once(
     assert fakes[Channel.DISCORD].sent == [(DISCORD, FORM4)]
     assert fakes[Channel.SLACK].sent == [(SLACK, FORM4)]  # follows the issuer, Lennar
     assert fakes[Channel.EMAIL].sent == [("ops@example.com", FORM4)]  # not the 8-K-only one
+    # Berkshire filed it: Berkshire's own alerts need no explanation; Lennar's say why it came.
+    assert fakes[Channel.DISCORD].alerts[0].reason is None
+    assert fakes[Channel.SLACK].alerts[0].reason == "Your alert: LEN"
     states = notifications(clean_db)
     assert states[world["berkshire_discord"]] == (NotificationStatus.SENT, 1)
     assert states[world["bad_target"]][0] is NotificationStatus.FAILED  # never requested
@@ -568,3 +575,11 @@ def test_keyword_alerts_match_the_filings_search_document(
     assert hooks["apple buyback"] in sent
     assert hooks["any dividend"] not in sent  # the filing doesn't mention it
     assert hooks["other company"] not in sent  # a keyword alert on another company
+    reasons = {
+        target: alert.reason
+        for target, alert in zip(sent_targets(fakes), fakes[Channel.DISCORD].alerts, strict=True)
+    }
+    assert (
+        reasons[hooks["any buyback"]] == "Your alert: \u201cbuybacks\u201d (any watchlist company)"
+    )
+    assert reasons[hooks["apple buyback"]] == "Your alert: AAPL \u201cbuyback OR dividend\u201d"

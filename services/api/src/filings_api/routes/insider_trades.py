@@ -30,6 +30,13 @@ def list_insider_trades(
         int, Query(ge=1, le=MAX_INSIDER_DAYS, description="How far back, by transaction date.")
     ] = 30,
     limit: Annotated[int, Query(ge=1, le=MAX_TRADES, description="How many filings.")] = 25,
+    include_planned: Annotated[
+        bool,
+        Query(
+            description="False leaves out filings that say the trades were made under a Rule "
+            "10b5-1 plan, set up in advance; filings that don't say are kept."
+        ),
+    ] = True,
 ) -> InsiderTrades:
     """Open-market or private purchases (`side=buy`, Form 4 code P) or sales (`side=sell`, code
     S) of any company's stock in the last `days` days, by transaction date, one row per Form 4.
@@ -80,6 +87,7 @@ def list_insider_trades(
             # `period_of_report`: that is the earliest trade, and a late Form 4 can report
             # year-old lines next to last week's.)
             Filing.filed_at >= since,
+            sa.true() if include_planned else form.is_10b5_1.is_not(True),
         )
         .group_by(form.accession_no, Filing.accession_no, Company.cik)
         .order_by(
@@ -93,6 +101,7 @@ def list_insider_trades(
     return InsiderTrades(
         side=side,
         days=days,
+        include_planned=include_planned,
         since=since,
         items=[
             InsiderTrade(

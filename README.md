@@ -208,7 +208,8 @@ take an 8-K `item`, e.g. `5.02` for officer changes),
 `GET /filings/{accession_no}` (with a Form 4's transaction lines), `GET /companies`,
 `GET /companies/{ticker}`, `GET /companies/{ticker}/insider-activity?days=90` (insiders'
 purchases and sales per owner, grouped by owner CIK), `GET /insider-trades?side=buy&days=30`
-(the largest purchases or sales across companies, one row per Form 4), and `GET /calls?days=60`
+(the largest purchases or sales across companies, one row per Form 4; `include_planned=false`
+leaves out 10b5-1 plan trades), and `GET /calls?days=60`
 (the earnings calls and other investor events 8-Ks announce, also as an iCalendar feed to
 subscribe to, `GET /calls.ics`; both take `ticker` for one company's). `GET /feeds/filings.atom` (optionally `cik`, `form_type`) is
 the latest summarized filings as an Atom feed, for a feed reader. A Form 4's reporting

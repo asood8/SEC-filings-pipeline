@@ -286,6 +286,7 @@ class InsiderTrade(BaseModel):
 class InsiderTrades(BaseModel):
     side: TradeSide
     days: int
+    include_planned: bool = Field(description="Whether 10b5-1 plan trades are included.")
     since: date = Field(description="The earliest transaction date counted.")
     items: list[InsiderTrade] = Field(
         description=(

@@ -139,6 +139,25 @@ describe('InsiderTradesPage', () => {
     expect(router.state.location.search).toBe('?days=90')
   })
 
+  it('can leave out 10b5-1 plan trades', async () => {
+    const requests = mockApi({ '/insider-trades': (url) => answer(url, []) })
+    const router = renderRoute('/insiders?side=sell')
+    await screen.findByText('No insider sales reported in the last 30 days.')
+
+    await userEvent.click(screen.getByLabelText('Leave out 10b5-1 plan trades'))
+    expect(
+      await screen.findByText(
+        'No insider sales reported in the last 30 days, without 10b5-1 plan trades.',
+      ),
+    ).toBeInTheDocument()
+    expect(router.state.location.search).toBe('?side=sell&plans=hide')
+    expect(requests.at(-1)?.searchParams.get('include_planned')).toBe('false')
+
+    // The other choices keep it.
+    await userEvent.click(screen.getByLabelText('Last 90 days'))
+    expect(router.state.location.search).toBe('?side=sell&days=90&plans=hide')
+  })
+
   it('starts from the choices in the URL', async () => {
     const requests = mockApi({ '/insider-trades': (url) => answer(url, []) })
     renderRoute('/insiders?side=sell&days=90')

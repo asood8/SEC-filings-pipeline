@@ -749,6 +749,11 @@ export interface components {
             /** Days */
             days: number;
             /**
+             * Include Planned
+             * @description Whether 10b5-1 plan trades are included.
+             */
+            include_planned: boolean;
+            /**
              * Since
              * Format: date
              * @description The earliest transaction date counted.
@@ -1447,6 +1452,8 @@ export interface operations {
                 days?: number;
                 /** @description How many filings. */
                 limit?: number;
+                /** @description False leaves out filings that say the trades were made under a Rule 10b5-1 plan, set up in advance; filings that don't say are kept. */
+                include_planned?: boolean;
             };
             header?: never;
             path?: never;

@@ -308,6 +308,19 @@ def test_largest_sales_count_stock_sales_only(client: TestClient, ids: Any) -> N
 
 
 @pytest.mark.usefixtures("insider_trades")
+def test_planned_trades_can_be_left_out(client: TestClient) -> None:
+    # Both sales say they were under a 10b5-1 plan, so does Nadella's filing with its small
+    # purchase; the other purchases say they weren't or don't say, and those stay.
+    response = client.get("/insider-trades", params={"side": "sell", "include_planned": False})
+    assert (response.json()["items"], response.json()["include_planned"]) == ([], False)
+    everything = summary(client, side="buy")
+    assert summary(client, side="buy", include_planned="false") == [
+        row for row in everything if row[0] != SALES
+    ]
+    assert len(everything) == 6
+
+
+@pytest.mark.usefixtures("insider_trades")
 def test_window(client: TestClient, ids: Any) -> None:
     # 90 days: all of the straddling filing's purchases, so it leads.
     assert summary(client, days=90)[:2] == [

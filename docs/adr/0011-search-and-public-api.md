@@ -204,7 +204,11 @@ the production ranking.
   the shares, value, and average price of the filing's P or S stock lines, the shares without a
   price, and the 10b5-1 flag. It follows insider activity's rules, so a company's rows add up to
   its totals there (ADR-0006, "Insider trades across companies"). The website's Insider trades
-  page (`/insiders`) shows it.
+  page (`/insiders`) shows it. `include_planned=false` (added 2026-10-22) leaves out filings that
+  say their trades were under a Rule 10b5-1 plan, set up months ahead and so saying little about
+  the insider's view now; filings that don't say are kept. On the dev data it leaves 8 of 47
+  sale filings over 90 days ($591 million of $1.1 billion). The page's "Leave out 10b5-1 plan
+  trades" sets it.
 - **Filing dates (added 2026-10-22):** `GET /search` and `GET /filings` take `since` and `until`
   (filing dates, both included; `since` after `until` is a 422). In search they are one more
   filter beside the form and company, so every mode applies them before ranking: semantic search

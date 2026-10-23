@@ -154,3 +154,33 @@ def test_characters_xml_cant_hold_are_dropped() -> None:
     body = atom.feed([entry], id="urn:uuid:x", title="T", self_url="https://x/", updated=moment)
     [parsed] = ET.fromstring(body).findall("a:entry", NS)
     assert parsed.findtext("a:title", namespaces=NS) == "null and surrogate and bell, tab\tkept"
+
+
+def test_unchanged_feeds_answer_not_modified(client: TestClient, seeded: Engine, ids: Any) -> None:
+    first = client.get("/feeds/filings.atom")
+    etag = first.headers["ETag"]
+    again = client.get("/feeds/filings.atom", headers={"If-None-Match": etag})
+    assert (again.status_code, again.content, again.headers["ETag"]) == (304, b"", etag)
+    for other in ['"something-else"', ""]:
+        assert (
+            client.get("/feeds/filings.atom", headers={"If-None-Match": other}).status_code == 200
+        )
+    # Weak validators and lists match too (RFC 9110's weak comparison for If-None-Match).
+    listed = client.get("/feeds/filings.atom", headers={"If-None-Match": f'"x", W/{etag}'})
+    assert listed.status_code == 304
+    assert client.get("/feeds/filings.atom", params={"cik": 320193}).headers["ETag"] != etag
+
+    with session_factory(seeded).begin() as session:  # a new summary is a new version
+        session.add(
+            Summary(
+                accession_no=ids.apple_8k,
+                provider="ollama",
+                model="llama3.2:3b",
+                prompt_version=2,
+                summary={"headline": "Apple names a CFO", "summary": "New.", "key_points": []},
+                created_at=datetime(2027, 1, 4, tzinfo=UTC),
+            )
+        )
+    changed = client.get("/feeds/filings.atom", headers={"If-None-Match": etag})
+    assert changed.status_code == 200
+    assert changed.headers["ETag"] != etag

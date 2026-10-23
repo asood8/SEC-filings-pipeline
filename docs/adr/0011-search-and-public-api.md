@@ -329,6 +329,11 @@ form filter) and from each company page. Choices:
 - *Not in the Redis cache*, which stores JSON only. One request is one indexed query (the
   newest summary per filing through a `LATERAL` join), cheap enough for readers polling every
   few minutes.
+- *Conditional GET* (added 2026-10-22, `filings_api.conditional`): the Atom feed and the calls
+  calendar send an `ETag` (a SHA-256 of the body) and answer `304 Not Modified`, with no body,
+  when `If-None-Match` already has it (weak comparison, lists, `*`), which is what most polls
+  find. The calendar's ETag leaves out its `DTSTAMP` lines: they say when the feed was written,
+  which changes on every request without the calls changing.
 
 ## Alternatives considered
 

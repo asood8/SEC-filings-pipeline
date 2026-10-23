@@ -1,4 +1,5 @@
 from datetime import UTC, date, datetime
+from typing import Any
 
 import pytest
 from fastapi.testclient import TestClient
@@ -140,3 +141,22 @@ def test_one_companys_calls(client: TestClient) -> None:
     assert "X-WR-CALNAME:SEC filings: MSFT investor calls\r\n" in text
     assert text.count("BEGIN:VEVENT") == 1  # Microsoft's call only, not Apple's two
     assert client.get("/calls.ics", params={"ticker": "NOPE"}).status_code == 404
+
+
+@pytest.mark.usefixtures("more_calls")
+def test_the_calendar_version_ignores_when_it_was_written(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    first = client.get("/calls.ics")
+
+    class Later(datetime):
+        @classmethod
+        def now(cls, tz: Any = None) -> "Later":
+            return cls(2026, 10, 23, 12, tzinfo=UTC)
+
+    monkeypatch.setattr(calls, "datetime", Later)
+    later = client.get("/calls.ics")
+    assert "DTSTAMP:20261023T120000Z" in later.text  # written later, the same calls
+    assert later.headers["ETag"] == first.headers["ETag"]
+    again = client.get("/calls.ics", headers={"If-None-Match": first.headers["ETag"]})
+    assert (again.status_code, again.content) == (304, b"")

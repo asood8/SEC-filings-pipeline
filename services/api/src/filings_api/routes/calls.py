@@ -2,14 +2,16 @@
 as a list for the website, and as an iCalendar feed to subscribe to in a calendar app. Both can
 be narrowed to one company with `ticker`."""
 
+import re
 from datetime import date, datetime, timedelta
 from typing import Annotated, Any
 
 import sqlalchemy as sa
-from fastapi import APIRouter, HTTPException, Query, Response
+from fastapi import APIRouter, HTTPException, Query, Request, Response
 from sqlalchemy.orm import Session
 
 from filings_api import ical
+from filings_api.conditional import conditional_response
 from filings_api.queries import SessionDep, company_by_ticker
 from filings_api.schemas import UpcomingCall, UpcomingCalls
 from filings_common.db import Company, Filing, Form8KFiling
@@ -20,6 +22,7 @@ router = APIRouter(tags=["calls"])
 
 MAX_DAYS_AHEAD = 120  # the parser ignores announced dates further out than this
 FEED_DAYS_BEHIND = 30  # the feed keeps a month of past calls, so calendars don't lose them
+_WRITTEN_AT = re.compile(rb"^DTSTAMP:[^\r\n]*\r\n", re.MULTILINE)
 
 
 def _today() -> date:
@@ -113,7 +116,7 @@ def list_calls(
         404: {"description": "No company with that ticker."},
     },
 )
-def calls_calendar(session: SessionDep, ticker: TickerFilter = None) -> Response:
+def calls_calendar(session: SessionDep, request: Request, ticker: TickerFilter = None) -> Response:
     """The same calls as an iCalendar feed (RFC 5545), for "subscribe by URL" in Google
     Calendar, Apple Calendar, or Outlook: the next 120 days and the last 30. A call with a time
     is an hour long; one announced without a time is an all-day event."""
@@ -152,9 +155,12 @@ def calls_calendar(session: SessionDep, ticker: TickerFilter = None) -> Response
     name = "SEC filings: investor calls"
     if company is not None:
         name = f"SEC filings: {company.ticker} investor calls"
-    body = ical.calendar(events, name=name, now=datetime.now(EASTERN))
-    return Response(
-        content=body,
+    body = ical.calendar(events, name=name, now=datetime.now(EASTERN)).encode()
+    return conditional_response(
+        request,
+        body,
         media_type="text/calendar; charset=utf-8",
+        # DTSTAMP is when the feed was written, so it changes on every request: not a new version.
+        version=_WRITTEN_AT.sub(b"", body),
         headers={"Content-Disposition": 'inline; filename="investor-calls.ics"'},
     )

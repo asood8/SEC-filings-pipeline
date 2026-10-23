@@ -35,3 +35,7 @@
 .filter input:focus-visible {
   outline: none;
 }
+
+.item select {
+  max-width: 100%;
+}

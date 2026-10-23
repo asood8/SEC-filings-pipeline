@@ -211,6 +211,10 @@ the production ranking.
   keeps scanning the HNSW index until enough filings in range are found (the iterative scan in
   "Indexes and query plans at volume"). The website's search page offers "Filed: past week /
   month / 3 months / year".
+- **8-K items (added 2026-10-22):** `GET /filings` and `GET /feeds/filings.atom` take `item`
+  (`5.02`, officer changes; `2.02`, results), an `EXISTS` on the 8-K's `items` array. The website's
+  feed page offers the items alerts offer once "Current reports (8-K)" is chosen, and its feed
+  link follows. A feed's id gains the item only when one is set, so existing feeds keep theirs.
 - **Docs:** typed response models generate the OpenAPI docs at `/docs`.
 - **Keyset cursors** encode the last row's sort key, so pages stay correct while new filings
   arrive. Offsets would repeat or skip rows.

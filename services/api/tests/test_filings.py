@@ -68,6 +68,26 @@ def test_filing_dates(
     assert accessions(page) == [getattr(ids, name) for name in expected]
 
 
+@pytest.mark.parametrize(
+    ("params", "expected"),
+    [
+        ({"item": "5.02"}, ["apple_8k"]),  # Apple's CFO appointment
+        ({"item": "2.02"}, ["msft_8k"]),  # Microsoft's results
+        ({"item": "2.02", "cik": 320193}, []),
+        ({"item": "1.05"}, []),
+    ],
+)
+def test_8k_item_filter(
+    client: TestClient, ids: Any, params: dict[str, Any], expected: list[str]
+) -> None:
+    page = client.get("/filings", params=params).json()
+    assert accessions(page) == [getattr(ids, name) for name in expected]
+
+
+def test_8k_item_must_look_like_one(client: TestClient) -> None:
+    assert client.get("/filings", params={"item": "5"}).status_code == 422
+
+
 def test_dates_out_of_order(client: TestClient) -> None:
     response = client.get("/filings", params={"since": "2026-10-01", "until": "2026-09-01"})
     assert response.status_code == 422

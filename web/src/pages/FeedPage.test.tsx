@@ -63,6 +63,37 @@ describe('FeedPage', () => {
     ).toHaveAttribute('href', `${API_BASE_URL}/feeds/filings.atom?form_type=4`)
   })
 
+  it('filters 8-Ks by what they report, and the feed link follows', async () => {
+    const requests = mockApi({
+      '/filings': () => ({ items: [], next_cursor: null }),
+    })
+    const router = renderRoute('/?form=8-K')
+    await screen.findByText('No filings yet.')
+
+    await userEvent.selectOptions(
+      screen.getByLabelText('What the 8-K reports'),
+      '5.02 Director or officer change; compensation',
+    )
+    await waitFor(() =>
+      expect(requests.at(-1)?.searchParams.get('item')).toBe('5.02'),
+    )
+    expect(requests.at(-1)?.searchParams.get('form_type')).toBe('8-K')
+    expect(router.state.location.search).toBe('?form=8-K&item=5.02')
+    expect(
+      screen.getByRole('link', { name: 'Atom feed (opens in a new tab)' }),
+    ).toHaveAttribute(
+      'href',
+      `${API_BASE_URL}/feeds/filings.atom?form_type=8-K&item=5.02`,
+    )
+
+    // Another form type drops the item, and its choice.
+    await userEvent.click(screen.getByLabelText('Insider trades (Form 4)'))
+    expect(router.state.location.search).toBe('?form=4')
+    expect(
+      screen.queryByLabelText('What the 8-K reports'),
+    ).not.toBeInTheDocument()
+  })
+
   it('keeps the filings loaded so far when the next page fails', async () => {
     mockApi({
       '/filings': (url) =>

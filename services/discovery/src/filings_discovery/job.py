@@ -32,7 +32,7 @@ from filings_discovery.exhibits import (
     has_exhibit_rows,
     record_exhibits,
 )
-from filings_discovery.submissions import FilingRef, raw_document_name, recent_filings
+from filings_discovery.submissions import FilingRef, industry, raw_document_name, recent_filings
 
 logger = logging.getLogger(__name__)
 tracer = trace.get_tracer(__name__)
@@ -113,9 +113,11 @@ def discover_company(
     exhibit_form_types: Collection[str] = (),
 ) -> int:
     """Store and announce one company's new filings. Returns how many were new."""
+    submissions = edgar.submissions(cik)
+    _record_industry(sessions, cik, industry(submissions))
     candidates = [
         ref
-        for ref in recent_filings(edgar.submissions(cik))
+        for ref in recent_filings(submissions)
         if ref.form_type in form_types and ref.filed_at >= since
     ]
     if not candidates:
@@ -138,6 +140,16 @@ def discover_company(
             new += 1
     logger.info("CIK %d: %d candidate filings, %d new", cik, len(candidates), new)
     return new
+
+
+def _record_industry(sessions: sessionmaker[Session], cik: int, value: str | None) -> None:
+    """Keep the company's industry as SEC describes it; a no-op when unchanged."""
+    with sessions.begin() as session:
+        session.execute(
+            sa.update(Company)
+            .where(Company.cik == cik, Company.industry.is_distinct_from(value))
+            .values(industry=value)
+        )
 
 
 def _store_and_record(

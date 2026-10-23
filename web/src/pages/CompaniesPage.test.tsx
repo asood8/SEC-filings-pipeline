@@ -10,6 +10,7 @@ const WATCHLIST = {
       ticker: 'AAPL',
       name: 'Apple Inc.',
       exchange: 'Nasdaq',
+      industry: 'Electronic Computers',
       on_watchlist: true,
     },
     {
@@ -46,5 +47,17 @@ describe('CompaniesPage', () => {
     expect(screen.getByRole('status')).toHaveTextContent(
       '0 of 2 companies match.',
     )
+  })
+
+  it('shows and filters by industry', async () => {
+    mockApi({ '/companies': () => WATCHLIST })
+    renderRoute('/companies')
+
+    expect(await screen.findByRole('link', { name: /AAPL/ })).toHaveTextContent(
+      'Electronic Computers',
+    )
+    await userEvent.type(screen.getByLabelText('Filter companies'), 'computers')
+    expect(screen.getByRole('link', { name: /AAPL/ })).toBeInTheDocument()
+    expect(screen.queryByRole('link', { name: /MSFT/ })).not.toBeInTheDocument()
   })
 })

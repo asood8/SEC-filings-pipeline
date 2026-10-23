@@ -83,6 +83,9 @@ class Company(Base):
     ticker: Mapped[str]
     name: Mapped[str]
     exchange: Mapped[str | None]
+    # SEC's description of the company's SIC code ("Electronic Computers"), from the submissions
+    # API that discovery reads anyway; NULL until discovery has polled the company.
+    industry: Mapped[str | None]
     on_watchlist: Mapped[bool] = mapped_column(default=False, server_default=sa.false())
     updated_at: Mapped[datetime] = mapped_column(
         server_default=sa.func.now(), onupdate=sa.func.now()

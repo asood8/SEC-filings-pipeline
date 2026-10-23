@@ -13,7 +13,7 @@ from opentelemetry.trace import StatusCode
 from sqlalchemy.engine import Engine
 
 from filings_common.config import EdgarSettings
-from filings_common.db import Filing, FilingExhibit, OutboxEvent, session_factory
+from filings_common.db import Company, Filing, FilingExhibit, OutboxEvent, session_factory
 from filings_common.edgar import EdgarClient
 from filings_common.events import FilingDiscovered, Topic
 from filings_common.storage import LocalObjectStore
@@ -162,6 +162,9 @@ def test_discovers_stores_and_announces_new_filings_exactly_once(
     )
     assert store.get(exhibit.object_key) == b"<p>Results</p>"
     assert not any("agreement.htm" in url for url in fake_sec.hits)
+    with sessions() as session:  # from the same submissions response; Microsoft's failed
+        industries = dict(session.execute(sa.select(Company.ticker, Company.industry)).all())
+    assert (industries["AAPL"], industries["MSFT"]) == ("Electronic Computers", None)
     assert not any("000114036126000202-index" in url for url in fake_sec.hits)  # Form 4: none
 
 

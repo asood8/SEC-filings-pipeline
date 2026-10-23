@@ -408,6 +408,11 @@ export interface components {
             name: string;
             /** Exchange */
             exchange: string | null;
+            /**
+             * Industry
+             * @description SEC's description of the company's SIC code, e.g. "Electronic Computers".
+             */
+            industry?: string | null;
             /** On Watchlist */
             on_watchlist: boolean;
             /** Recent Filings */
@@ -423,6 +428,11 @@ export interface components {
             name: string;
             /** Exchange */
             exchange: string | null;
+            /**
+             * Industry
+             * @description SEC's description of the company's SIC code, e.g. "Electronic Computers".
+             */
+            industry?: string | null;
             /** On Watchlist */
             on_watchlist: boolean;
         };

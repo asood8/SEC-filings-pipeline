@@ -528,6 +528,11 @@ export interface components {
             investor_call: components["schemas"]["InvestorCallOut"] | null;
             /** Exhibits */
             exhibits: components["schemas"]["ExhibitOut"][];
+            /**
+             * Nearby
+             * @description The same company's other filings within 14 days either side, newest first (the 10 nearest).
+             */
+            nearby: components["schemas"]["FilingOut"][];
         };
         /** FilingOut */
         FilingOut: {

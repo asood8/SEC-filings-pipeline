@@ -183,6 +183,10 @@ class FilingDetail(FilingOut):
         "Q&A included, isn't in the filing."
     )
     exhibits: list[ExhibitOut]
+    nearby: list[FilingOut] = Field(
+        description="The same company's other filings within 14 days either side, newest first "
+        "(the 10 nearest)."
+    )
 
 
 class CompanyOut(BaseModel):

@@ -3,6 +3,7 @@ import { Link, useParams } from 'react-router'
 import { isNotFound, type FilingDetail } from '../api/client'
 import { filingQuery } from '../api/queries'
 import { ExternalLink } from '../components/ExternalLink'
+import { FilingList } from '../components/FilingList'
 import { Form4Transactions } from '../components/Form4Transactions'
 import { OwnerNames } from '../components/OwnerNames'
 import { ErrorMessage, Loading } from '../components/QueryStatus'
@@ -82,6 +83,15 @@ export function FilingPage() {
               </li>
             ))}
           </ul>
+        </section>
+      )}
+      {filing.nearby.length > 0 && (
+        <section>
+          <h2>Around the same time</h2>
+          <p className="muted">
+            {filing.ticker}&apos;s other filings within two weeks either side.
+          </p>
+          <FilingList filings={filing.nearby} showCompany={false} />
         </section>
       )}
 

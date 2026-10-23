@@ -233,6 +233,11 @@ class InsiderActivity(BaseModel):
     since: date = Field(description="The earliest transaction date counted.")
     bought: TradeTotals = Field(description="Everyone's open-market or private purchases (P).")
     sold: TradeTotals = Field(description="Everyone's open-market or private sales (S).")
+    bought_planned: TradeTotals = Field(
+        description="The part of `bought` from filings that say the trades were made under a "
+        "Rule 10b5-1 plan, set up in advance."
+    )
+    sold_planned: TradeTotals = Field(description="The part of `sold` under 10b5-1 plans.")
     filings: int
     owners: list[OwnerActivity] = Field(
         description="By value bought and sold, largest first; at most 50. Totals count everyone."

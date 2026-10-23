@@ -1,4 +1,4 @@
-from datetime import date
+from datetime import date, timedelta
 from typing import Annotated
 
 import sqlalchemy as sa
@@ -40,6 +40,8 @@ from filings_common.summaries import FilingSummary
 router = APIRouter(tags=["filings"])
 
 ACCESSION_PATTERN = r"^\d{10}-\d{2}-\d{6}$"
+NEARBY_DAYS = 14
+NEARBY_LIMIT = 10
 
 
 @router.get("/filings", summary="Latest filings, newest first")
@@ -108,6 +110,22 @@ def get_filing(
         .where(FilingExhibit.accession_no == accession_no)
         .order_by(FilingExhibit.sequence)
     ).all()
+    # Context: what else the company filed around then (an 8-K's results, then insiders' sales).
+    window = timedelta(days=NEARBY_DAYS)
+    nearby = session.execute(
+        filing_select()
+        .where(
+            Filing.cik == filing.cik,
+            Filing.accession_no != accession_no,
+            Filing.filed_at.between(filing.filed_at - window, filing.filed_at + window),
+        )
+        .order_by(
+            sa.func.abs(Filing.filed_at - filing.filed_at),  # days apart
+            Filing.filed_at.desc(),
+            Filing.accession_no.desc(),
+        )
+        .limit(NEARBY_LIMIT)
+    ).all()
     return FilingDetail(
         **to_filing_out(*row).model_dump(),
         summary=(
@@ -155,4 +173,9 @@ def get_filing(
             )
             for e in exhibits
         ],
+        nearby=sorted(
+            (to_filing_out(*row) for row in nearby),
+            key=lambda f: (f.filed_at, f.accession_no),
+            reverse=True,
+        ),
     )

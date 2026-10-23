@@ -1,6 +1,7 @@
 import { screen, within } from '@testing-library/react'
 import { describe, expect, it } from 'vitest'
 import {
+  filing,
   BERKSHIRE,
   BUFFETT,
   filingDetail,
@@ -37,6 +38,32 @@ describe('FilingPage', () => {
     expect(
       screen.queryByText(/As announced in the filing/),
     ).not.toBeInTheDocument()
+    expect(
+      screen.queryByRole('heading', { name: 'Around the same time' }),
+    ).not.toBeInTheDocument() // nothing nearby
+  })
+
+  it("lists the company's other filings from around the same time", async () => {
+    mockApi({
+      '/filings/0000320193-26-000001': () =>
+        filingDetail({
+          nearby: [
+            filing({
+              accession_no: '0000320193-26-000002',
+              form_type: '4',
+              headline: 'Timothy D Cook sold 50,000 AAPL shares',
+            }),
+          ],
+        }),
+    })
+    renderRoute('/filings/0000320193-26-000001')
+
+    const section = (
+      await screen.findByRole('heading', { name: 'Around the same time' })
+    ).closest('section')!
+    expect(
+      within(section).getByRole('link', { name: /Timothy D Cook sold/ }),
+    ).toHaveAttribute('href', '/filings/0000320193-26-000002')
   })
 
   it('shows the call an 8-K announces, on Eastern time, with its webcast', async () => {

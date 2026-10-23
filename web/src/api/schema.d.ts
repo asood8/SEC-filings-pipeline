@@ -1462,6 +1462,8 @@ export interface operations {
             query?: {
                 /** @description How many days ahead, from today. */
                 days?: number;
+                /** @description Only this company's calls. */
+                ticker?: string | null;
             };
             header?: never;
             path?: never;
@@ -1491,7 +1493,10 @@ export interface operations {
     };
     calls_calendar_calls_ics_get: {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description Only this company's calls. */
+                ticker?: string | null;
+            };
             header?: never;
             path?: never;
             cookie?: never;
@@ -1505,6 +1510,22 @@ export interface operations {
                 };
                 content: {
                     "text/calendar": unknown;
+                };
+            };
+            /** @description No company with that ticker. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };

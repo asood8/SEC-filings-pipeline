@@ -99,7 +99,9 @@ added to alerts ("Q&A session: Oct 21, 2026, 5:30 pm ET, https://ir.tesla.com").
   then the later filing. `GET /calls.ics` is the same as an iCalendar feed (RFC 5545, written by
   `filings_api.ical`, no new dependency), the next 120 days and the last 30, for "subscribe by
   URL" in a calendar app: a timed call is an hour long, one without a time an all-day event. The
-  website's Calls page shows the list and links the feed.
+  website's Calls page shows the list and links the feed. Both take `ticker` (added the same
+  day) for one company's calls: each company page shows its next announced call and links that
+  company's feed.
 - *The call's content* (a transcript, a summary of the Q&A) is deferred: it would mean fetching
   each company's webcast audio, a speech-to-text model, summaries in parts (a transcript is far
   longer than the LLM's context), and checking the sites' terms. See the brief's open decisions.

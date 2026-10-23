@@ -16,10 +16,15 @@ SubmissionsFactory = Callable[..., dict[str, Any]]
 def make_submissions() -> SubmissionsFactory:
     """Build a submissions API response from (accession, form, filing date, primary doc) rows."""
 
-    def build(*filings: tuple[str, str, str, str], cik: int = 320193) -> dict[str, Any]:
+    def build(
+        *filings: tuple[str, str, str, str],
+        cik: int = 320193,
+        sic_description: str = "Electronic Computers",
+    ) -> dict[str, Any]:
         return {
             "cik": str(cik),
             "name": "Example Corp",
+            "sicDescription": sic_description,
             "filings": {
                 "recent": {
                     "accessionNumber": [f[0] for f in filings],

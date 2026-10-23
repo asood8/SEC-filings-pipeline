@@ -29,13 +29,14 @@ export function CompanyPage() {
   if (isNotFound(company.error)) return <NotFoundPage what="company" />
   if (company.isError) return <ErrorMessage error={company.error} />
 
-  const { name, cik, exchange } = company.data
+  const { name, cik, exchange, industry } = company.data
   return (
     <>
       <h1>{name}</h1>
       <p className="muted">
         {company.data.ticker}
-        {exchange && ` · ${exchange}`} · CIK {cik} ·{' '}
+        {exchange && ` · ${exchange}`}
+        {industry && ` · ${industry}`} · CIK {cik} ·{' '}
         <ExternalLink href={edgarCompanyUrl(cik)}>
           All filings on EDGAR
         </ExternalLink>

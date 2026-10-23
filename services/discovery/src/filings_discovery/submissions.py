@@ -41,6 +41,15 @@ def recent_filings(submissions: dict[str, Any]) -> list[FilingRef]:
     ]
 
 
+def industry(submissions: dict[str, Any]) -> str | None:
+    """SEC's description of the company's SIC code ("Electronic Computers"); None when it has
+    none (some funds and trusts)."""
+    description = submissions.get("sicDescription")
+    if not isinstance(description, str):
+        return None
+    return description.strip() or None
+
+
 def raw_document_name(primary_document: str) -> str:
     """The stored document's file name inside the filing folder.
 

@@ -6,7 +6,7 @@ from fastapi.testclient import TestClient
 from sqlalchemy.engine import Engine
 from sqlalchemy.orm import Session
 
-from filings_common.db import Filing, Form4Filing, Form4Transaction, session_factory
+from filings_common.db import Company, Filing, Form4Filing, Form4Transaction, session_factory
 
 pytestmark = pytest.mark.integration
 
@@ -34,6 +34,14 @@ def test_company_detail_with_recent_filings(client: TestClient, ids: Any) -> Non
     detail = client.get("/companies/aapl").json()  # case-insensitive
     assert (detail["cik"], detail["name"], detail["on_watchlist"]) == (320193, "Apple Inc.", True)
     assert [f["accession_no"] for f in detail["recent_filings"]] == [ids.form4, ids.apple_8k]
+
+
+def test_companies_carry_their_industry(client: TestClient, seeded: Engine) -> None:
+    with session_factory(seeded).begin() as session:
+        session.get_one(Company, 320193).industry = "Electronic Computers"
+    industries = {c["ticker"]: c["industry"] for c in client.get("/companies").json()["items"]}
+    assert industries == {"AAPL": "Electronic Computers", "MSFT": None, "ZZZZ": None}
+    assert client.get("/companies/AAPL").json()["industry"] == "Electronic Computers"
 
 
 def test_unknown_company(client: TestClient) -> None:

@@ -194,6 +194,10 @@ class CompanyOut(BaseModel):
     ticker: str
     name: str
     exchange: str | None
+    industry: str | None = Field(
+        default=None,
+        description="SEC's description of the company's SIC code, e.g. \"Electronic Computers\".",
+    )
     on_watchlist: bool
 
 

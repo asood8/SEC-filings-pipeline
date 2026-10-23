@@ -10,6 +10,7 @@ import sqlalchemy as sa
 from fastapi import APIRouter, HTTPException, Query, Request, Response
 
 from filings_api import atom
+from filings_api.conditional import conditional_response
 from filings_api.queries import CikFilter, ItemFilter, SessionDep, filing_select, reports_item
 from filings_common.db import Company, Filing, Summary
 from filings_common.names import company_name
@@ -117,4 +118,4 @@ def filings_feed(
         self_url=str(request.url),
         updated=max((e.updated for e in entries), default=datetime.now(UTC)),
     )
-    return Response(content=body, media_type="application/atom+xml; charset=utf-8")
+    return conditional_response(request, body, media_type="application/atom+xml; charset=utf-8")

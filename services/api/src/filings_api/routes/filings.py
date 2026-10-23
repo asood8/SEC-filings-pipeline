@@ -7,12 +7,14 @@ from fastapi import APIRouter, HTTPException, Path, Query
 from filings_api.pagination import decode_cursor, encode_cursor
 from filings_api.queries import (
     CikFilter,
+    ItemFilter,
     SessionDep,
     Since,
     Until,
     check_dates,
     filing_select,
     reporting_owners_out,
+    reports_item,
     to_filing_out,
 )
 from filings_api.schemas import (
@@ -49,6 +51,7 @@ def list_filings(
     session: SessionDep,
     cik: CikFilter = None,
     form_type: str | None = None,
+    item: ItemFilter = None,
     since: Since = None,
     until: Until = None,
     limit: Annotated[int, Query(ge=1, le=100)] = 50,
@@ -60,6 +63,8 @@ def list_filings(
         query = query.where(Filing.cik == cik)
     if form_type is not None:
         query = query.where(Filing.form_type == form_type)
+    if item is not None:
+        query = query.where(reports_item(item))
     if since is not None:
         query = query.where(Filing.filed_at >= since)
     if until is not None:

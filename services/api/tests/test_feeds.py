@@ -1,3 +1,4 @@
+import uuid
 import xml.etree.ElementTree as ET
 from datetime import UTC, date, datetime
 from typing import Any
@@ -78,6 +79,21 @@ def test_filters(
     feed = parse(client.get("/feeds/filings.atom", params=params))
     assert feed.findtext("a:title", namespaces=NS) == title
     assert len(titles(feed)) == count
+
+
+def test_one_8k_item(client: TestClient, ids: Any) -> None:
+    feed = parse(client.get("/feeds/filings.atom", params={"item": "5.02"}))
+    assert feed.findtext("a:title", namespaces=NS) == "SEC filings: 8-K item 5.02"
+    assert titles(feed) == ["AAPL 8-K: Apple names Kevan Parekh chief financial officer"]
+
+
+def test_feed_ids_dont_change_with_new_filters(client: TestClient, ids: Any) -> None:
+    # Readers know feeds by id: the ids of feeds without an item stay what they were.
+    feed_id = parse(client.get("/feeds/filings.atom", params={"cik": 320193})).findtext(
+        "a:id", namespaces=NS
+    )
+    old = uuid.uuid5(uuid.NAMESPACE_URL, "sec-filings:filings?cik=320193&form_type=")
+    assert feed_id == f"urn:uuid:{old}"
 
 
 def test_unknown_company_or_form(client: TestClient, ids: Any) -> None:

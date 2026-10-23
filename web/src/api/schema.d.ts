@@ -179,8 +179,8 @@ export interface paths {
         /**
          * Latest filings as an Atom feed
          * @description The 50 latest filings that have a summary, newest first, each with its summary, key
-         *     points, and a link to the filing on sec.gov. Paste the URL into a feed reader; `cik` and
-         *     `form_type` narrow it to one company or one form.
+         *     points, and a link to the filing on sec.gov. Paste the URL into a feed reader; `cik`,
+         *     `form_type`, and `item` narrow it to one company, one form, or 8-Ks reporting one item.
          */
         get: operations["filings_feed_feeds_filings_atom_get"];
         put?: never;
@@ -1274,6 +1274,8 @@ export interface operations {
             query?: {
                 cik?: number | null;
                 form_type?: string | null;
+                /** @description Only 8-Ks reporting this item, e.g. 2.02 (results) or 5.02 (officer changes). */
+                item?: string | null;
                 /** @description Only filings filed on or after this date. */
                 since?: string | null;
                 /** @description Only filings filed on or before this date. */
@@ -1550,6 +1552,8 @@ export interface operations {
             query?: {
                 cik?: number | null;
                 form_type?: ("4" | "8-K") | null;
+                /** @description Only 8-Ks reporting this item, e.g. 2.02 (results) or 5.02 (officer changes). */
+                item?: string | null;
             };
             header?: never;
             path?: never;

@@ -10,7 +10,7 @@ from fastapi import Depends, HTTPException, Query, Request
 from sqlalchemy.orm import Session, sessionmaker
 
 from filings_api.schemas import FilingOut, ReportingOwnerOut
-from filings_common.db import Company, Filing, FilingSearch
+from filings_common.db import Company, Filing, FilingSearch, Form8KFiling
 from filings_common.embeddings import Embedder
 from filings_common.names import company_name, display_name, relationship_label
 from filings_common.parsed import OwnerRelationship
@@ -31,8 +31,22 @@ SessionDep = Annotated[Session, Depends(get_session)]
 EmbedderDep = Annotated[Embedder | None, Depends(get_embedder)]
 # CIKs have at most 10 digits; a bigger number would overflow the bigint column (a 500).
 CikFilter = Annotated[int | None, Query(ge=1, le=9_999_999_999)]
+ItemFilter = Annotated[
+    str | None,
+    Query(
+        pattern=r"^\d\.\d{2}$",
+        description="Only 8-Ks reporting this item, e.g. 2.02 (results) or 5.02 (officer changes).",
+    ),
+]
 Since = Annotated[date | None, Query(description="Only filings filed on or after this date.")]
 Until = Annotated[date | None, Query(description="Only filings filed on or before this date.")]
+
+
+def reports_item(item: str) -> sa.ColumnElement[bool]:
+    """The filing is an 8-K that reports `item`."""
+    return sa.exists().where(
+        Form8KFiling.accession_no == Filing.accession_no, Form8KFiling.items.contains([item])
+    )
 
 
 def check_dates(since: date | None, until: date | None) -> None:

@@ -281,11 +281,24 @@ class InsiderTrade(BaseModel):
             "whole filing. Null when the filing doesn't say."
         )
     )
+    direct_holdings_before: float | None = Field(
+        default=None,
+        description=(
+            "Shares held directly before these trades: the last trade's shares owned after, "
+            "plus the shares sold or minus those bought (other transactions in the filing aren't "
+            "counted). 0 for a first purchase. Null when any of the trades is held indirectly "
+            "(trusts, family), whose holdings can't be told apart, or a holding isn't given."
+        ),
+    )
+    direct_holdings_after: float | None = Field(
+        default=None, description="Shares held directly after the last of these trades."
+    )
 
 
 class InsiderTrades(BaseModel):
     side: TradeSide
     days: int
+    include_planned: bool = Field(description="Whether 10b5-1 plan trades are included.")
     since: date = Field(description="The earliest transaction date counted.")
     items: list[InsiderTrade] = Field(
         description=(

@@ -6,7 +6,12 @@ import { DataTable } from '../components/DataTable'
 import table from '../components/DataTable.module.css'
 import { OwnerNames } from '../components/OwnerNames'
 import { ErrorMessage, Loading } from '../components/QueryStatus'
-import { formatDate, formatMoney, formatShares } from '../lib/format'
+import {
+  formatDate,
+  formatHoldingChange,
+  formatMoney,
+  formatShares,
+} from '../lib/format'
 import filters from './FeedPage.module.css'
 import styles from './InsiderTradesPage.module.css'
 import { usePageTitle } from '../lib/usePageTitle'
@@ -21,21 +26,32 @@ const DEFAULT_DAYS = 30
 const NONE = '—'
 
 /** The largest recent insider purchases or sales across all companies. The choices live in the
- * URL (?side=sell&days=90), so every view has a link; defaults are left out. */
+ * URL (?side=sell&days=90&plans=hide), so every view has a link; defaults are left out. */
 export function InsiderTradesPage() {
   const [params, setParams] = useSearchParams()
   const side: TradeSide = params.get('side') === 'sell' ? 'sell' : DEFAULT_SIDE
   const period =
     PERIODS.find((days) => String(days) === params.get('days')) ?? DEFAULT_DAYS
-  const query = useQuery(insiderTradesQuery(side, period))
+  const hidePlans = params.get('plans') === 'hide'
+  const query = useQuery(insiderTradesQuery(side, period, !hidePlans))
   const noun = SIDES.find((s) => s.value === side)?.noun
+  const without = hidePlans ? ', without 10b5-1 plan trades' : ''
   usePageTitle(`Insider trades: ${noun}, last ${period} days`)
 
-  function choose(next: { side?: TradeSide; days?: number }) {
-    const chosen = { side: next.side ?? side, days: next.days ?? period }
+  function choose(next: {
+    side?: TradeSide
+    days?: number
+    hidePlans?: boolean
+  }) {
+    const chosen = {
+      side: next.side ?? side,
+      days: next.days ?? period,
+      hidePlans: next.hidePlans ?? hidePlans,
+    }
     const search: Record<string, string> = {}
     if (chosen.side !== DEFAULT_SIDE) search.side = chosen.side
     if (chosen.days !== DEFAULT_DAYS) search.days = String(chosen.days)
+    if (chosen.hidePlans) search.plans = 'hide'
     setParams(search, { replace: true })
   }
 
@@ -78,13 +94,23 @@ export function InsiderTradesPage() {
             </label>
           ))}
         </fieldset>
+        <label className={filters.filter}>
+          <input
+            type="checkbox"
+            checked={hidePlans}
+            onChange={(event) => choose({ hidePlans: event.target.checked })}
+          />
+          Leave out 10b5-1 plan trades
+        </label>
       </div>
       <p className={table.note}>
         Only open-market (or private) purchases and sales of a company's stock
         count. Awards, option exercises, shares withheld for taxes, and gifts
         are left out: they aren't decisions to buy or sell. A 10b5-1 plan is a
         trading plan the insider set up in advance, which then trades on its own
-        schedule.
+        schedule, so its trades say less about what the insider thinks now.
+        Holdings counts shares held in the insider's own name; trades through
+        trusts or family members show {NONE}.
       </p>
 
       {query.isPending ? (
@@ -93,7 +119,7 @@ export function InsiderTradesPage() {
         <ErrorMessage error={query.error} />
       ) : query.data.items.length === 0 ? (
         <p className="muted">
-          No insider {noun} reported in the last {period} days.
+          No insider {noun} reported in the last {period} days{without}.
         </p>
       ) : (
         <>
@@ -101,7 +127,9 @@ export function InsiderTradesPage() {
             Trades since {formatDate(query.data.since)}, largest first; one row
             per filing.
           </p>
-          <DataTable caption={`Largest insider ${noun}, last ${period} days`}>
+          <DataTable
+            caption={`Largest insider ${noun}, last ${period} days${without}`}
+          >
             <thead role="rowgroup">
               <tr role="row">
                 <th scope="col" role="columnheader">
@@ -112,6 +140,9 @@ export function InsiderTradesPage() {
                 </th>
                 <th scope="col" role="columnheader" className={table.number}>
                   Value
+                </th>
+                <th scope="col" role="columnheader" className={table.number}>
+                  Holdings
                 </th>
                 <th scope="col" role="columnheader" className={table.number}>
                   Average price
@@ -175,6 +206,9 @@ function Row({ trade }: { trade: InsiderTrade }) {
           </span>
         </span>
       </td>
+      <td role="cell" data-label="Holdings" className={table.number}>
+        <Holdings trade={trade} />
+      </td>
       <td role="cell" data-label="Average price" className={table.number}>
         {trade.average_price !== null ? formatMoney(trade.average_price) : NONE}
       </td>
@@ -200,5 +234,22 @@ function Row({ trade }: { trade: InsiderTrade }) {
         </Link>
       </td>
     </tr>
+  )
+}
+
+/** The change in the insider's direct holdings, with what they hold after. */
+function Holdings({ trade }: { trade: InsiderTrade }) {
+  const change = formatHoldingChange(
+    trade.direct_holdings_before,
+    trade.direct_holdings_after,
+  )
+  if (change === null) return <>{NONE}</>
+  return (
+    <span>
+      {change}{' '}
+      <span className={table.detail}>
+        {formatShares(trade.direct_holdings_after!)} held after
+      </span>
+    </span>
   )
 }

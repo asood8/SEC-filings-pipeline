@@ -1,10 +1,11 @@
 """The largest recent insider purchases or sales, across every company's stock."""
 
-from datetime import UTC, datetime, timedelta
-from typing import Annotated
+from datetime import UTC, date, datetime, timedelta
+from typing import Annotated, Any
 
 import sqlalchemy as sa
 from fastapi import APIRouter, Query
+from sqlalchemy.orm import Session
 
 from filings_api.queries import SessionDep, reporting_owners_out
 from filings_api.routes.companies import INSIDER_TRADE_CODES, MAX_INSIDER_DAYS, trade_lines
@@ -22,6 +23,45 @@ SIDE_CODES: dict[TradeSide, str] = {
 }
 
 
+def _direct_holdings(
+    session: Session, accession_nos: list[str], code: str, since: date
+) -> dict[str, tuple[float, float]]:
+    """Before and after holdings per filing, for filings whose counted lines (this side, in the
+    window) are all held directly and all give the holding after (InsiderTrade fields)."""
+    line, form = Form4Transaction, Form4Filing
+    traded_on = sa.func.coalesce(line.transaction_date, form.period_of_report)
+    rows = session.execute(
+        sa.select(line.accession_no, line.shares, line.shares_owned_after, line.direct_or_indirect)
+        .join(form, form.accession_no == line.accession_no)
+        .where(
+            line.accession_no.in_(accession_nos),
+            *trade_lines(),
+            line.code == code,
+            traded_on >= since,
+        )
+        .order_by(line.accession_no, line.line)
+    ).all()
+    by_filing: dict[str, list[Any]] = {}
+    for row in rows:
+        by_filing.setdefault(row.accession_no, []).append(row)
+    holdings = {}
+    for accession_no, lines in by_filing.items():
+        if any(r.direct_or_indirect != "D" or r.shares is None for r in lines):
+            continue
+        after = lines[-1].shares_owned_after
+        if after is None:
+            continue
+        traded = sum(r.shares for r in lines)
+        before = after + traded if code == SIDE_CODES["sell"] else after - traded
+        holdings[accession_no] = (round(max(before, 0.0), 4), round(after, 4))
+    return holdings
+
+
+def _holdings_fields(holding: tuple[float, float] | None) -> dict[str, float | None]:
+    before, after = holding if holding is not None else (None, None)
+    return {"direct_holdings_before": before, "direct_holdings_after": after}
+
+
 @router.get("/insider-trades", summary="The largest recent insider purchases or sales")
 def list_insider_trades(
     session: SessionDep,
@@ -30,6 +70,13 @@ def list_insider_trades(
         int, Query(ge=1, le=MAX_INSIDER_DAYS, description="How far back, by transaction date.")
     ] = 30,
     limit: Annotated[int, Query(ge=1, le=MAX_TRADES, description="How many filings.")] = 25,
+    include_planned: Annotated[
+        bool,
+        Query(
+            description="False leaves out filings that say the trades were made under a Rule "
+            "10b5-1 plan, set up in advance; filings that don't say are kept."
+        ),
+    ] = True,
 ) -> InsiderTrades:
     """Open-market or private purchases (`side=buy`, Form 4 code P) or sales (`side=sell`, code
     S) of any company's stock in the last `days` days, by transaction date, one row per Form 4.
@@ -80,6 +127,7 @@ def list_insider_trades(
             # `period_of_report`: that is the earliest trade, and a late Form 4 can report
             # year-old lines next to last week's.)
             Filing.filed_at >= since,
+            sa.true() if include_planned else form.is_10b5_1.is_not(True),
         )
         .group_by(form.accession_no, Filing.accession_no, Company.cik)
         .order_by(
@@ -90,9 +138,13 @@ def list_insider_trades(
         )
         .limit(limit)
     ).all()
+    holdings = _direct_holdings(
+        session, [row.accession_no for row in rows], SIDE_CODES[side], since
+    )
     return InsiderTrades(
         side=side,
         days=days,
+        include_planned=include_planned,
         since=since,
         items=[
             InsiderTrade(
@@ -116,6 +168,7 @@ def list_insider_trades(
                 ),
                 unpriced_shares=round(row.unpriced_shares, 4),
                 is_10b5_1=row.is_10b5_1,
+                **_holdings_fields(holdings.get(row.accession_no)),
             )
             for row in rows
         ],

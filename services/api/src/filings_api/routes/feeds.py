@@ -10,7 +10,7 @@ import sqlalchemy as sa
 from fastapi import APIRouter, HTTPException, Query, Request, Response
 
 from filings_api import atom
-from filings_api.queries import CikFilter, SessionDep, filing_select
+from filings_api.queries import CikFilter, ItemFilter, SessionDep, filing_select, reports_item
 from filings_common.db import Company, Filing, Summary
 from filings_common.names import company_name
 from filings_common.parsed import EASTERN
@@ -52,18 +52,22 @@ def filings_feed(
     request: Request,
     cik: CikFilter = None,
     form_type: Annotated[Literal["4", "8-K"] | None, Query()] = None,
+    item: ItemFilter = None,
 ) -> Response:
     """The 50 latest filings that have a summary, newest first, each with its summary, key
-    points, and a link to the filing on sec.gov. Paste the URL into a feed reader; `cik` and
-    `form_type` narrow it to one company or one form."""
-    title = "SEC filings"
+    points, and a link to the filing on sec.gov. Paste the URL into a feed reader; `cik`,
+    `form_type`, and `item` narrow it to one company, one form, or 8-Ks reporting one item."""
+    parts = []
     if cik is not None:
         ticker = session.scalar(sa.select(Company.ticker).where(Company.cik == cik))
         if ticker is None:
             raise HTTPException(status_code=404, detail="company not found")
-        title += f": {ticker}"
-    if form_type is not None:
-        title += f"{',' if cik is not None else ':'} {_form_label(form_type)}s"
+        parts.append(ticker)
+    if item is not None:  # only 8-Ks report items
+        parts.append(f"8-K item {item}")
+    elif form_type is not None:
+        parts.append(f"{_form_label(form_type)}s")
+    title = "SEC filings" + (f": {', '.join(parts)}" if parts else "")
 
     current = (
         sa.select(Summary.summary, Summary.created_at)
@@ -83,6 +87,8 @@ def filings_feed(
         query = query.where(Filing.cik == cik)
     if form_type is not None:
         query = query.where(Filing.form_type == form_type)
+    if item is not None:
+        query = query.where(reports_item(item))
 
     entries = []
     for filing, ticker, name, _, summary_json, summarized_at in session.execute(query).all():
@@ -102,6 +108,8 @@ def filings_feed(
         )
     # Stable whatever host or scheme the request came through, unlike the URL itself.
     view = f"filings?cik={cik or ''}&form_type={form_type or ''}"
+    if item is not None:  # appended only when set, so the existing feeds keep their ids
+        view += f"&item={item}"
     body = atom.feed(
         entries,
         id=f"urn:uuid:{uuid.uuid5(uuid.NAMESPACE_URL, f'sec-filings:{view}')}",

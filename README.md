@@ -203,11 +203,13 @@ JavaScript origins; no secret needed) in `.env` as `GOOGLE_CLIENT_ID`. Open the 
 `localhost`, not `127.0.0.1`, so the session cookie is shared with the API.
 
 The API: `GET /search?q=...` (hybrid by default; `mode=keyword|semantic`), `GET /filings` (both
-take `form_type`, `cik`, and filing dates `since`/`until`),
+take `form_type`, `cik`, and filing dates `since`/`until`; `/filings` and the Atom feed also
+take an 8-K `item`, e.g. `5.02` for officer changes),
 `GET /filings/{accession_no}` (with a Form 4's transaction lines), `GET /companies`,
 `GET /companies/{ticker}`, `GET /companies/{ticker}/insider-activity?days=90` (insiders'
 purchases and sales per owner, grouped by owner CIK), `GET /insider-trades?side=buy&days=30`
-(the largest purchases or sales across companies, one row per Form 4), and `GET /calls?days=60`
+(the largest purchases or sales across companies, one row per Form 4; `include_planned=false`
+leaves out 10b5-1 plan trades), and `GET /calls?days=60`
 (the earnings calls and other investor events 8-Ks announce, also as an iCalendar feed to
 subscribe to, `GET /calls.ics`; both take `ticker` for one company's). `GET /feeds/filings.atom` (optionally `cik`, `form_type`) is
 the latest summarized filings as an Atom feed, for a feed reader. A Form 4's reporting
@@ -252,7 +254,7 @@ uv run filings-rebuild-key-fields --form-type 4  # refill Form 4 key fields from
 | `make web-types` | Regenerate the website's API types from the API's OpenAPI schema |
 | `make tf-check` / `make tf-fmt` | Check the Terraform code (fmt, validate, tests on mock providers, free-tier allowlist) / format it |
 | `make tf-init` / `make tf-plan` / `make tf-apply` | Production: connect to the state in R2, plan from `production.tfvars` into `production.tfplan`, apply exactly that plan ([infra/terraform/README.md](infra/terraform/README.md#first-apply)) |
-| `scripts/retry-vm-capacity.sh` | Retry creating the A1 VM through "Out of host capacity", rotating availability domains, applying only plans that just finish the VM ([runbook](docs/runbook.md#oracle-idle-reclamation-and-capacity-errors)) |
+| `scripts/retry-vm-capacity.sh` | Retry creating the A1 VM through "Out of host capacity" every minute, rotating availability domains and applying only plans that create the instance, then finish it (volume, attachment, Atlas access) ([runbook](docs/runbook.md#oracle-idle-reclamation-and-capacity-errors)) |
 | `uv run filings-r2-usage` | Check R2's free tier with Cloudflare's own numbers (`CLOUDFLARE_ACCOUNT_ID`, `CLOUDFLARE_ANALYTICS_TOKEN`); a daily job in production |
 | `make k8s-tools` / `make k8s-check` | Install kubectl, kubeconform, and kubeseal (checksums verified) / render and validate the Kubernetes manifests |
 | `make obs-up` / `make obs-down` | Start / stop the optional local trace and metrics viewer (Grafana on :3001) |

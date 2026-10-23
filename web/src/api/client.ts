@@ -27,11 +27,12 @@ export const API_BASE_URL: string =
 /** The Atom feed of summarized filings, all of them or one company's or form type's, to follow
  * in a feed reader. */
 export function filingsFeedUrl(
-  filter: { cik?: number; formType?: string } = {},
+  filter: { cik?: number; formType?: string; item?: string } = {},
 ) {
   const params = new URLSearchParams()
   if (filter.cik !== undefined) params.set('cik', String(filter.cik))
   if (filter.formType) params.set('form_type', filter.formType)
+  if (filter.item) params.set('item', filter.item)
   const query = params.toString()
   return `${API_BASE_URL}/feeds/filings.atom${query ? `?${query}` : ''}`
 }

@@ -179,8 +179,8 @@ export interface paths {
         /**
          * Latest filings as an Atom feed
          * @description The 50 latest filings that have a summary, newest first, each with its summary, key
-         *     points, and a link to the filing on sec.gov. Paste the URL into a feed reader; `cik` and
-         *     `form_type` narrow it to one company or one form.
+         *     points, and a link to the filing on sec.gov. Paste the URL into a feed reader; `cik`,
+         *     `form_type`, and `item` narrow it to one company, one form, or 8-Ks reporting one item.
          */
         get: operations["filings_feed_feeds_filings_atom_get"];
         put?: never;
@@ -738,6 +738,16 @@ export interface components {
              * @description Whether the filing says the trades were made under a Rule 10b5-1 plan: a trading plan set up in advance, which then trades on its own schedule. It covers the whole filing. Null when the filing doesn't say.
              */
             is_10b5_1: boolean | null;
+            /**
+             * Direct Holdings Before
+             * @description Shares held directly before these trades: the last trade's shares owned after, plus the shares sold or minus those bought (other transactions in the filing aren't counted). 0 for a first purchase. Null when any of the trades is held indirectly (trusts, family), whose holdings can't be told apart, or a holding isn't given.
+             */
+            direct_holdings_before?: number | null;
+            /**
+             * Direct Holdings After
+             * @description Shares held directly after the last of these trades.
+             */
+            direct_holdings_after?: number | null;
         };
         /** InsiderTrades */
         InsiderTrades: {
@@ -748,6 +758,11 @@ export interface components {
             side: "buy" | "sell";
             /** Days */
             days: number;
+            /**
+             * Include Planned
+             * @description Whether 10b5-1 plan trades are included.
+             */
+            include_planned: boolean;
             /**
              * Since
              * Format: date
@@ -1274,6 +1289,8 @@ export interface operations {
             query?: {
                 cik?: number | null;
                 form_type?: string | null;
+                /** @description Only 8-Ks reporting this item, e.g. 2.02 (results) or 5.02 (officer changes). */
+                item?: string | null;
                 /** @description Only filings filed on or after this date. */
                 since?: string | null;
                 /** @description Only filings filed on or before this date. */
@@ -1445,6 +1462,8 @@ export interface operations {
                 days?: number;
                 /** @description How many filings. */
                 limit?: number;
+                /** @description False leaves out filings that say the trades were made under a Rule 10b5-1 plan, set up in advance; filings that don't say are kept. */
+                include_planned?: boolean;
             };
             header?: never;
             path?: never;
@@ -1550,6 +1569,8 @@ export interface operations {
             query?: {
                 cik?: number | null;
                 form_type?: ("4" | "8-K") | null;
+                /** @description Only 8-Ks reporting this item, e.g. 2.02 (results) or 5.02 (officer changes). */
+                item?: string | null;
             };
             header?: never;
             path?: never;

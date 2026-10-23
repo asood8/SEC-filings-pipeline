@@ -7,11 +7,11 @@ import { api, unwrap, type TradeSide } from './client'
 
 const PAGE_SIZE = 25
 
-export type FilingFilters = { formType?: string; cik?: number }
+export type FilingFilters = { formType?: string; cik?: number; item?: string }
 
-export const filingsQuery = ({ formType, cik }: FilingFilters) =>
+export const filingsQuery = ({ formType, cik, item }: FilingFilters) =>
   infiniteQueryOptions({
-    queryKey: ['filings', { formType, cik }],
+    queryKey: ['filings', { formType, cik, item }],
     queryFn: ({ pageParam }) =>
       unwrap(
         api.GET('/filings', {
@@ -19,6 +19,7 @@ export const filingsQuery = ({ formType, cik }: FilingFilters) =>
             query: {
               form_type: formType,
               cik,
+              item,
               cursor: pageParam,
               limit: PAGE_SIZE,
             },
@@ -69,11 +70,26 @@ export const insiderActivityQuery = (ticker: string, days: number) =>
       ),
   })
 
-export const insiderTradesQuery = (side: TradeSide, days: number) =>
+export const insiderTradesQuery = (
+  side: TradeSide,
+  days: number,
+  includePlanned = true,
+) =>
   queryOptions({
-    queryKey: ['insider-trades', side, days],
+    queryKey: ['insider-trades', side, days, includePlanned],
     queryFn: () =>
-      unwrap(api.GET('/insider-trades', { params: { query: { side, days } } })),
+      unwrap(
+        api.GET('/insider-trades', {
+          params: {
+            // Sent only when leaving plans out, the API's default being to include them.
+            query: {
+              side,
+              days,
+              include_planned: includePlanned ? undefined : false,
+            },
+          },
+        }),
+      ),
   })
 
 export const callsQuery = (days: number, ticker?: string) =>

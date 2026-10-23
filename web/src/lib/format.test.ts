@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
+  formatHoldingChange,
   isoDateDaysAgo,
   formatDate,
   formatMoney,
@@ -14,6 +15,14 @@ describe('format', () => {
     expect(isoDateDaysAgo(0, now)).toBe('2026-03-01')
     expect(isoDateDaysAgo(1, now)).toBe('2026-02-28')
     expect(isoDateDaysAgo(365, now)).toBe('2025-03-01')
+  })
+
+  it('describes a change in holdings', () => {
+    expect(formatHoldingChange(1_000_000, 877_000)).toBe('-12.3%')
+    expect(formatHoldingChange(100, 108)).toBe('+8%')
+    expect(formatHoldingChange(0, 50)).toBe('New position')
+    expect(formatHoldingChange(null, 50)).toBeNull()
+    expect(formatHoldingChange(100, undefined)).toBeNull()
   })
 
   it('formats date-only values without shifting the day', () => {

@@ -1,10 +1,11 @@
 """The largest recent insider purchases or sales, across every company's stock."""
 
-from datetime import UTC, datetime, timedelta
-from typing import Annotated
+from datetime import UTC, date, datetime, timedelta
+from typing import Annotated, Any
 
 import sqlalchemy as sa
 from fastapi import APIRouter, Query
+from sqlalchemy.orm import Session
 
 from filings_api.queries import SessionDep, reporting_owners_out
 from filings_api.routes.companies import INSIDER_TRADE_CODES, MAX_INSIDER_DAYS, trade_lines
@@ -20,6 +21,45 @@ SIDE_CODES: dict[TradeSide, str] = {
     "buy": INSIDER_TRADE_CODES["bought"],
     "sell": INSIDER_TRADE_CODES["sold"],
 }
+
+
+def _direct_holdings(
+    session: Session, accession_nos: list[str], code: str, since: date
+) -> dict[str, tuple[float, float]]:
+    """Before and after holdings per filing, for filings whose counted lines (this side, in the
+    window) are all held directly and all give the holding after (InsiderTrade fields)."""
+    line, form = Form4Transaction, Form4Filing
+    traded_on = sa.func.coalesce(line.transaction_date, form.period_of_report)
+    rows = session.execute(
+        sa.select(line.accession_no, line.shares, line.shares_owned_after, line.direct_or_indirect)
+        .join(form, form.accession_no == line.accession_no)
+        .where(
+            line.accession_no.in_(accession_nos),
+            *trade_lines(),
+            line.code == code,
+            traded_on >= since,
+        )
+        .order_by(line.accession_no, line.line)
+    ).all()
+    by_filing: dict[str, list[Any]] = {}
+    for row in rows:
+        by_filing.setdefault(row.accession_no, []).append(row)
+    holdings = {}
+    for accession_no, lines in by_filing.items():
+        if any(r.direct_or_indirect != "D" or r.shares is None for r in lines):
+            continue
+        after = lines[-1].shares_owned_after
+        if after is None:
+            continue
+        traded = sum(r.shares for r in lines)
+        before = after + traded if code == SIDE_CODES["sell"] else after - traded
+        holdings[accession_no] = (round(max(before, 0.0), 4), round(after, 4))
+    return holdings
+
+
+def _holdings_fields(holding: tuple[float, float] | None) -> dict[str, float | None]:
+    before, after = holding if holding is not None else (None, None)
+    return {"direct_holdings_before": before, "direct_holdings_after": after}
 
 
 @router.get("/insider-trades", summary="The largest recent insider purchases or sales")
@@ -98,6 +138,9 @@ def list_insider_trades(
         )
         .limit(limit)
     ).all()
+    holdings = _direct_holdings(
+        session, [row.accession_no for row in rows], SIDE_CODES[side], since
+    )
     return InsiderTrades(
         side=side,
         days=days,
@@ -125,6 +168,7 @@ def list_insider_trades(
                 ),
                 unpriced_shares=round(row.unpriced_shares, 4),
                 is_10b5_1=row.is_10b5_1,
+                **_holdings_fields(holdings.get(row.accession_no)),
             )
             for row in rows
         ],

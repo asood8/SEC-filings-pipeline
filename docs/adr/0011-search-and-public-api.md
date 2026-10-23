@@ -208,7 +208,13 @@ the production ranking.
   say their trades were under a Rule 10b5-1 plan, set up months ahead and so saying little about
   the insider's view now; filings that don't say are kept. On the dev data it leaves 8 of 47
   sale filings over 90 days ($591 million of $1.1 billion). The page's "Leave out 10b5-1 plan
-  trades" sets it.
+  trades" sets it. Each row also carries `direct_holdings_before`/`_after` (added 2026-10-22):
+  the last counted line's shares owned after, plus the shares sold or minus those bought, and 0
+  before a first purchase. Only when every counted line is held directly: indirect holdings
+  (trusts, family) are all marked `I`, so two trusts' lines can't be told apart, and those rows
+  get null rather than a wrong number. The page shows the change ("-25.3%", "New position").
+  On the dev data, 31 of 47 sale rows over 90 days have it; Tim Cook's $63.8 million sale was
+  5.5% of his direct holdings.
 - **Filing dates (added 2026-10-22):** `GET /search` and `GET /filings` take `since` and `until`
   (filing dates, both included; `since` after `until` is a 422). In search they are one more
   filter beside the form and company, so every mode applies them before ranking: semantic search

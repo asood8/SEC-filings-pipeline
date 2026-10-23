@@ -77,6 +77,22 @@ def test_slack_payload_escapes_markup() -> None:
     assert payload["text"].startswith("[AAPL] Apple names &lt;new&gt; CFO &amp; more")
 
 
+def test_every_channel_says_why_when_given_a_reason(monkeypatch: pytest.MonkeyPatch) -> None:
+    alert = replace(ALERT, reason="Your alert: LEN")
+    transport, requests = recorder(httpx2.Response(204), httpx2.Response(200, text="ok"))
+    DiscordSender(transport=transport).send(DISCORD, alert)
+    SlackSender(transport=transport).send(SLACK, alert)
+    discord, slack = (json.loads(r.content) for r in requests)
+    assert discord["embeds"][0]["footer"]["text"].startswith("Your alert: LEN \u00b7 Automated")
+    assert "Your alert: LEN \u00b7 Automated" in slack["blocks"][1]["elements"][0]["text"]
+    monkeypatch.setattr(smtplib, "SMTP", FakeSmtp)
+    FakeSmtp.sent, FakeSmtp.refuse = [], False
+    SmtpEmailSender(host="smtp", port=587, username="u", password="p", sender="a@example.com").send(
+        "ops@example.com", alert
+    )
+    assert "\n\nYour alert: LEN\nAutomated summary" in FakeSmtp.sent[0].get_content()
+
+
 def test_slack_fallback_text_cant_mention_the_channel() -> None:
     transport, requests = recorder(httpx2.Response(200, text="ok"))
     SlackSender(transport=transport).send(SLACK, replace(ALERT, headline="Results <!channel>"))

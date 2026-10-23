@@ -15,7 +15,8 @@ export function CompaniesPage() {
   const companies = (query.data?.items ?? []).filter(
     (company) =>
       company.ticker.toLowerCase().includes(needle) ||
-      company.name.toLowerCase().includes(needle),
+      company.name.toLowerCase().includes(needle) ||
+      Boolean(company.industry?.toLowerCase().includes(needle)),
   )
 
   return (
@@ -32,7 +33,7 @@ export function CompaniesPage() {
         <input
           id="company-filter"
           type="search"
-          placeholder="Filter by name or ticker"
+          placeholder="Filter by name, ticker, or industry"
           value={filter}
           onChange={(event) => setFilter(event.target.value)}
         />
@@ -58,6 +59,9 @@ export function CompaniesPage() {
                 <span>{company.name}</span>
                 {company.exchange && (
                   <span className="muted">{company.exchange}</span>
+                )}
+                {company.industry && (
+                  <span className="muted">{company.industry}</span>
                 )}
               </Link>
             </li>

@@ -183,6 +183,10 @@ class FilingDetail(FilingOut):
         "Q&A included, isn't in the filing."
     )
     exhibits: list[ExhibitOut]
+    nearby: list[FilingOut] = Field(
+        description="The same company's other filings within 14 days either side, newest first "
+        "(the 10 nearest)."
+    )
 
 
 class CompanyOut(BaseModel):
@@ -190,6 +194,10 @@ class CompanyOut(BaseModel):
     ticker: str
     name: str
     exchange: str | None
+    industry: str | None = Field(
+        default=None,
+        description="SEC's description of the company's SIC code, e.g. \"Electronic Computers\".",
+    )
     on_watchlist: bool
 
 

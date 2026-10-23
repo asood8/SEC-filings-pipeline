@@ -1,7 +1,14 @@
 import { useQuery } from '@tanstack/react-query'
 import { type FormEvent, useState } from 'react'
 import { useSearchParams } from 'react-router'
-import { SEARCH_LIMIT, searchQuery, type SearchMode } from '../api/queries'
+import { Link } from 'react-router'
+import type { Company } from '../api/client'
+import {
+  SEARCH_LIMIT,
+  searchQuery,
+  watchlistQuery,
+  type SearchMode,
+} from '../api/queries'
 import { FilingList } from '../components/FilingList'
 import { ErrorMessage } from '../components/QueryStatus'
 import { isoDateDaysAgo } from '../lib/format'
@@ -35,6 +42,19 @@ function parseMode(value: string | null): SearchMode {
 
 type Draft = { q: string; mode: SearchMode; form: string; filed: string }
 
+/** The watchlist company a query names on its own: its ticker ("aapl", "brk.b"), or the start of
+ * its name ("apple", "nvidia"; three letters at least). */
+function companyNamed(companies: Company[], q: string): Company | undefined {
+  const text = q.trim().toLowerCase()
+  const ticker = text.replace('.', '-')
+  return (
+    companies.find((c) => c.ticker.toLowerCase() === ticker) ??
+    (text.length >= 3
+      ? companies.find((c) => c.name.toLowerCase().startsWith(text))
+      : undefined)
+  )
+}
+
 export function SearchPage() {
   const [params, setParams] = useSearchParams()
   const q = params.get('q') ?? ''
@@ -50,6 +70,8 @@ export function SearchPage() {
     }),
   )
   usePageTitle(q ? `Search: ${q}` : 'Search')
+  const companies = useQuery({ ...watchlistQuery(), enabled: q !== '' })
+  const company = q ? companyNamed(companies.data?.items ?? [], q) : undefined
 
   // The fields follow the URL (the header's search box changes it too). They're updated in
   // place rather than re-mounted, so focus stays where it was after a search.
@@ -170,6 +192,14 @@ export function SearchPage() {
         <ErrorMessage error={query.error} />
       ) : q && query.data ? (
         <section aria-label="Results">
+          {company && (
+            <p>
+              Company:{' '}
+              <Link to={`/companies/${company.ticker}`}>
+                {company.name} ({company.ticker})
+              </Link>
+            </p>
+          )}
           {query.data.degraded && (
             <p className="notice">
               Meaning-based search is unavailable right now, so these results

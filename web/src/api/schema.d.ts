@@ -408,6 +408,11 @@ export interface components {
             name: string;
             /** Exchange */
             exchange: string | null;
+            /**
+             * Industry
+             * @description SEC's description of the company's SIC code, e.g. "Electronic Computers".
+             */
+            industry?: string | null;
             /** On Watchlist */
             on_watchlist: boolean;
             /** Recent Filings */
@@ -423,6 +428,11 @@ export interface components {
             name: string;
             /** Exchange */
             exchange: string | null;
+            /**
+             * Industry
+             * @description SEC's description of the company's SIC code, e.g. "Electronic Computers".
+             */
+            industry?: string | null;
             /** On Watchlist */
             on_watchlist: boolean;
         };
@@ -528,6 +538,11 @@ export interface components {
             investor_call: components["schemas"]["InvestorCallOut"] | null;
             /** Exhibits */
             exhibits: components["schemas"]["ExhibitOut"][];
+            /**
+             * Nearby
+             * @description The same company's other filings within 14 days either side, newest first (the 10 nearest).
+             */
+            nearby: components["schemas"]["FilingOut"][];
         };
         /** FilingOut */
         FilingOut: {

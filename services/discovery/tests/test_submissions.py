@@ -4,7 +4,7 @@ from typing import Any
 
 import pytest
 
-from filings_discovery.submissions import raw_document_name, recent_filings
+from filings_discovery.submissions import industry, raw_document_name, recent_filings
 
 # Type of the make_submissions fixture (conftest.py).
 SubmissionsFactory = Callable[..., dict[str, Any]]
@@ -21,6 +21,23 @@ def test_reads_column_wise_recent_filings(make_submissions: SubmissionsFactory) 
     assert first.filed_at == date(2026, 9, 30)
     assert first.accepted_at == datetime(2026, 9, 30, 16, 5, 12, tzinfo=UTC)
     assert second.primary_document == "xslF345X05/form4.xml"
+
+
+@pytest.mark.parametrize(
+    ("description", "expected"),
+    [
+        ("Electronic Computers", "Electronic Computers"),
+        (" Retail-Variety Stores ", "Retail-Variety Stores"),
+        ("", None),
+        (None, None),
+    ],
+)
+def test_industry(
+    make_submissions: SubmissionsFactory, description: str | None, expected: str | None
+) -> None:
+    doc = make_submissions()
+    doc["sicDescription"] = description  # SEC leaves it empty for some funds and trusts
+    assert industry(doc) == expected
 
 
 def test_skips_filings_without_a_primary_document(make_submissions: SubmissionsFactory) -> None:

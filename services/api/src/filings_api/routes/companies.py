@@ -53,6 +53,7 @@ def _company_out(company: Company) -> CompanyOut:
         ticker=company.ticker,
         name=company_name(company.name),
         exchange=company.exchange,
+        industry=company.industry,
         on_watchlist=company.on_watchlist,
     )
 

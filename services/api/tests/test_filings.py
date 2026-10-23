@@ -1,10 +1,12 @@
+from datetime import date
 from typing import Any
 
 import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy.engine import Engine
 
-from filings_common.db import Form4Filing, session_factory
+from filings_api.routes import filings
+from filings_common.db import Filing, Form4Filing, session_factory
 
 pytestmark = pytest.mark.integration
 
@@ -202,3 +204,52 @@ def test_health_check(client: TestClient, ids: Any) -> None:
 def test_out_of_range_ciks_are_refused_cleanly(client: TestClient, path: str) -> None:
     separator = "&" if "?" in path else "?"
     assert client.get(f"{path}{separator}cik=99999999999999999999").status_code == 422
+
+
+def test_nearby_filings_are_the_companys_own_within_two_weeks(
+    client: TestClient, seeded: Engine, ids: Any
+) -> None:
+    with session_factory(seeded).begin() as session:
+        for accession_no, filed in [
+            ("0000320193-26-000060", date(2026, 10, 12)),  # 14 days after the 8-K: included
+            ("0000320193-26-000061", date(2026, 10, 13)),  # 15 days after: not
+        ]:
+            session.add(
+                Filing(
+                    accession_no=accession_no,
+                    cik=320193,
+                    form_type="8-K",
+                    filed_at=filed,
+                    primary_doc_url=f"https://www.sec.gov/Archives/{accession_no}.htm",
+                    raw_object_key=f"filings/320193/{accession_no}/doc",
+                )
+            )
+    detail = client.get(f"/filings/{ids.apple_8k}").json()  # filed 2026-09-28
+    # Apple's, not Microsoft's (filed the day after), newest first, without the filing itself.
+    assert [f["accession_no"] for f in detail["nearby"]] == ["0000320193-26-000060", ids.form4]
+    assert detail["nearby"][1]["headline"] == "Tim Cook sold 50,000 AAPL shares"
+    assert client.get(f"/filings/{ids.msft_8k}").json()["nearby"] == []
+
+
+def test_nearby_keeps_the_nearest(
+    client: TestClient, seeded: Engine, ids: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    with session_factory(seeded).begin() as session:
+        for accession_no, filed in [
+            ("0000320193-26-000062", date(2026, 10, 10)),  # 10 days after the Form 4
+            ("0000320193-26-000063", date(2026, 9, 29)),  # 1 day before
+        ]:
+            session.add(
+                Filing(
+                    accession_no=accession_no,
+                    cik=320193,
+                    form_type="8-K",
+                    filed_at=filed,
+                    primary_doc_url=f"https://www.sec.gov/Archives/{accession_no}.htm",
+                    raw_object_key=f"filings/320193/{accession_no}/doc",
+                )
+            )
+    monkeypatch.setattr(filings, "NEARBY_LIMIT", 2)
+    nearby = client.get(f"/filings/{ids.form4}").json()["nearby"]  # filed 2026-09-30
+    # The two nearest (1 and 2 days away), not the one 10 days away; shown newest first.
+    assert [f["accession_no"] for f in nearby] == ["0000320193-26-000063", ids.apple_8k]

@@ -32,6 +32,8 @@ describe('InsiderTradesPage', () => {
             value: 212395151.42,
             average_price: 77.4168,
             is_10b5_1: false,
+            direct_holdings_before: 0,
+            direct_holdings_after: 2743529,
           }),
           // Not in SEC's ticker list, so no company page; priced only in a footnote.
           insiderTrade({
@@ -47,6 +49,8 @@ describe('InsiderTradesPage', () => {
             average_price: null,
             unpriced_shares: 1000,
             is_10b5_1: null,
+            direct_holdings_before: 10000,
+            direct_holdings_after: 11000,
           }),
         ]),
     })
@@ -60,6 +64,7 @@ describe('InsiderTradesPage', () => {
       'LEN Lennar Corp',
       'Berkshire Hathaway Inc (10% owner); Warren E Buffett (10% owner)',
       '$212,395,151 2,743,529 shares',
+      'New position 2,743,529 held after',
       '$77.42',
       'Sep 19, 2026',
       'No',
@@ -83,6 +88,7 @@ describe('InsiderTradesPage', () => {
       'Example Municipal Fund',
       'Timothy D Cook (Executive Chair, Director)',
       '—* 1,000 shares',
+      '+10% 11,000 held after',
       '—',
       'Oct 2, 2026',
       'Not stated',

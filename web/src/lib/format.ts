@@ -22,6 +22,23 @@ export function isoDateDaysAgo(days: number, now = new Date()): string {
   return `${day.getFullYear()}-${pad(day.getMonth() + 1)}-${pad(day.getDate())}`
 }
 
+const changeFormat = new Intl.NumberFormat('en-US', {
+  style: 'percent',
+  maximumFractionDigits: 1,
+  signDisplay: 'exceptZero',
+})
+
+/** How much a holding changed: "-12.3%", "+8%", or "New position" when there was none before;
+ * null when either side is unknown. */
+export function formatHoldingChange(
+  before: number | null | undefined,
+  after: number | null | undefined,
+): string | null {
+  if (before == null || after == null) return null
+  if (before === 0) return 'New position'
+  return changeFormat.format((after - before) / before)
+}
+
 /** A timestamp, shown in the reader's time zone. */
 export function formatDateTime(isoDateTime: string): string {
   return dateTimeFormat.format(new Date(isoDateTime))

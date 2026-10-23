@@ -185,7 +185,7 @@ def insider_trades(seeded: Engine, ids: Any) -> None:
             NEWER,
             issuer=MSFT,
             owners=[SMITH],
-            trades=[trade(1, "P", 50, 400.0, ago=1)],
+            trades=[trade(1, "P", 50, 400.0, ago=1, shares_owned_after=50)],  # a first purchase
             filed_ago=0,
         )
         add_form4(
@@ -254,6 +254,9 @@ def test_largest_purchases_first_one_row_per_filing(client: TestClient) -> None:
         "average_price": 480.5,
         "unpriced_shares": 0.0,
         "is_10b5_1": False,
+        # 1,000,000 held directly after the last purchase, so 999,700 before the 300 bought.
+        "direct_holdings_before": 999_700.0,
+        "direct_holdings_after": 1_000_000.0,
     }
     # By value; equal values ($20,000), the latest trade first; unpriced filings last. Only the
     # purchase 10 days ago counts from the filing that straddles the window.
@@ -305,6 +308,20 @@ def test_largest_sales_count_stock_sales_only(client: TestClient, ids: Any) -> N
         "sell",
         True,
     )
+
+
+@pytest.mark.usefixtures("insider_trades")
+def test_direct_holdings_before_and_after(client: TestClient, ids: Any) -> None:
+    def holdings(rows: list[dict[str, Any]], accession_no: str) -> tuple[Any, Any]:
+        [row] = [r for r in rows if r["accession_no"] == accession_no]
+        return row["direct_holdings_before"], row["direct_holdings_after"]
+
+    sales, purchases = trades(client, side="sell"), trades(client)
+    # Nadella's two stock sales, both direct: 1,500.5 sold, 1,000,000 left.
+    assert holdings(sales, SALES) == (1_001_500.5, 1_000_000.0)
+    assert holdings(purchases, NEWER) == (0.0, 50.0)  # a first purchase
+    # Cook's second sale is from an indirect holding, which can't be told apart from others.
+    assert holdings(sales, ids.form4) == (None, None)
 
 
 @pytest.mark.usefixtures("insider_trades")

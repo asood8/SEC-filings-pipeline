@@ -6,7 +6,12 @@ import { DataTable } from '../components/DataTable'
 import table from '../components/DataTable.module.css'
 import { OwnerNames } from '../components/OwnerNames'
 import { ErrorMessage, Loading } from '../components/QueryStatus'
-import { formatDate, formatMoney, formatShares } from '../lib/format'
+import {
+  formatDate,
+  formatHoldingChange,
+  formatMoney,
+  formatShares,
+} from '../lib/format'
 import filters from './FeedPage.module.css'
 import styles from './InsiderTradesPage.module.css'
 import { usePageTitle } from '../lib/usePageTitle'
@@ -104,6 +109,8 @@ export function InsiderTradesPage() {
         are left out: they aren't decisions to buy or sell. A 10b5-1 plan is a
         trading plan the insider set up in advance, which then trades on its own
         schedule, so its trades say less about what the insider thinks now.
+        Holdings counts shares held in the insider's own name; trades through
+        trusts or family members show {NONE}.
       </p>
 
       {query.isPending ? (
@@ -133,6 +140,9 @@ export function InsiderTradesPage() {
                 </th>
                 <th scope="col" role="columnheader" className={table.number}>
                   Value
+                </th>
+                <th scope="col" role="columnheader" className={table.number}>
+                  Holdings
                 </th>
                 <th scope="col" role="columnheader" className={table.number}>
                   Average price
@@ -196,6 +206,9 @@ function Row({ trade }: { trade: InsiderTrade }) {
           </span>
         </span>
       </td>
+      <td role="cell" data-label="Holdings" className={table.number}>
+        <Holdings trade={trade} />
+      </td>
       <td role="cell" data-label="Average price" className={table.number}>
         {trade.average_price !== null ? formatMoney(trade.average_price) : NONE}
       </td>
@@ -221,5 +234,22 @@ function Row({ trade }: { trade: InsiderTrade }) {
         </Link>
       </td>
     </tr>
+  )
+}
+
+/** The change in the insider's direct holdings, with what they hold after. */
+function Holdings({ trade }: { trade: InsiderTrade }) {
+  const change = formatHoldingChange(
+    trade.direct_holdings_before,
+    trade.direct_holdings_after,
+  )
+  if (change === null) return <>{NONE}</>
+  return (
+    <span>
+      {change}{' '}
+      <span className={table.detail}>
+        {formatShares(trade.direct_holdings_after!)} held after
+      </span>
+    </span>
   )
 }

@@ -738,6 +738,16 @@ export interface components {
              * @description Whether the filing says the trades were made under a Rule 10b5-1 plan: a trading plan set up in advance, which then trades on its own schedule. It covers the whole filing. Null when the filing doesn't say.
              */
             is_10b5_1: boolean | null;
+            /**
+             * Direct Holdings Before
+             * @description Shares held directly before these trades: the last trade's shares owned after, plus the shares sold or minus those bought (other transactions in the filing aren't counted). 0 for a first purchase. Null when any of the trades is held indirectly (trusts, family), whose holdings can't be told apart, or a holding isn't given.
+             */
+            direct_holdings_before?: number | null;
+            /**
+             * Direct Holdings After
+             * @description Shares held directly after the last of these trades.
+             */
+            direct_holdings_after?: number | null;
         };
         /** InsiderTrades */
         InsiderTrades: {

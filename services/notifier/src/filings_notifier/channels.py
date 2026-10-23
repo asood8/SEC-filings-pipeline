@@ -21,11 +21,10 @@ import httpx2
 
 from filings_common.db import Channel
 from filings_common.parsed import InvestorCall
+from filings_common.summaries import DISCLAIMER
 from filings_common.targets import target_is_valid
 
 logger = logging.getLogger(__name__)
-
-DISCLAIMER = "Automated summary; may contain errors and is not investment advice."
 
 
 class DeliveryError(Exception):

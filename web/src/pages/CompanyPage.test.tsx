@@ -1,5 +1,6 @@
 import { screen, waitFor, within } from '@testing-library/react'
 import { describe, expect, it } from 'vitest'
+import { API_BASE_URL } from '../api/client'
 import { BERKSHIRE, BUFFETT, COOK, filing, insiderActivity } from '../test/data'
 import { mockApi, renderRoute } from '../test/render'
 import { rowText } from '../test/table'
@@ -26,6 +27,11 @@ describe('CompanyPage', () => {
       await screen.findByRole('heading', { name: 'Apple Inc.' }),
     ).toBeInTheDocument()
     expect(document.title).toBe('Apple Inc. (AAPL) · SEC Filings')
+    expect(
+      screen.getByRole('link', {
+        name: 'Atom feed of AAPL filings (opens in a new tab)',
+      }),
+    ).toHaveAttribute('href', `${API_BASE_URL}/feeds/filings.atom?cik=320193`)
     expect(
       await screen.findByRole('link', { name: /Kevan Parekh/ }),
     ).toBeInTheDocument()

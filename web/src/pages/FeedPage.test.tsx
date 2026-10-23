@@ -1,6 +1,7 @@
 import { screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { describe, expect, it } from 'vitest'
+import { API_BASE_URL } from '../api/client'
 import { filing } from '../test/data'
 import { mockApi, renderRoute } from '../test/render'
 
@@ -48,11 +49,18 @@ describe('FeedPage', () => {
     })
     const router = renderRoute('/')
     await screen.findByText('No filings yet.')
+    expect(
+      screen.getByRole('link', { name: 'Atom feed (opens in a new tab)' }),
+    ).toHaveAttribute('href', `${API_BASE_URL}/feeds/filings.atom`)
 
     await userEvent.click(screen.getByLabelText('Insider trades (Form 4)'))
     await screen.findByText('No filings yet.')
     expect(router.state.location.search).toBe('?form=4')
     expect(requests.at(-1)?.searchParams.get('form_type')).toBe('4')
+    // The feed link follows the filter.
+    expect(
+      screen.getByRole('link', { name: 'Atom feed (opens in a new tab)' }),
+    ).toHaveAttribute('href', `${API_BASE_URL}/feeds/filings.atom?form_type=4`)
   })
 
   it('keeps the filings loaded so far when the next page fails', async () => {

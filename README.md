@@ -208,7 +208,8 @@ The API: `GET /search?q=...` (hybrid by default; `mode=keyword|semantic`), `GET 
 purchases and sales per owner, grouped by owner CIK), `GET /insider-trades?side=buy&days=30`
 (the largest purchases or sales across companies, one row per Form 4), and `GET /calls?days=60`
 (the earnings calls and other investor events 8-Ks announce, also as an iCalendar feed to
-subscribe to, `GET /calls.ics`). A Form 4's reporting
+subscribe to, `GET /calls.ics`). `GET /feeds/filings.atom` (optionally `cik`, `form_type`) is
+the latest summarized filings as an Atom feed, for a feed reader. A Form 4's reporting
 owners come with the name as filed and a readable one ("COOK TIMOTHY D" as "Timothy D Cook"),
 and with who they are to the company: a short `relationship` ("Executive Chair, Director",
 "EVP, CFO", "10% owner") and the filing's boxes and titles as filed (`is_director`,

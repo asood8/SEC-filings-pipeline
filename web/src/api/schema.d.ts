@@ -169,6 +169,28 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/feeds/filings.atom": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Latest filings as an Atom feed
+         * @description The 50 latest filings that have a summary, newest first, each with its summary, key
+         *     points, and a link to the filing on sec.gov. Paste the URL into a feed reader; `cik` and
+         *     `form_type` narrow it to one company or one form.
+         */
+        get: operations["filings_feed_feeds_filings_atom_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/search": {
         parameters: {
             query?: never;
@@ -1435,6 +1457,45 @@ export interface operations {
                 };
                 content: {
                     "text/calendar": unknown;
+                };
+            };
+        };
+    };
+    filings_feed_feeds_filings_atom_get: {
+        parameters: {
+            query?: {
+                cik?: number | null;
+                form_type?: ("4" | "8-K") | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description An Atom feed. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/atom+xml": unknown;
+                };
+            };
+            /** @description No company with that CIK. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };

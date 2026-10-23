@@ -76,10 +76,11 @@ export const insiderTradesQuery = (side: TradeSide, days: number) =>
       unwrap(api.GET('/insider-trades', { params: { query: { side, days } } })),
   })
 
-export const callsQuery = (days: number) =>
+export const callsQuery = (days: number, ticker?: string) =>
   queryOptions({
-    queryKey: ['calls', days],
-    queryFn: () => unwrap(api.GET('/calls', { params: { query: { days } } })),
+    queryKey: ['calls', days, ticker],
+    queryFn: () =>
+      unwrap(api.GET('/calls', { params: { query: { days, ticker } } })),
   })
 
 export type SearchMode = 'hybrid' | 'keyword' | 'semantic'

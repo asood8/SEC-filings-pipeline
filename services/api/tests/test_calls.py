@@ -128,3 +128,15 @@ def test_text_is_escaped_and_long_lines_folded() -> None:
         if line.startswith(("DESCRIPTION", " "))
     )
     assert description == "DESCRIPTION:line one\\nline two\\n" + "é" * 60
+
+
+@pytest.mark.usefixtures("more_calls")
+def test_one_companys_calls(client: TestClient) -> None:
+    items = client.get("/calls", params={"days": 120, "ticker": "aapl"}).json()["items"]
+    assert [(c["ticker"], c["day"]) for c in items] == [("AAPL", "2027-01-28")]
+    assert client.get("/calls", params={"ticker": "NOPE"}).status_code == 404
+
+    text = client.get("/calls.ics", params={"ticker": "msft"}).text.replace("\r\n ", "")
+    assert "X-WR-CALNAME:SEC filings: MSFT investor calls\r\n" in text
+    assert text.count("BEGIN:VEVENT") == 1  # Microsoft's call only, not Apple's two
+    assert client.get("/calls.ics", params={"ticker": "NOPE"}).status_code == 404

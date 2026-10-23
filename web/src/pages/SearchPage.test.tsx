@@ -26,8 +26,70 @@ describe('SearchPage', () => {
       '1 match for “new cfo”.',
     )
     expect(document.title).toBe('Search: new cfo · SEC Filings')
-    expect(requests[0].searchParams.get('q')).toBe('new cfo')
-    expect(requests[0].searchParams.get('mode')).toBe('semantic')
+    const searched = requests.find((url) => url.pathname === '/search')!
+    expect(searched.searchParams.get('q')).toBe('new cfo')
+    expect(searched.searchParams.get('mode')).toBe('semantic')
+  })
+
+  it.each([
+    ['aapl', 'Apple Inc. (AAPL)'],
+    ['nvidia', 'NVIDIA Corp (NVDA)'],
+    ['brk.b', 'Berkshire Hathaway (BRK-B)'],
+  ])('links the company a query of %s names', async (q, link) => {
+    mockApi({
+      '/search': () => ({
+        query: q,
+        mode: 'hybrid',
+        degraded: false,
+        items: [],
+      }),
+      '/companies': () => ({
+        items: [
+          ['AAPL', 'Apple Inc.'],
+          ['NVDA', 'NVIDIA Corp'],
+          ['BRK-B', 'Berkshire Hathaway'],
+        ].map(([ticker, name], i) => ({
+          cik: i + 1,
+          ticker,
+          name,
+          exchange: 'Nasdaq',
+          on_watchlist: true,
+        })),
+        next_cursor: null,
+      }),
+    })
+    renderRoute(`/search?q=${encodeURIComponent(q)}`)
+    const ticker = link.slice(link.indexOf('(') + 1, -1)
+    expect(await screen.findByRole('link', { name: link })).toHaveAttribute(
+      'href',
+      `/companies/${ticker}`,
+    )
+  })
+
+  it('links no company for other queries', async () => {
+    mockApi({
+      '/search': () => ({
+        query: 'ap',
+        mode: 'hybrid',
+        degraded: false,
+        items: [],
+      }),
+      '/companies': () => ({
+        items: [
+          {
+            cik: 1,
+            ticker: 'AAPL',
+            name: 'Apple Inc.',
+            exchange: 'Nasdaq',
+            on_watchlist: true,
+          },
+        ],
+        next_cursor: null,
+      }),
+    })
+    renderRoute('/search?q=ap') // too short to stand for a name
+    await screen.findByText('No filings match “ap”.')
+    expect(screen.queryByText('Company:')).not.toBeInTheDocument()
   })
 
   it("shows each result's matching passage, the query words marked", async () => {
@@ -94,8 +156,9 @@ describe('SearchPage', () => {
     expect(router.state.location.search).toBe(
       '?q=buyback&mode=hybrid&form=8-K&filed=30',
     )
-    expect(requests[0].searchParams.get('form_type')).toBe('8-K')
-    expect(requests[0].searchParams.get('since')).toBe(isoDateDaysAgo(30))
+    const searched = requests.find((url) => url.pathname === '/search')!
+    expect(searched.searchParams.get('form_type')).toBe('8-K')
+    expect(searched.searchParams.get('since')).toBe(isoDateDaysAgo(30))
   })
 
   it("fills the form from the header's search box", async () => {

@@ -216,7 +216,8 @@ and with who they are to the company: a short `relationship` ("Executive Chair, 
 `is_officer`, `officer_title`, `is_ten_percent_owner`, `is_other`, `other_text`). Lists use cursor
 pagination, and responses are cached briefly and rate-limited per client through Redis. Signed
 in: `POST /auth/google`, `POST /auth/logout`, `GET`/`DELETE /me`, and alert subscriptions at
-`/subscriptions` (`POST /subscriptions/batch` adds several companies and destinations at once).
+`/subscriptions` (`POST /subscriptions/batch` adds several companies and destinations at once;
+`GET /subscriptions/preview` lists the recent filings an alert's settings would have sent).
 
 8-K summaries need an LLM: set `GEMINI_API_KEY` (free from Google AI Studio, no billing needed)
 and/or a local model. `make llm-up` runs Ollama in Docker and pulls `llama3.2:3b` and the

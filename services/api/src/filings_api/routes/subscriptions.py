@@ -1,4 +1,4 @@
-"""The signed-in user's alert subscriptions: list, create, change, delete.
+"""The signed-in user's alert subscriptions: list, create, change, delete, and preview.
 
 A subscription alerts one target (a Discord or Slack webhook, or the account's own email address)
 about new filings of one watchlist company, optionally only some forms. A keyword alert has a
@@ -12,16 +12,20 @@ about new filings of one watchlist company, optionally only some forms. A keywor
 - Responses are per user, so they carry `Cache-Control: no-store`.
 """
 
-from typing import Annotated
+from collections.abc import Iterable
+from datetime import date, datetime, timedelta
+from typing import Annotated, Any
 
 import sqlalchemy as sa
-from fastapi import APIRouter, Depends, HTTPException, Path, Response
+from fastapi import APIRouter, Depends, HTTPException, Path, Query, Response
 from sqlalchemy.dialects.postgresql import distinct_on
 from sqlalchemy.orm import Session
 
 from filings_api.auth import CurrentUser
-from filings_api.queries import SessionDep, company_by_ticker
+from filings_api.queries import SessionDep, company_by_ticker, filing_select, to_filing_out
 from filings_api.schemas import (
+    AlertPreview,
+    AlertPreviewQuery,
     CompanyRef,
     DeliveryOut,
     Destination,
@@ -31,18 +35,29 @@ from filings_api.schemas import (
     SubscriptionOut,
     SubscriptionUpdate,
 )
+from filings_common.alert_filters import OPEN_MARKET_CODES, TradeLine, wants_8k, wants_form4
 from filings_common.db import (
     Channel,
     Company,
+    Filing,
+    FilingSearch,
+    FilingStatus,
+    Form4Filing,
+    Form4Transaction,
+    Form8KFiling,
     Notification,
     NotificationStatus,
     Subscription,
     User,
 )
+from filings_common.parsed import EASTERN
 from filings_common.targets import masked_target, target_is_valid
 
 # Per user. Keeps the list short enough to need no pages, and bounds one account's alert fan-out.
 MAX_SUBSCRIPTIONS = 25
+
+PREVIEW_ITEMS = 10
+PREVIEW_CANDIDATES = 1000  # filings checked at most, newest first
 
 NO_STORE = {"Cache-Control": "no-store"}
 UNIQUE_VIOLATION = "23505"  # Postgres SQLSTATE
@@ -78,6 +93,30 @@ def _subject(company: Company | None, query: str | None) -> str:
         return company.ticker if company is not None else "every company"
     mentioning = f"filings mentioning \u201c{query}\u201d"
     return f"{company.ticker} {mentioning}" if company is not None else mentioning
+
+
+def _watchlist_companies(session: Session, tickers: Iterable[str]) -> dict[int, Company]:
+    """The watchlist companies `tickers` name, by CIK: 422 for an unknown ticker or one off the
+    watchlist (filings, and so alerts, are only collected for watchlist companies)."""
+    companies: dict[int, Company] = {}
+    unknown, unwatched = [], []
+    for ticker in tickers:
+        company = company_by_ticker(session, ticker)
+        if company is None:
+            unknown.append(ticker.strip())
+        elif not company.on_watchlist:
+            unwatched.append(company.ticker)
+        else:
+            companies.setdefault(company.cik, company)
+    if unknown:
+        raise _error(422, f"unknown ticker(s): {', '.join(unknown)}")
+    if unwatched:
+        raise _error(
+            422,
+            f"not on the watchlist (filings, and so alerts, are only collected for watchlist "
+            f"companies): {', '.join(unwatched)}",
+        )
+    return companies
 
 
 def _checked_query(session: Session, query: str) -> str:
@@ -314,24 +353,7 @@ def _batch_target(session: Session, user: User, destination: Destination) -> str
 def create_subscriptions(
     session: SessionDep, user: CurrentUser, body: SubscriptionBatch
 ) -> SubscriptionBatchOut:
-    companies: dict[int, Company] = {}
-    unknown, unwatched = [], []
-    for ticker in body.tickers:
-        company = company_by_ticker(session, ticker)
-        if company is None:
-            unknown.append(ticker.strip())
-        elif not company.on_watchlist:
-            unwatched.append(company.ticker)
-        else:
-            companies.setdefault(company.cik, company)
-    if unknown:
-        raise _error(422, f"unknown ticker(s): {', '.join(unknown)}")
-    if unwatched:
-        raise _error(
-            422,
-            f"not on the watchlist (filings, and so alerts, are only collected for watchlist "
-            f"companies): {', '.join(unwatched)}",
-        )
+    companies = _watchlist_companies(session, body.tickers)
     query = _checked_query(session, body.query) if body.query is not None else None
     # No tickers (with a query): one keyword alert on every company per destination.
     subjects: list[Company | None] = list(companies.values()) or [None]
@@ -383,6 +405,91 @@ def create_subscriptions(
     return SubscriptionBatchOut(
         created=[_subscription_out(s, company) for s, company in created],
         existing=[_subscription_out(s, company) for s, company in already],
+    )
+
+
+def _today() -> date:
+    return datetime.now(EASTERN).date()
+
+
+def _trade_lines(session: Session, accession_nos: list[str]) -> dict[str, list[TradeLine]]:
+    """Form 4s' open-market stock trades, the only lines the filters look at (as the notifier
+    reads them)."""
+    lines: dict[str, list[TradeLine]] = {accession_no: [] for accession_no in accession_nos}
+    for row in session.execute(
+        sa.select(
+            Form4Transaction.accession_no,
+            Form4Transaction.code,
+            Form4Transaction.shares,
+            Form4Transaction.price_per_share,
+        ).where(
+            Form4Transaction.accession_no.in_(accession_nos),
+            Form4Transaction.is_derivative.is_(False),
+            Form4Transaction.code.in_(sorted(OPEN_MARKET_CODES)),
+        )
+    ):
+        lines[row.accession_no].append(TradeLine(row.code, row.shares, row.price_per_share))
+    return lines
+
+
+@router.get(
+    "/subscriptions/preview",
+    summary="Which recent filings an alert would have sent",
+    description=(
+        "Takes an alert's settings, as `POST /subscriptions/batch` does but without destinations, "
+        "and lists the summarized filings of the last `days` it would have alerted about, newest "
+        "first, matched as the notifier matches them. Saves nothing; needs sign-in, like every "
+        "alert route."
+    ),
+)
+def preview_alert(
+    session: SessionDep, user: CurrentUser, params: Annotated[AlertPreviewQuery, Query()]
+) -> AlertPreview:
+    companies = _watchlist_companies(session, params.tickers)
+    since = _today() - timedelta(days=params.days)
+    query = (
+        filing_select()
+        .add_columns(Form4Filing.accession_no.label("form4"), Form8KFiling.items.label("items"))
+        .outerjoin(Form4Filing, Form4Filing.accession_no == Filing.accession_no)
+        .outerjoin(Form8KFiling, Form8KFiling.accession_no == Filing.accession_no)
+        # Alerts go out once a filing is summarized (ready), and stay sent (notified).
+        .where(
+            Filing.status.in_([FilingStatus.READY, FilingStatus.NOTIFIED]),
+            Filing.filed_at >= since,
+        )
+        .order_by(Filing.filed_at.desc(), Filing.accession_no.desc())
+        .limit(PREVIEW_CANDIDATES + 1)
+    )
+    if companies:  # a company's alerts include Form 4s others file about it, as the issuer
+        query = query.where(Filing.cik.in_(companies) | Form4Filing.issuer_cik.in_(companies))
+    if params.form_types:
+        query = query.where(Filing.form_type.in_(params.form_types))
+    if params.query is not None:
+        words = _checked_query(session, params.query)
+        query = query.where(
+            FilingSearch.tsv.op("@@")(sa.func.websearch_to_tsquery("english", words))
+        )
+    rows = session.execute(query).all()
+    capped = len(rows) > PREVIEW_CANDIDATES
+    rows = rows[:PREVIEW_CANDIDATES]
+
+    # The same filters as the notifier (filings_common.alert_filters).
+    form4_filtered = params.form4_trades != "all" or params.form4_min_value is not None
+    lines = _trade_lines(session, [r.form4 for r in rows if r.form4]) if form4_filtered else {}
+
+    def wanted(row: Any) -> bool:
+        if row.form4 is not None:
+            return not form4_filtered or wants_form4(
+                params.form4_trades, params.form4_min_value, lines[row.form4]
+            )
+        return row.items is None or wants_8k(params.form8k_items, row.items)
+
+    matches = [row for row in rows if wanted(row)]
+    return AlertPreview(
+        since=since,
+        matched=len(matches),
+        capped=capped,
+        items=[to_filing_out(*row[:4]) for row in matches[:PREVIEW_ITEMS]],
     )
 
 

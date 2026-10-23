@@ -2,6 +2,7 @@ import { screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { Subscription } from '../api/client'
+import { filing } from '../test/data'
 import { mockApi, renderRoute } from '../test/render'
 
 // Stands in for Google's script: renders a button that "signs in" with a fixed credential.
@@ -146,11 +147,12 @@ describe('AlertsPage', () => {
       within(form).getByRole('button', { name: 'Add 4 alerts' }),
     )
 
-    await waitFor(() =>
-      expect(within(form).getByRole('status')).toHaveTextContent(
-        'Added 4 alerts. 1 already existed.',
-      ),
-    )
+    // In a live region, so screen readers announce it.
+    expect(
+      (
+        await within(form).findByText('Added 4 alerts. 1 already existed.')
+      ).closest('[role="status"]'),
+    ).not.toBeNull()
     expect(sent).toEqual({
       tickers: ['MSFT', 'AAPL'],
       form_types: ['8-K'],
@@ -222,6 +224,61 @@ describe('AlertsPage', () => {
         name: 'Remove the “buyback” Email alert',
       }),
     ).toBeInTheDocument()
+  })
+
+  it('previews which recent filings the settings would have sent', async () => {
+    const requests = mockApi({
+      '/me': () => USER,
+      'GET /subscriptions': () => subscriptions,
+      '/companies': () => WATCHLIST,
+      '/subscriptions/preview': () => ({
+        since: '2026-07-24',
+        matched: 12,
+        capped: false,
+        items: [
+          filing({ accession_no: 'a', form_type: '4', headline: 'Cook sold' }),
+        ],
+      }),
+    })
+    renderRoute('/alerts')
+
+    const form = (
+      await screen.findByRole('heading', { name: 'Add alerts' })
+    ).closest('form')!
+    const button = within(form).getByRole('button', {
+      name: 'Preview the last 90 days',
+    })
+    expect(button).toBeDisabled() // nothing chosen yet
+    await userEvent.click(
+      await within(form).findByRole('checkbox', { name: /AAPL/ }),
+    )
+    await userEvent.selectOptions(
+      within(form).getByRole('combobox', { name: 'Insider trades (Form 4)' }),
+      'Open-market purchases only',
+    )
+    await userEvent.click(button)
+
+    expect(
+      await within(form).findByText(
+        '12 filings in the last 90 days would have sent this alert; the newest 1:',
+      ),
+    ).toBeInTheDocument()
+    expect(
+      within(form).getByRole('link', { name: 'AAPL Form 4: Cook sold' }),
+    ).toHaveAttribute('href', '/filings/a')
+    const sent = requests.find(
+      (url) => url.pathname === '/subscriptions/preview',
+    )!
+    expect(sent.searchParams.getAll('tickers')).toEqual(['AAPL'])
+    expect(sent.searchParams.get('form4_trades')).toBe('purchases')
+    expect(sent.searchParams.get('days')).toBe('90')
+    expect(sent.searchParams.has('form4_min_value')).toBe(false)
+
+    // Changing a setting clears the preview, which no longer matches the form.
+    await userEvent.click(within(form).getByRole('checkbox', { name: /MSFT/ }))
+    expect(
+      within(form).queryByRole('link', { name: 'AAPL Form 4: Cook sold' }),
+    ).not.toBeInTheDocument()
   })
 
   it('shows API errors', async () => {

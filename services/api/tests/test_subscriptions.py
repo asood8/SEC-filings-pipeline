@@ -4,6 +4,7 @@ one goes through Google sign-in and the real session cookie."""
 import logging
 from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
+from datetime import date
 from typing import Any, cast
 
 import httpx2
@@ -19,6 +20,10 @@ from filings_api.routes import subscriptions
 from filings_api.routes.subscriptions import MAX_SUBSCRIPTIONS, _lock_user
 from filings_common.db import (
     Company,
+    Filing,
+    FilingStatus,
+    Form4Filing,
+    Form4Transaction,
     Notification,
     NotificationStatus,
     Subscription,
@@ -625,3 +630,149 @@ def test_batch_makes_keyword_alerts_on_every_company(sign_in: SignIn) -> None:
     again = batch(alice, tickers=[], query="resign OR retire")
     assert [s["id"] for s in again.json()["existing"]] == [created[0]["id"]]
     assert batch(alice, tickers=[]).status_code == 422  # no tickers and no query
+
+
+# --- Preview: which recent filings an alert would have sent ---------------------------------
+
+BERKSHIRE_FORM4 = "0001067983-26-000007"  # Berkshire's own Form 4 about its Apple shares
+
+
+@pytest.fixture
+def ready(seeded: Engine, users: dict[str, int], monkeypatch: pytest.MonkeyPatch) -> None:
+    """The seeded filings summarized, plus a Form 4 Berkshire filed with Apple as the issuer, and
+    one still waiting for its summary."""
+    monkeypatch.setattr(subscriptions, "_today", lambda: date(2026, 10, 22))
+    with session_factory(seeded).begin() as session:
+        for accession_no, filed in [
+            (BERKSHIRE_FORM4, date(2026, 10, 1)),
+            ("0000320193-26-000077", date(2026, 10, 2)),
+        ]:
+            session.add(
+                Filing(
+                    accession_no=accession_no,
+                    cik=1067983 if accession_no == BERKSHIRE_FORM4 else 320193,
+                    form_type="4",
+                    filed_at=filed,
+                    primary_doc_url=f"https://www.sec.gov/Archives/{accession_no}.htm",
+                    raw_object_key=f"filings/x/{accession_no}/doc",
+                )
+            )
+        session.flush()
+        session.add(
+            Form4Filing(
+                accession_no=BERKSHIRE_FORM4,
+                period_of_report=date(2026, 9, 30),
+                issuer_cik=320193,
+                issuer_name="Apple Inc.",
+                issuer_ticker="AAPL",
+                reporting_owners=["BERKSHIRE HATHAWAY INC"],
+                transaction_codes=["P"],
+                is_10b5_1=False,
+            )
+        )
+        session.flush()
+        session.add(
+            Form4Transaction(
+                accession_no=BERKSHIRE_FORM4,
+                line=1,
+                is_derivative=False,
+                security_title="Common Stock",
+                transaction_date=date(2026, 9, 30),
+                code="P",
+                shares=1000,
+                price_per_share=250.0,
+                acquired_disposed="A",
+                direct_or_indirect="D",
+            )
+        )
+        session.execute(
+            sa.update(Filing)
+            .where(Filing.accession_no != "0000320193-26-000077")
+            .values(status=FilingStatus.READY)
+        )
+
+
+def preview(client: TestClient, **params: Any) -> Any:
+    response = client.get("/subscriptions/preview", params=params)
+    assert response.status_code == 200, response.text
+    assert response.headers["Cache-Control"] == "no-store"
+    return response.json()
+
+
+def accessions(body: Any) -> list[str]:
+    return [item["accession_no"] for item in body["items"]]
+
+
+@pytest.mark.usefixtures("ready")
+def test_preview_lists_what_a_company_alert_would_have_sent(sign_in: SignIn, ids: Any) -> None:
+    body = preview(sign_in("alice"), tickers="AAPL")
+    # Apple's own filings and the Form 4 Berkshire filed about Apple; not the one still waiting
+    # for its summary.
+    assert accessions(body) == [BERKSHIRE_FORM4, ids.form4, ids.apple_8k]
+    assert (body["since"], body["matched"], body["capped"]) == ("2026-07-24", 3, False)
+    assert body["items"][0]["ticker"] == "BRK-B"
+
+
+@pytest.mark.usefixtures("ready")
+@pytest.mark.parametrize(
+    ("params", "expected"),
+    [
+        # Purchases only: Cook's sales go; the 8-K stays (other forms ignore the setting).
+        ({"form4_trades": "purchases"}, [BERKSHIRE_FORM4, "apple_8k"]),
+        # $250,000 bought is under a $1 million minimum; Cook's sales pass it because one is
+        # priced only in a footnote (alerted rather than missed, as in the notifier).
+        ({"form4_trades": "open_market", "form4_min_value": 1_000_000}, ["form4", "apple_8k"]),
+        ({"form_types": "8-K", "form8k_items": "2.02"}, []),  # Apple's 8-K reports 5.02
+        ({"form_types": "8-K", "form8k_items": ["2.02", "5.02"]}, ["apple_8k"]),
+        ({"query": "chief financial officer"}, ["apple_8k"]),
+        ({"days": 21}, [BERKSHIRE_FORM4]),  # filed on or after October 1
+    ],
+)
+def test_preview_applies_the_alert_filters(
+    sign_in: SignIn, ids: Any, params: dict[str, Any], expected: list[str]
+) -> None:
+    body = preview(sign_in("alice"), tickers="AAPL", **params)
+    assert accessions(body) == [getattr(ids, a, a) for a in expected]
+
+
+@pytest.mark.usefixtures("ready")
+def test_preview_of_a_keyword_alert_on_every_company(sign_in: SignIn, ids: Any) -> None:
+    body = preview(sign_in("alice"), query="revenue")
+    assert accessions(body) == [ids.msft_8k]
+
+
+@pytest.mark.usefixtures("ready")
+def test_preview_reports_when_it_checked_only_the_newest(
+    sign_in: SignIn, ids: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(subscriptions, "PREVIEW_CANDIDATES", 2)
+    body = preview(sign_in("alice"), tickers="AAPL")
+    assert (accessions(body), body["matched"], body["capped"]) == (
+        [BERKSHIRE_FORM4, ids.form4],
+        2,
+        True,
+    )
+
+
+@pytest.mark.usefixtures("ready")
+@pytest.mark.parametrize(
+    ("params", "detail"),
+    [
+        ({}, "give tickers, a query, or both"),
+        ({"tickers": "NOPE"}, "unknown ticker(s): NOPE"),
+        ({"tickers": "ZZZZ"}, "not on the watchlist"),
+        ({"query": "the"}, "has no searchable words"),
+        ({"tickers": "AAPL", "days": 366}, "less than or equal to 365"),
+        ({"tickers": "AAPL", "channel": "discord"}, "Extra inputs are not permitted"),
+    ],
+)
+def test_preview_refuses_settings_an_alert_couldnt_have(
+    sign_in: SignIn, params: dict[str, Any], detail: str
+) -> None:
+    response = sign_in("alice").get("/subscriptions/preview", params=params)
+    assert response.status_code == 422
+    assert detail in response.text
+
+
+def test_preview_needs_sign_in(client: TestClient) -> None:
+    assert client.get("/subscriptions/preview", params={"tickers": "AAPL"}).status_code == 401

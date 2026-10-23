@@ -15,6 +15,13 @@ export function formatDate(isoDate: string): string {
   return dateFormat.format(new Date(`${isoDate}T00:00:00Z`))
 }
 
+/** The date `days` before today, in the reader's time zone, like "2026-09-28". */
+export function isoDateDaysAgo(days: number, now = new Date()): string {
+  const day = new Date(now.getFullYear(), now.getMonth(), now.getDate() - days)
+  const pad = (n: number) => String(n).padStart(2, '0')
+  return `${day.getFullYear()}-${pad(day.getMonth() + 1)}-${pad(day.getDate())}`
+}
+
 /** A timestamp, shown in the reader's time zone. */
 export function formatDateTime(isoDateTime: string): string {
   return dateTimeFormat.format(new Date(isoDateTime))

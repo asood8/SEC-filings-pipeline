@@ -83,19 +83,25 @@ export const callsQuery = (days: number) =>
   })
 
 export type SearchMode = 'hybrid' | 'keyword' | 'semantic'
-export type SearchParams = { q: string; mode: SearchMode; formType?: string }
+export type SearchParams = {
+  q: string
+  mode: SearchMode
+  formType?: string
+  /** Only filings filed on or after this date (YYYY-MM-DD). */
+  since?: string
+}
 
 /** The most results one search returns. */
 export const SEARCH_LIMIT = 30
 
-export const searchQuery = ({ q, mode, formType }: SearchParams) =>
+export const searchQuery = ({ q, mode, formType, since }: SearchParams) =>
   queryOptions({
-    queryKey: ['search', { q, mode, formType }],
+    queryKey: ['search', { q, mode, formType, since }],
     queryFn: () =>
       unwrap(
         api.GET('/search', {
           params: {
-            query: { q, mode, form_type: formType, limit: SEARCH_LIMIT },
+            query: { q, mode, form_type: formType, since, limit: SEARCH_LIMIT },
           },
         }),
       ),

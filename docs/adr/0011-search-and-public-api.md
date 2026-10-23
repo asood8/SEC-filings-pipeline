@@ -199,6 +199,11 @@ the production ranking.
   price, and the 10b5-1 flag. It follows insider activity's rules, so a company's rows add up to
   its totals there (ADR-0006, "Insider trades across companies"). The website's Insider trades
   page (`/insiders`) shows it.
+- **Filing dates (added 2026-10-22):** `GET /search` and `GET /filings` take `since` and `until`
+  (filing dates, both included; `since` after `until` is a 422). In search they are one more
+  filter beside the form and company, so every mode applies them before ranking: semantic search
+  keeps scanning the HNSW index until enough filings in range are found (the iterative scan in
+  "Indexes and query plans at volume"). The website's search page offers "Filed: past week / month / 3 months / year".
 - **Docs:** typed response models generate the OpenAPI docs at `/docs`.
 - **Keyset cursors** encode the last row's sort key, so pages stay correct while new filings
   arrive. Offsets would repeat or skip rows.

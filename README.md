@@ -202,7 +202,8 @@ Sign-in needs a Google OAuth client ID (Google Cloud console, APIs & Services, C
 JavaScript origins; no secret needed) in `.env` as `GOOGLE_CLIENT_ID`. Open the website as
 `localhost`, not `127.0.0.1`, so the session cookie is shared with the API.
 
-The API: `GET /search?q=...` (hybrid by default; `mode=keyword|semantic`), `GET /filings`,
+The API: `GET /search?q=...` (hybrid by default; `mode=keyword|semantic`), `GET /filings` (both
+take `form_type`, `cik`, and filing dates `since`/`until`),
 `GET /filings/{accession_no}` (with a Form 4's transaction lines), `GET /companies`,
 `GET /companies/{ticker}`, `GET /companies/{ticker}/insider-activity?days=90` (insiders'
 purchases and sales per owner, grouped by owner CIK), `GET /insider-trades?side=buy&days=30`

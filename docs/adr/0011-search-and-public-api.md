@@ -203,7 +203,8 @@ the production ranking.
   (filing dates, both included; `since` after `until` is a 422). In search they are one more
   filter beside the form and company, so every mode applies them before ranking: semantic search
   keeps scanning the HNSW index until enough filings in range are found (the iterative scan in
-  "Indexes and query plans at volume"). The website's search page offers "Filed: past week / month / 3 months / year".
+  "Indexes and query plans at volume"). The website's search page offers "Filed: past week /
+  month / 3 months / year".
 - **Docs:** typed response models generate the OpenAPI docs at `/docs`.
 - **Keyset cursors** encode the last row's sort key, so pages stay correct while new filings
   arrive. Offsets would repeat or skip rows.

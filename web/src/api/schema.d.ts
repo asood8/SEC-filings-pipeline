@@ -169,6 +169,28 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/feeds/filings.atom": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Latest filings as an Atom feed
+         * @description The 50 latest filings that have a summary, newest first, each with its summary, key
+         *     points, and a link to the filing on sec.gov. Paste the URL into a feed reader; `cik` and
+         *     `form_type` narrow it to one company or one form.
+         */
+        get: operations["filings_feed_feeds_filings_atom_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/search": {
         parameters: {
             query?: never;
@@ -299,6 +321,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/subscriptions/preview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Which recent filings an alert would have sent
+         * @description Takes an alert's settings, as `POST /subscriptions/batch` does but without destinations, and lists the summarized filings of the last `days` it would have alerted about, newest first, matched as the notifier matches them. Saves nothing; needs sign-in, like every alert route.
+         */
+        get: operations["preview_alert_subscriptions_preview_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/subscriptions/{subscription_id}": {
         parameters: {
             query?: never;
@@ -327,6 +369,30 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        /** AlertPreview */
+        AlertPreview: {
+            /**
+             * Since
+             * Format: date
+             * @description The first filing date looked at.
+             */
+            since: string;
+            /**
+             * Matched
+             * @description How many filings since then would have sent the alert.
+             */
+            matched: number;
+            /**
+             * Capped
+             * @description Only the newest candidates were checked, so `matched` is a lower bound.
+             */
+            capped: boolean;
+            /**
+             * Items
+             * @description The newest of them, at most 10.
+             */
+            items: components["schemas"]["FilingOut"][];
+        };
         /**
          * Channel
          * @enum {string}
@@ -1193,6 +1259,10 @@ export interface operations {
             query?: {
                 cik?: number | null;
                 form_type?: string | null;
+                /** @description Only filings filed on or after this date. */
+                since?: string | null;
+                /** @description Only filings filed on or before this date. */
+                until?: string | null;
                 limit?: number;
                 cursor?: string | null;
             };
@@ -1392,6 +1462,8 @@ export interface operations {
             query?: {
                 /** @description How many days ahead, from today. */
                 days?: number;
+                /** @description Only this company's calls. */
+                ticker?: string | null;
             };
             header?: never;
             path?: never;
@@ -1421,7 +1493,10 @@ export interface operations {
     };
     calls_calendar_calls_ics_get: {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description Only this company's calls. */
+                ticker?: string | null;
+            };
             header?: never;
             path?: never;
             cookie?: never;
@@ -1437,6 +1512,61 @@ export interface operations {
                     "text/calendar": unknown;
                 };
             };
+            /** @description No company with that ticker. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    filings_feed_feeds_filings_atom_get: {
+        parameters: {
+            query?: {
+                cik?: number | null;
+                form_type?: ("4" | "8-K") | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description An Atom feed. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/atom+xml": unknown;
+                };
+            };
+            /** @description No company with that CIK. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
         };
     };
     search_search_get: {
@@ -1446,6 +1576,10 @@ export interface operations {
                 mode?: "hybrid" | "keyword" | "semantic";
                 form_type?: string | null;
                 cik?: number | null;
+                /** @description Only filings filed on or after this date. */
+                since?: string | null;
+                /** @description Only filings filed on or before this date. */
+                until?: string | null;
                 limit?: number;
             };
             header?: never;
@@ -1636,6 +1770,50 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["SubscriptionBatchOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    preview_alert_subscriptions_preview_get: {
+        parameters: {
+            query?: {
+                /** @description Optional with a `query`: none means every watchlist company. */
+                tickers?: string[];
+                /** @description Keyword alert: only filings whose summary matches this search, with the search's syntax ("buyback", "resign OR retire", '"credit facility"', "-routine"). Without a ticker, any watchlist company's matching filings. */
+                query?: string | null;
+                /** @description Alert only about these forms; empty means every form. */
+                form_types?: ("4" | "8-K")[];
+                /** @description Form 4s only: alert about every one (all), only those reporting open-market buys or sells (open_market, SEC codes P and S), or only purchases (purchases). Other forms ignore it. */
+                form4_trades?: "all" | "open_market" | "purchases";
+                /** @description Form 4s only: alert only when those open-market trades total at least this many US dollars (shares x price). A trade priced only in a footnote counts as meeting it. Null for no minimum. */
+                form4_min_value?: number | null;
+                /** @description 8-Ks only: alert only when the 8-K reports one of these items, e.g. 2.02 (results) or 5.02 (officer changes); empty means every 8-K. Other forms ignore it. */
+                form8k_items?: string[];
+                /** @description How far back, by filing date. */
+                days?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AlertPreview"];
                 };
             };
             /** @description Validation Error */

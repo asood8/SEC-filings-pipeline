@@ -199,6 +199,12 @@ the production ranking.
   price, and the 10b5-1 flag. It follows insider activity's rules, so a company's rows add up to
   its totals there (ADR-0006, "Insider trades across companies"). The website's Insider trades
   page (`/insiders`) shows it.
+- **Filing dates (added 2026-10-22):** `GET /search` and `GET /filings` take `since` and `until`
+  (filing dates, both included; `since` after `until` is a 422). In search they are one more
+  filter beside the form and company, so every mode applies them before ranking: semantic search
+  keeps scanning the HNSW index until enough filings in range are found (the iterative scan in
+  "Indexes and query plans at volume"). The website's search page offers "Filed: past week /
+  month / 3 months / year".
 - **Docs:** typed response models generate the OpenAPI docs at `/docs`.
 - **Keyset cursors** encode the last row's sort key, so pages stay correct while new filings
   arrive. Offsets would repeat or skip rows.
@@ -277,6 +283,28 @@ the matching words marked (`match: true`). The website shows them under the head
   render the marks itself, and nothing in a summary can inject markup.
 - *Only for the returned results*, at most 50 short summaries per request, so the cost is small.
   The marker characters are stripped from the text first, so they can't appear in it.
+
+### Atom feed (added 2026-10-22)
+
+`GET /feeds/filings.atom` (optionally `cik`, `form_type`) is the 50 latest filings that have a
+summary, as an Atom feed (RFC 4287): something to follow in a feed reader, or in Slack's RSS app,
+without signing in or setting up alerts. The website links it from the feed page (following the
+form filter) and from each company page. Choices:
+
+- *Atom, not RSS 2.0.* Atom is a standard with one specification, requires a time zone on every
+  date and a permanent id on every entry, and says how HTML content is carried; every feed
+  reader reads it.
+- *Only summarized filings.* A filing appears once it has a summary, so an entry is complete
+  when a reader first sees it; readers rarely re-fetch an entry they already have.
+- *Ids that never change.* An entry's id is the filing's sec.gov URL (EDGAR never moves a
+  filing), and the feed's is a UUID derived from its filters, not its URL, so the same feed
+  through another host or scheme is still the same feed.
+- *The summary as escaped HTML*: paragraphs, key points, the filing's link, and the disclaimer
+  the alerts carry. Each piece is HTML-escaped before the XML writer escapes it again, as
+  `type="html"` requires, and characters XML can't hold are dropped: the text is model output.
+- *Not in the Redis cache*, which stores JSON only. One request is one indexed query (the
+  newest summary per filing through a `LATERAL` join), cheap enough for readers polling every
+  few minutes.
 
 ## Alternatives considered
 

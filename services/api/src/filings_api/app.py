@@ -32,6 +32,7 @@ from filings_api.routes import (
     auth,
     calls,
     companies,
+    feeds,
     filings,
     insider_trades,
     search,
@@ -220,6 +221,7 @@ def create_app(
     app.include_router(companies.router)
     app.include_router(insider_trades.router)
     app.include_router(calls.router)
+    app.include_router(feeds.router)
     app.include_router(search.router)
     app.include_router(auth.router)
     app.include_router(subscriptions.router)

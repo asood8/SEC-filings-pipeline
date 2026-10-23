@@ -10,6 +10,11 @@ import {
   type SubscriptionBatch,
   type SubscriptionUpdate,
 } from './client'
+import type { paths } from './schema'
+
+export type AlertPreviewParams = NonNullable<
+  paths['/subscriptions/preview']['get']['parameters']['query']
+>
 
 /** The signed-in user, or null when signed out (the API answers 401). */
 export const meQuery = () =>
@@ -29,6 +34,14 @@ export const subscriptionsQuery = () =>
   queryOptions({
     queryKey: ['subscriptions'],
     queryFn: () => unwrap(api.GET('/subscriptions')),
+  })
+
+/** Which recent filings an alert with these settings would have sent. */
+export const alertPreviewQuery = (params: AlertPreviewParams) =>
+  queryOptions({
+    queryKey: ['alert-preview', params],
+    queryFn: () =>
+      unwrap(api.GET('/subscriptions/preview', { params: { query: params } })),
   })
 
 export function useSignIn() {

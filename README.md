@@ -202,20 +202,23 @@ Sign-in needs a Google OAuth client ID (Google Cloud console, APIs & Services, C
 JavaScript origins; no secret needed) in `.env` as `GOOGLE_CLIENT_ID`. Open the website as
 `localhost`, not `127.0.0.1`, so the session cookie is shared with the API.
 
-The API: `GET /search?q=...` (hybrid by default; `mode=keyword|semantic`), `GET /filings`,
+The API: `GET /search?q=...` (hybrid by default; `mode=keyword|semantic`), `GET /filings` (both
+take `form_type`, `cik`, and filing dates `since`/`until`),
 `GET /filings/{accession_no}` (with a Form 4's transaction lines), `GET /companies`,
 `GET /companies/{ticker}`, `GET /companies/{ticker}/insider-activity?days=90` (insiders'
 purchases and sales per owner, grouped by owner CIK), `GET /insider-trades?side=buy&days=30`
 (the largest purchases or sales across companies, one row per Form 4), and `GET /calls?days=60`
 (the earnings calls and other investor events 8-Ks announce, also as an iCalendar feed to
-subscribe to, `GET /calls.ics`). A Form 4's reporting
+subscribe to, `GET /calls.ics`; both take `ticker` for one company's). `GET /feeds/filings.atom` (optionally `cik`, `form_type`) is
+the latest summarized filings as an Atom feed, for a feed reader. A Form 4's reporting
 owners come with the name as filed and a readable one ("COOK TIMOTHY D" as "Timothy D Cook"),
 and with who they are to the company: a short `relationship` ("Executive Chair, Director",
 "EVP, CFO", "10% owner") and the filing's boxes and titles as filed (`is_director`,
 `is_officer`, `officer_title`, `is_ten_percent_owner`, `is_other`, `other_text`). Lists use cursor
 pagination, and responses are cached briefly and rate-limited per client through Redis. Signed
 in: `POST /auth/google`, `POST /auth/logout`, `GET`/`DELETE /me`, and alert subscriptions at
-`/subscriptions` (`POST /subscriptions/batch` adds several companies and destinations at once).
+`/subscriptions` (`POST /subscriptions/batch` adds several companies and destinations at once;
+`GET /subscriptions/preview` lists the recent filings an alert's settings would have sent).
 
 8-K summaries need an LLM: set `GEMINI_API_KEY` (free from Google AI Studio, no billing needed)
 and/or a local model. `make llm-up` runs Ollama in Docker and pulls `llama3.2:3b` and the

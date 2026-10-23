@@ -8,6 +8,9 @@ from filings_api.pagination import decode_cursor, encode_cursor
 from filings_api.queries import (
     CikFilter,
     SessionDep,
+    Since,
+    Until,
+    check_dates,
     filing_select,
     reporting_owners_out,
     to_filing_out,
@@ -44,14 +47,21 @@ def list_filings(
     session: SessionDep,
     cik: CikFilter = None,
     form_type: str | None = None,
+    since: Since = None,
+    until: Until = None,
     limit: Annotated[int, Query(ge=1, le=100)] = 50,
     cursor: str | None = None,
 ) -> Page[FilingOut]:
+    check_dates(since, until)
     query = filing_select().order_by(Filing.filed_at.desc(), Filing.accession_no.desc())
     if cik is not None:
         query = query.where(Filing.cik == cik)
     if form_type is not None:
         query = query.where(Filing.form_type == form_type)
+    if since is not None:
+        query = query.where(Filing.filed_at >= since)
+    if until is not None:
+        query = query.where(Filing.filed_at <= until)
     if cursor is not None:
         filed_at, accession_no = decode_cursor(cursor, 2)
         try:

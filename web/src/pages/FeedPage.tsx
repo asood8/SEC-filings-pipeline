@@ -1,6 +1,8 @@
 import { useInfiniteQuery } from '@tanstack/react-query'
 import { useSearchParams } from 'react-router'
+import { filingsFeedUrl } from '../api/client'
 import { filingsQuery } from '../api/queries'
+import { ExternalLink } from '../components/ExternalLink'
 import { PagedFilingList } from '../components/PagedFilingList'
 import { ErrorMessage, Loading } from '../components/QueryStatus'
 import styles from './FeedPage.module.css'
@@ -19,6 +21,7 @@ export function FeedPage() {
     filingsQuery({ formType: formType || undefined }),
   )
   usePageTitle('Latest filings')
+  const feed = filingsFeedUrl({ formType: formType || undefined })
 
   function setForm(value: string) {
     setParams(value ? { form: value } : {}, { replace: true })
@@ -30,6 +33,13 @@ export function FeedPage() {
       <p className="muted">
         New SEC filings from a watchlist of well-known public companies, with
         plain-English summaries.
+      </p>
+      <p>
+        <ExternalLink href={feed}>Atom feed</ExternalLink>{' '}
+        <span className="muted">
+          Follow new summaries{formType && ' of this form type'} in a feed
+          reader or Slack's RSS app by pasting {feed}
+        </span>
       </p>
       <fieldset className={styles.filters}>
         <legend className="visually-hidden">Form type</legend>

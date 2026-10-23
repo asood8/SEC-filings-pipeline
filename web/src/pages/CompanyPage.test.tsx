@@ -178,6 +178,34 @@ describe('CompanyPage', () => {
     ).toBe('90')
   })
 
+  it('says how much of the selling ran under 10b5-1 plans', async () => {
+    mockApi({
+      '/companies/AAPL': apple,
+      '/companies/AAPL/insider-activity': () =>
+        insiderActivity({
+          sold: { shares: 1600, value: 800_000, unpriced_shares: 0 },
+          sold_planned: { shares: 1500, value: 750_000, unpriced_shares: 0 },
+          filings: 2,
+          owners: [
+            {
+              reporting_owners: [COOK],
+              bought: { shares: 0, value: 0, unpriced_shares: 0 },
+              sold: { shares: 1600, value: 800_000, unpriced_shares: 0 },
+              filings: 2,
+              latest_date: '2026-10-02',
+            },
+          ],
+        }),
+      '/filings': () => ({ items: [], next_cursor: null }),
+    })
+    renderRoute('/companies/AAPL')
+    expect(
+      await screen.findByText(
+        'Under 10b5-1 plans, set up in advance: 94% of the shares sold.',
+      ),
+    ).toBeInTheDocument()
+  })
+
   it('says when insider trades are loading', async () => {
     mockApi({
       '/companies/AAPL': apple,

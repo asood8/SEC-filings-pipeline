@@ -158,6 +158,7 @@ def get_insider_activity(
                 form.reporting_owners,
                 form.reporting_owner_ciks,
                 form.reporting_owner_relationships,
+                form.is_10b5_1,
                 *(c for side, code in INSIDER_TRADE_CODES.items() for c in _trade_sums(side, code)),
                 sa.func.max(traded_on).label("latest_date"),
             )
@@ -187,12 +188,15 @@ def get_insider_activity(
             [owner.name for owner in o.reporting_owners],
         ),
     )
+    planned = [filing for filing in filings if filing["is_10b5_1"]]
     return InsiderActivity(
         ticker=company.ticker,
         days=days,
         since=since,
         bought=_totals(filings, "bought"),
         sold=_totals(filings, "sold"),
+        bought_planned=_totals(planned, "bought"),
+        sold_planned=_totals(planned, "sold"),
         filings=len(filings),
         owners=owners[:MAX_INSIDER_OWNERS],
     )

@@ -129,6 +129,7 @@ def add_form4(
     trades: list[dict[str, Any]],
     ciks: bool = True,  # False: saved before owner CIKs were stored
     roles: bool = True,  # False: saved before owner relationships were stored
+    is_10b5_1: bool | None = None,
 ) -> None:
     session.add(
         Filing(
@@ -152,7 +153,7 @@ def add_form4(
             reporting_owner_ciks=[o.cik for o in owners] if ciks else None,
             reporting_owner_relationships=[o.relationship for o in owners] if roles else None,
             transaction_codes=sorted({t["code"] for t in trades}),
-            is_10b5_1=None,
+            is_10b5_1=is_10b5_1,
         )
     )
     session.flush()
@@ -174,6 +175,7 @@ def insider_trades(seeded: Engine) -> None:
                 trade(3, "A", 9999, 0.0, days_ago=10),  # an award: not a trade
                 trade(4, "S", 77, 1.0, days_ago=10, is_derivative=True),  # derivatives left out
             ],
+            is_10b5_1=True,
         )
         add_form4(
             session,
@@ -231,6 +233,13 @@ def test_insider_activity_totals_purchases_and_sales_per_owner(client: TestClien
         nadella["sold"],
         3,
     )
+    # Nadella's first filing says its sales were under a 10b5-1 plan; the second doesn't say.
+    assert activity["sold_planned"] == {
+        "shares": 1500.5,
+        "value": 500_000.0,
+        "unpriced_shares": 500.5,
+    }
+    assert activity["bought_planned"] == nothing
 
 
 @pytest.mark.usefixtures("insider_trades")

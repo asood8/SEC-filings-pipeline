@@ -143,6 +143,8 @@ export function insiderActivity(
     since: '2026-07-10',
     bought: NO_TRADES,
     sold: NO_TRADES,
+    bought_planned: NO_TRADES,
+    sold_planned: NO_TRADES,
     filings: 0,
     owners: [],
     ...overrides,

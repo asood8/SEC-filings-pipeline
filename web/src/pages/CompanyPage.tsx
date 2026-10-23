@@ -1,6 +1,6 @@
 import { useInfiniteQuery, useQuery } from '@tanstack/react-query'
 import { Link, useParams } from 'react-router'
-import { isNotFound } from '../api/client'
+import { filingsFeedUrl, isNotFound } from '../api/client'
 import { companyQuery, filingsQuery } from '../api/queries'
 import { PagedFilingList } from '../components/PagedFilingList'
 import { ExternalLink } from '../components/ExternalLink'
@@ -43,7 +43,11 @@ export function CompanyPage() {
       <p>
         <Link to={`/alerts?ticker=${company.data.ticker}`}>
           Get alerts for {company.data.ticker}
-        </Link>
+        </Link>{' '}
+        ·{' '}
+        <ExternalLink href={filingsFeedUrl({ cik })}>
+          Atom feed of {company.data.ticker} filings
+        </ExternalLink>
       </p>
       <InsiderActivity ticker={company.data.ticker} />
       <h2>Recent filings</h2>

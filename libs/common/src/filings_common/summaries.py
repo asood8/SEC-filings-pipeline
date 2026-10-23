@@ -16,6 +16,9 @@ def _one_line(text: str) -> str:
 
 OneLine = Annotated[str, AfterValidator(_one_line)]
 
+# Shown with every summary that leaves the website: alerts and the Atom feed.
+DISCLAIMER = "Automated summary; may contain errors and is not investment advice."
+
 
 class FilingSummary(BaseModel):
     headline: OneLine = Field(min_length=1, max_length=200)

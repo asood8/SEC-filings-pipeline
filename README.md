@@ -31,11 +31,22 @@ On a live run against EDGAR, for a watchlist of 35 large US companies:
   Berkshire Hathaway and Warren Buffett bought 7.5 million Lennar shares for $595 million in four
   filings. The Insider trades page ranks the largest open-market purchases and sales across all
   companies: over 90 days, the largest sale was NVIDIA director Mark A Stevens's 1.37 million
-  shares for $300 million.
+  shares for $300 million. 39 of those 47 sale filings were made under 10b5-1 plans, set up
+  months ahead; leaving them out keeps the 8 discretionary sales ($591 million). Each trade shows
+  how much it changed the insider's direct holdings: Tim Cook's $63.8 million sale was 5.5% of
+  his, two other Apple executives' were 25% and 30% of theirs.
 - **Search** finds filings by keyword (Postgres full-text search) and by meaning (pgvector
   embeddings from a local model), combined into one ranking: "trading plan cancelled" finds
   Oracle's 8-K about Larry Ellison's plan, and "debt offering" finds Amazon's note offering.
   Each result shows the passage of its summary that matches, with the query's words marked.
+  Search and the feed narrow by filing date and by what an 8-K reports (2.02 results: 6;
+  5.02 officer changes: 6, among them Chevron's new CFO), and a query naming a company links its
+  page.
+- **Following along** without signing in: Atom feeds of the latest summaries (every filing, one
+  company's, one form's, or one 8-K item's) for a feed reader or Slack's RSS app, and calendar
+  feeds of announced investor calls (all, or one company's). A filing's page lists what the
+  company filed in the two weeks around it (PepsiCo's results next to its directors' stock
+  awards), and a company's page shows its next announced call and its SEC industry.
 - **Summarization** wrote every summary: Form 4s with a deterministic template, 8-Ks with an LLM
   behind a failover chain (a local model, then Gemini's free tier). Stopping the local model
   mid-run moved the remaining work to Gemini automatically, and the local model took over again
@@ -145,7 +156,10 @@ worth a look:
   to official Discord and Slack URLs. Form 4 alerts can be narrowed to open-market trades or
   purchases, above a dollar value, so routine filings (tax withholding, awards) stay quiet, and
   8-K alerts to chosen items (earnings, officer changes, ...). Keyword alerts watch for words
-  ("buyback", "resign OR retire") in one company's filings or every watchlist company's.
+  ("buyback", "resign OR retire") in one company's filings or every watchlist company's. Before
+  saving, a preview lists the recent filings the settings would have sent, matched exactly as the
+  notifier matches (Apple alerts: 15 in 90 days, 8 with open-market trades only), and an alert
+  says which of yours sent it when the filing alone doesn't.
   ([ADR-0012](docs/adr/0012-notifier-and-exactly-once-alerts.md))
 - **Sign-in without handling passwords**: Google's ID token is verified against Google's
   published keys, then exchanged for the API's own HttpOnly session cookie; only a hash of each
@@ -156,6 +170,13 @@ worth a look:
 - **Hybrid search in Postgres**: full-text and vector results merged with reciprocal rank
   fusion, degrading to keywords when the embedding model is down.
   ([ADR-0011](docs/adr/0011-search-and-public-api.md))
+- **Security reviewed**: request bodies capped before they are read, mail sent over verified
+  TLS, model text escaped in every channel and feed, sessions hashed and CSRF-checked, every
+  GitHub Action pinned to a commit, and pods that run as non-root with read-only filesystems, no
+  capabilities, and network policies. ([ADR-0013](docs/adr/0013-sign-in-and-sessions.md),
+  [ADR-0012](docs/adr/0012-notifier-and-exactly-once-alerts.md),
+  [ADR-0019](docs/adr/0019-image-ci-and-deploy.md),
+  [ADR-0017](docs/adr/0017-kubernetes-manifests.md))
 
 Every component's reason for existing is recorded in the
 [architecture decision records](docs/adr/README.md).

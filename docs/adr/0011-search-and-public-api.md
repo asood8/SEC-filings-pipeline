@@ -197,6 +197,10 @@ the production ranking.
   sales (codes P and S) of the company's stock per reporting owner. Both read
   `form4_transactions` (ADR-0006). Reporting owners are objects, `{cik, name, display_name}`:
   the name as filed and a readable one (ADR-0006, "Owner CIKs and readable names").
+  `bought_planned` and `sold_planned` (added 2026-10-22) are the part of the totals from filings
+  that say they were under a 10b5-1 plan; the company page says what share of the shares sold or
+  bought that is. Over 90 days of dev data, Apple's, Microsoft's, and AMD's insider selling was
+  all planned, NVIDIA's ($550 million) only 3%.
 - **Insider trades across companies (added 2026-10-08):** `GET /insider-trades?side=buy&days=30`
   (`side` buy or sell; `days` 1 to 365; `limit` 1 to 50, default 25) lists the largest recent
   purchases or sales of any company's stock, one row per Form 4, by value. Each row has the
@@ -325,6 +329,11 @@ form filter) and from each company page. Choices:
 - *Not in the Redis cache*, which stores JSON only. One request is one indexed query (the
   newest summary per filing through a `LATERAL` join), cheap enough for readers polling every
   few minutes.
+- *Conditional GET* (added 2026-10-22, `filings_api.conditional`): the Atom feed and the calls
+  calendar send an `ETag` (a SHA-256 of the body) and answer `304 Not Modified`, with no body,
+  when `If-None-Match` already has it (weak comparison, lists, `*`), which is what most polls
+  find. The calendar's ETag leaves out its `DTSTAMP` lines: they say when the feed was written,
+  which changes on every request without the calls changing.
 
 ## Alternatives considered
 

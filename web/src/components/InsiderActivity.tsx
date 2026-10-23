@@ -1,5 +1,5 @@
 import { useQuery } from '@tanstack/react-query'
-import type { TradeTotals } from '../api/client'
+import type { InsiderActivity as Activity, TradeTotals } from '../api/client'
 import { insiderActivityQuery } from '../api/queries'
 import { formatDate, formatMoney, formatShares } from '../lib/format'
 import { DataTable } from './DataTable'
@@ -111,6 +111,7 @@ export function InsiderActivity({ ticker }: { ticker: string }) {
               their value isn't counted.
             </p>
           )}
+          <Planned activity={query.data} />
         </>
       )}
     </section>
@@ -128,5 +129,28 @@ function Trades({ totals }: { totals: TradeTotals }) {
         {formatShares(totals.shares)} shares
       </span>
     </span>
+  )
+}
+
+const shareFormat = new Intl.NumberFormat('en-US', { style: 'percent' })
+
+/** How much of the buying and selling ran under 10b5-1 plans, by shares; nothing when none did.
+ * "Under 10b5-1 plans, set up in advance: 94% of the shares sold." */
+function Planned({ activity }: { activity: Activity }) {
+  const parts = [
+    ['sold', activity.sold, activity.sold_planned],
+    ['bought', activity.bought, activity.bought_planned],
+  ] as const
+  const shares = parts
+    .filter(([, , planned]) => planned.shares > 0)
+    .map(
+      ([verb, all, planned]) =>
+        `${shareFormat.format(planned.shares / all.shares)} of the shares ${verb}`,
+    )
+  if (shares.length === 0) return null
+  return (
+    <p className={styles.note}>
+      Under 10b5-1 plans, set up in advance: {shares.join(', and ')}.
+    </p>
   )
 }

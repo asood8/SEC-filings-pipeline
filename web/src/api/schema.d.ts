@@ -678,6 +678,10 @@ export interface components {
             bought: components["schemas"]["TradeTotals"];
             /** @description Everyone's open-market or private sales (S). */
             sold: components["schemas"]["TradeTotals"];
+            /** @description The part of `bought` from filings that say the trades were made under a Rule 10b5-1 plan, set up in advance. */
+            bought_planned: components["schemas"]["TradeTotals"];
+            /** @description The part of `sold` under 10b5-1 plans. */
+            sold_planned: components["schemas"]["TradeTotals"];
             /** Filings */
             filings: number;
             /**

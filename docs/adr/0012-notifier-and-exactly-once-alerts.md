@@ -96,6 +96,21 @@ filing. Every subscription still needs a subject (a company, a query, or both: c
 words ("the") is refused, since it would never match. Exactly-once delivery is unchanged: it is
 per subscription and filing, whatever selected them. Migration a77c95f05ece.
 
+### Previewing an alert (added 2026-10-22)
+
+With filters and keywords, it is hard to guess what an alert will send. `GET
+/subscriptions/preview` takes an alert's settings (those of `POST /subscriptions/batch`, without
+destinations) and answers with the summarized filings of the last `days` (default 90) it would
+have alerted about: how many, and the newest ten. The website's alert form has a "Preview the
+last 90 days" button; any change to the form clears the preview, so it never describes other
+settings. It matches as the notifier does: a company's alerts include Form 4s others file with it
+as the issuer, keywords go through the same `websearch_to_tsquery` on the search document, and
+the Form 4 and 8-K filters are the same `filings_common.alert_filters` functions, so a preview
+can't drift from what is sent. It reads at most the newest 1,000 candidates (`capped` says when
+there were more, making the count a lower bound), needs sign-in like every alert route, and saves
+nothing. On the dev data: Apple alerts would have sent 15 filings in 90 days, open-market trades
+only 8, and open-market trades of $10 million or more (Apple and NVIDIA) 4.
+
 ## Alternatives considered
 
 - **Dedupe in Redis.** It's lost on eviction or restart, and can't show what was delivered. The

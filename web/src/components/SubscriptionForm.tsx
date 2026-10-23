@@ -1,9 +1,15 @@
 import { useQuery } from '@tanstack/react-query'
-import { type FormEvent, useState } from 'react'
-import { useCreateSubscriptions } from '../api/account'
+import { type FormEvent, useRef, useState } from 'react'
+import { Link } from 'react-router'
+import {
+  type AlertPreviewParams,
+  alertPreviewQuery,
+  useCreateSubscriptions,
+} from '../api/account'
 import type { Destination, Subscription, User } from '../api/client'
 import { watchlistQuery } from '../api/queries'
 import { readForm4Filters, readForm8KItems } from '../lib/alertFilters'
+import { formatDate, formLabel } from '../lib/format'
 import { Form4FilterFields, Form8KItemFields } from './AlertFilters'
 import { ErrorMessage } from './QueryStatus'
 import styles from './Subscriptions.module.css'
@@ -24,6 +30,7 @@ const WEBHOOKS: { channel: Webhook; label: string; placeholder: string }[] = [
 ]
 
 const NEW_WEBHOOK = 'new'
+const PREVIEW_DAYS = 90
 
 /** One entry per webhook already in use: its masked URL and a subscription to copy it from. */
 function savedWebhooks(subscriptions: Subscription[], channel: Webhook) {
@@ -59,6 +66,13 @@ export function SubscriptionForm({
     email: false,
   })
   const [result, setResult] = useState<string>()
+  const formRef = useRef<HTMLFormElement>(null)
+  // The settings last previewed; any change to the form clears the preview.
+  const [previewed, setPreviewed] = useState<AlertPreviewParams>()
+  const preview = useQuery({
+    ...alertPreviewQuery(previewed ?? {}),
+    enabled: previewed !== undefined,
+  })
 
   const needle = filter.trim().toLowerCase()
   const shown = (companies.data?.items ?? []).filter(
@@ -78,6 +92,20 @@ export function SubscriptionForm({
         ? current.filter((t) => t !== ticker)
         : [...current, ticker],
     )
+  }
+
+  function showPreview() {
+    const data = new FormData(formRef.current!)
+    const { form4_trades, form4_min_value } = readForm4Filters(data)
+    setPreviewed({
+      tickers,
+      query: words || undefined,
+      form_types: data.getAll('form') as SubscriptionBatchForms,
+      form4_trades,
+      form4_min_value: form4_min_value ?? undefined,
+      form8k_items: readForm8KItems(data),
+      days: PREVIEW_DAYS,
+    })
   }
 
   function submit(event: FormEvent<HTMLFormElement>) {
@@ -123,7 +151,12 @@ export function SubscriptionForm({
   }
 
   return (
-    <form className={styles.form} onSubmit={submit}>
+    <form
+      ref={formRef}
+      className={styles.form}
+      onSubmit={submit}
+      onChange={() => setPreviewed(undefined)}
+    >
       <h2>Add alerts</h2>
       <fieldset>
         <legend>
@@ -186,6 +219,43 @@ export function SubscriptionForm({
       </fieldset>
 
       <Form8KItemFields />
+
+      <div>
+        <button
+          type="button"
+          onClick={showPreview}
+          disabled={!(tickers.length || words)}
+        >
+          Preview the last {PREVIEW_DAYS} days
+        </button>{' '}
+        <span className="muted">
+          Which recent filings these settings would have sent.
+        </span>
+      </div>
+      {previewed && preview.isError && <ErrorMessage error={preview.error} />}
+      {/* Always in the page, so screen readers announce the preview when it appears. */}
+      <div role="status">
+        {previewed && preview.data && (
+          <p>
+            {preview.data.matched === 0
+              ? `No filings in the last ${PREVIEW_DAYS} days would have sent this alert.`
+              : `${preview.data.matched}${preview.data.capped ? '+' : ''} filing${preview.data.matched === 1 ? '' : 's'} in the last ${PREVIEW_DAYS} days would have sent this alert${preview.data.matched > preview.data.items.length ? `; the newest ${preview.data.items.length}:` : ':'}`}
+          </p>
+        )}
+      </div>
+      {previewed && preview.data && preview.data.items.length > 0 && (
+        <ul className={styles.preview}>
+          {preview.data.items.map((f) => (
+            <li key={f.accession_no}>
+              <Link to={`/filings/${f.accession_no}`}>
+                {f.ticker} {formLabel(f.form_type)}:{' '}
+                {f.headline ?? 'summary pending'}
+              </Link>{' '}
+              <span className="muted">{formatDate(f.filed_at)}</span>
+            </li>
+          ))}
+        </ul>
+      )}
 
       <fieldset>
         <legend>Send to (one or more)</legend>

@@ -496,6 +496,44 @@ class SubscriptionBatch(BaseModel):
         return self
 
 
+MAX_PREVIEW_DAYS = 365
+
+
+class AlertPreviewQuery(BaseModel):
+    """An alert's settings, as for `POST /subscriptions/batch` but without destinations."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    tickers: list[Annotated[str, Field(min_length=1, max_length=20)]] = Field(
+        default_factory=list,
+        max_length=25,
+        description="Optional with a `query`: none means every watchlist company.",
+    )
+    query: AlertQuery | None = Field(default=None, description=_QUERY_HELP)
+    form_types: FormTypes = Field(default_factory=list, description=_FORM_TYPES_HELP)
+    form4_trades: Form4Trades = Field(default="all", description=_FORM4_TRADES_HELP)
+    form4_min_value: Form4MinValue | None = Field(default=None, description=_FORM4_MIN_VALUE_HELP)
+    form8k_items: Form8KItems = Field(default_factory=list, description=_FORM8K_ITEMS_HELP)
+    days: int = Field(
+        default=90, ge=1, le=MAX_PREVIEW_DAYS, description="How far back, by filing date."
+    )
+
+    @model_validator(mode="after")
+    def _has_a_subject(self) -> "AlertPreviewQuery":
+        if not self.tickers and self.query is None:
+            raise ValueError("give tickers, a query, or both")
+        return self
+
+
+class AlertPreview(BaseModel):
+    since: date = Field(description="The first filing date looked at.")
+    matched: int = Field(description="How many filings since then would have sent the alert.")
+    capped: bool = Field(
+        description="Only the newest candidates were checked, so `matched` is a lower bound."
+    )
+    items: list[FilingOut] = Field(description="The newest of them, at most 10.")
+
+
 class SubscriptionBatchOut(BaseModel):
     created: list[SubscriptionOut]
     existing: list[SubscriptionOut] = Field(

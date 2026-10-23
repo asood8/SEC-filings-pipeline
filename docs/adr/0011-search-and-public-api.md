@@ -187,7 +187,11 @@ the production ranking.
   fields, 8-K items, EX-99 exhibit links, and since 2026-10-22 `nearby`: the company's 10 nearest
   other filings within 14 days, newest first, which the filing page lists as "Around the same
   time"), `GET /companies` (watchlist filter, name or ticker search, cursors), and
-  `GET /companies/{ticker}` (recent filings).
+  `GET /companies/{ticker}` (recent filings). Companies carry `industry` (added 2026-10-22,
+  migration 711671762486): SEC's description of their SIC code ("Electronic Computers"), which
+  discovery copies from the submissions response it already fetches, so it costs no extra SEC
+  request; NULL until a company's next poll. The website shows it on company pages and filters
+  the companies list by it.
 - **Insider trades (added 2026-10-08):** a Form 4's detail lists its transaction lines, and
   `GET /companies/{ticker}/insider-activity?days=90` (1 to 365) totals insiders' purchases and
   sales (codes P and S) of the company's stock per reporting owner. Both read

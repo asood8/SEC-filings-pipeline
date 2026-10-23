@@ -48,6 +48,8 @@ class Alert:
     url: str  # the filing on sec.gov
     # The upcoming call an 8-K announces: when, and the webcast link.
     investor_call: InvestorCall | None = None
+    # Why this subscription sent it, when the alert alone doesn't say (alert_filters.alert_reason).
+    reason: str | None = None
 
 
 class Sender(Protocol):
@@ -92,11 +94,15 @@ class DiscordSender:
                         {"name": "Filed", "value": alert.filed_at.isoformat(), "inline": True},
                         *_discord_call_field(alert.investor_call),
                     ],
-                    "footer": {"text": DISCLAIMER},
+                    "footer": {"text": _with_reason(DISCLAIMER, alert.reason)},
                 }
             ],
         }
         _post(self._http, target, payload, "Discord")
+
+
+def _with_reason(text: str, reason: str | None) -> str:
+    return f"{reason} \u00b7 {text}" if reason else text
 
 
 def _discord_call_field(call: InvestorCall | None) -> list[dict[str, Any]]:
@@ -119,7 +125,7 @@ class SlackSender:
             raise PermanentDeliveryError("not a Slack webhook URL")
         context = (
             f"{alert.company_name} ({alert.ticker}) · Form {alert.form_type} · "
-            f"filed {alert.filed_at.isoformat()} · {DISCLAIMER}"
+            f"filed {alert.filed_at.isoformat()} · {_with_reason(DISCLAIMER, alert.reason)}"
         )
         payload = {
             # The notification's text, also read as markup: escaped like the blocks.
@@ -158,7 +164,9 @@ def _email_message(target: str, alert: Alert, sender: str) -> EmailMessage:
     message.set_content(
         f"{alert.headline}\n\n{alert.summary}\n\n{points}\n\n{call}"
         f"{alert.company_name} ({alert.ticker}), Form {alert.form_type}, "
-        f"filed {alert.filed_at.isoformat()}\nOriginal filing: {alert.url}\n\n{DISCLAIMER}\n"
+        f"filed {alert.filed_at.isoformat()}\nOriginal filing: {alert.url}\n\n"
+        + (f"{alert.reason}\n" if alert.reason else "")
+        + f"{DISCLAIMER}\n"
     )
     return message
 

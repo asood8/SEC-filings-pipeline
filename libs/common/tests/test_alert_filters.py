@@ -1,6 +1,14 @@
+from typing import Any
+
 import pytest
 
-from filings_common.alert_filters import FORM4_TRADES, TradeLine, wants_8k, wants_form4
+from filings_common.alert_filters import (
+    FORM4_TRADES,
+    TradeLine,
+    alert_reason,
+    wants_8k,
+    wants_form4,
+)
 
 SALE = TradeLine("S", 1_000, 250.0)  # $250,000
 PURCHASE = TradeLine("P", 100, 50.0)  # $5,000
@@ -58,3 +66,49 @@ def test_the_choices_match_the_database_check() -> None:
 )
 def test_wants_8k(items: list[str], filing_items: list[str], wanted: bool) -> None:
     assert wants_8k(items, filing_items) is wanted
+
+
+PLAIN: dict[str, Any] = {
+    "query": None,
+    "form4_trades": "all",
+    "form4_min_value": None,
+    "form8k_items": [],
+}
+
+
+@pytest.mark.parametrize(
+    ("form_type", "settings", "reason"),
+    [
+        # A plain alert on the filer: the alert already says which company.
+        ("4", {"ticker": "AAPL"}, None),
+        # Filed by someone else about the company followed (the issuer).
+        ("4", {"ticker": "LEN"}, "Your alert: LEN"),
+        (
+            "4",
+            {"ticker": "AAPL", "form4_trades": "open_market", "form4_min_value": 1_000_000},
+            "Your alert: AAPL \u00b7 Form 4: open-market trades only, $1,000,000 or more",
+        ),
+        (
+            "4",
+            {"ticker": "AAPL", "form4_trades": "purchases"},
+            "Your alert: AAPL \u00b7 Form 4: purchases only",
+        ),
+        # Only this form's filters: an 8-K isn't told about the Form 4 settings, nor a Form 4 about
+        # the 8-K items.
+        ("8-K", {"ticker": "AAPL", "form4_trades": "purchases"}, None),
+        ("4", {"ticker": "AAPL", "form8k_items": ["2.02"]}, None),
+        (
+            "8-K",
+            {"ticker": "AAPL", "form8k_items": ["2.02", "5.02"]},
+            "Your alert: AAPL \u00b7 8-K: 2.02, 5.02",
+        ),
+        (
+            "8-K",
+            {"ticker": None, "query": "buyback"},
+            "Your alert: \u201cbuyback\u201d (any watchlist company)",
+        ),
+        ("8-K", {"ticker": "AAPL", "query": "buyback"}, "Your alert: AAPL \u201cbuyback\u201d"),
+    ],
+)
+def test_alert_reason(form_type: str, settings: dict[str, Any], reason: str | None) -> None:
+    assert alert_reason(form_type, "AAPL", **(PLAIN | settings)) == reason

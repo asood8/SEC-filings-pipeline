@@ -58,6 +58,21 @@ def test_filters_apply_to_search(client: TestClient, ids: Any) -> None:
     assert hits(search(client, q="Apple", mode="keyword", form_type="8-K")) == [ids.apple_8k]
 
 
+@pytest.mark.parametrize("mode", ["keyword", "semantic", "hybrid"])
+def test_filing_dates_apply_in_every_mode(client: TestClient, ids: Any, mode: str) -> None:
+    # Filed 2026-09-28 (Apple's 8-K), 09-29 (Microsoft's), and 09-30 (the Form 4).
+    later = hits(search(client, q="Apple", mode=mode, since="2026-09-29"))
+    assert later
+    assert set(later) <= {ids.form4, ids.msft_8k}
+    assert hits(search(client, q="Apple", mode=mode, until="2026-09-28")) == [ids.apple_8k]
+
+
+def test_dates_must_be_in_order(client: TestClient) -> None:
+    params = {"q": "Apple", "since": "2026-09-30", "until": "2026-09-01"}
+    response = client.get("/search", params=params)
+    assert (response.status_code, response.json()) == (422, {"detail": "since is after until"})
+
+
 @pytest.mark.parametrize("embedder_state", ["unconfigured", "failing"])
 def test_falls_back_to_keywords_without_a_working_embedder(
     make_client: Callable[..., TestClient],

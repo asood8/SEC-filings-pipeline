@@ -24,6 +24,7 @@ import logging
 import re
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
+from datetime import date
 
 import sqlalchemy as sa
 from sqlalchemy.dialects.postgresql import ARRAY, TSQUERY
@@ -255,12 +256,19 @@ def upsert_embedding(
     )
 
 
-def _filters(*, form_type: str | None, cik: int | None) -> list[sa.ColumnElement[bool]]:
+def _filters(
+    *, form_type: str | None, cik: int | None, since: date | None, until: date | None
+) -> list[sa.ColumnElement[bool]]:
+    """`since` and `until` are filing dates, both included."""
     clauses = []
     if form_type is not None:
         clauses.append(Filing.form_type == form_type)
     if cik is not None:
         clauses.append(Filing.cik == cik)
+    if since is not None:
+        clauses.append(Filing.filed_at >= since)
+    if until is not None:
+        clauses.append(Filing.filed_at <= until)
     return clauses
 
 
@@ -281,6 +289,8 @@ def keyword_search(
     limit: int = 20,
     form_type: str | None = None,
     cik: int | None = None,
+    since: date | None = None,
+    until: date | None = None,
 ) -> list[SearchHit]:
     """All words must match. If a plain query (no search syntax) matches nothing that way, any
     word may match, and filings matching more words rank higher: "credit facility pizza" still
@@ -292,11 +302,15 @@ def keyword_search(
         as_word = sa.func.websearch_to_tsquery("english", word)
         as_ticker = sa.cast(sa.literal(f"'{word.upper()}'"), TSQUERY)
         strict = sa.func.ts_rewrite(strict, as_word, as_word.op("||")(as_ticker))
-    hits = _keyword_hits(session, strict, limit=limit, form_type=form_type, cik=cik)
+    hits = _keyword_hits(
+        session, strict, limit=limit, form_type=form_type, cik=cik, since=since, until=until
+    )
     if hits or not _is_plain(text) or len(text.split()) < 2:
         return hits
     relaxed = sa.cast(sa.func.replace(sa.cast(strict, sa.Text), "&", "|"), TSQUERY)
-    return _keyword_hits(session, relaxed, limit=limit, form_type=form_type, cik=cik)
+    return _keyword_hits(
+        session, relaxed, limit=limit, form_type=form_type, cik=cik, since=since, until=until
+    )
 
 
 def _ticker_words(session: Session, text: str) -> list[str]:
@@ -331,12 +345,17 @@ def _keyword_hits(
     limit: int,
     form_type: str | None,
     cik: int | None,
+    since: date | None,
+    until: date | None,
 ) -> list[SearchHit]:
     rank = sa.func.ts_rank_cd(FilingSearch.tsv, tsquery).label("rank")
     query = (
         sa.select(FilingSearch.accession_no, rank, Filing.form_type)
         .join(Filing, Filing.accession_no == FilingSearch.accession_no)
-        .where(FilingSearch.tsv.bool_op("@@")(tsquery), *_filters(form_type=form_type, cik=cik))
+        .where(
+            FilingSearch.tsv.bool_op("@@")(tsquery),
+            *_filters(form_type=form_type, cik=cik, since=since, until=until),
+        )
         .order_by(rank.desc(), Filing.filed_at.desc(), FilingSearch.accession_no)
         .limit(limit)
     )
@@ -352,6 +371,8 @@ def semantic_search(
     limit: int = 20,
     form_type: str | None = None,
     cik: int | None = None,
+    since: date | None = None,
+    until: date | None = None,
 ) -> list[SearchHit]:
     # The HNSW index scan stops at its hnsw.ef_search (40) nearest vectors, and the filters apply
     # after it: without iterative scans, a form or company filter returns only those of the 40
@@ -364,7 +385,10 @@ def semantic_search(
     query = (
         sa.select(FilingEmbedding.accession_no, distance, Filing.form_type)
         .join(Filing, Filing.accession_no == FilingEmbedding.accession_no)
-        .where(FilingEmbedding.model == model, *_filters(form_type=form_type, cik=cik))
+        .where(
+            FilingEmbedding.model == model,
+            *_filters(form_type=form_type, cik=cik, since=since, until=until),
+        )
         .order_by(distance, FilingEmbedding.accession_no)
         .limit(limit)
     )
@@ -400,15 +424,32 @@ def hybrid_search(
     limit: int = 20,
     form_type: str | None = None,
     cik: int | None = None,
+    since: date | None = None,
+    until: date | None = None,
 ) -> list[SearchHit]:
     """The top HYBRID_CANDIDATES of keyword and of semantic search, merged by reciprocal rank
     fusion. `limit` only cuts the merged list, so a page never changes the order.
 
     SEMANTIC_FORM_WEIGHTS apply when forms compete: with a `form_type` filter, they would only
     shift the balance between keyword and semantic matches."""
-    keyword = keyword_search(session, text, limit=HYBRID_CANDIDATES, form_type=form_type, cik=cik)
+    keyword = keyword_search(
+        session,
+        text,
+        limit=HYBRID_CANDIDATES,
+        form_type=form_type,
+        cik=cik,
+        since=since,
+        until=until,
+    )
     semantic = semantic_search(
-        session, embedding, model=model, limit=HYBRID_CANDIDATES, form_type=form_type, cik=cik
+        session,
+        embedding,
+        model=model,
+        limit=HYBRID_CANDIDATES,
+        form_type=form_type,
+        cik=cik,
+        since=since,
+        until=until,
     )
     weights = [{}, SEMANTIC_FORM_WEIGHTS] if form_type is None else []
     return reciprocal_rank_fusion(keyword, semantic, form_weights=weights)[:limit]

@@ -2,6 +2,7 @@ import { screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { describe, expect, it } from 'vitest'
 import { filing } from '../test/data'
+import { isoDateDaysAgo } from '../lib/format'
 import { mockApi, renderRoute } from '../test/render'
 
 describe('SearchPage', () => {
@@ -77,6 +78,7 @@ describe('SearchPage', () => {
     expect(input).toHaveAccessibleDescription(/quoted phrases/)
     await userEvent.type(input, 'buyback')
     await userEvent.selectOptions(screen.getByLabelText('Form type'), '8-K')
+    await userEvent.selectOptions(screen.getByLabelText('Filed'), 'Past month')
     await userEvent.click(screen.getByRole('button', { name: 'Search' }))
 
     expect(
@@ -89,8 +91,11 @@ describe('SearchPage', () => {
     expect(screen.getByRole('button', { name: 'Search' })).toHaveFocus()
     expect(screen.getByLabelText('Search for')).toHaveValue('buyback')
     expect(screen.getByLabelText('Match')).toHaveValue('hybrid')
-    expect(router.state.location.search).toBe('?q=buyback&mode=hybrid&form=8-K')
+    expect(router.state.location.search).toBe(
+      '?q=buyback&mode=hybrid&form=8-K&filed=30',
+    )
     expect(requests[0].searchParams.get('form_type')).toBe('8-K')
+    expect(requests[0].searchParams.get('since')).toBe(isoDateDaysAgo(30))
   })
 
   it("fills the form from the header's search box", async () => {

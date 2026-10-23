@@ -4,7 +4,16 @@ from typing import Annotated, Literal
 from fastapi import APIRouter, Depends, Query, Request, Response
 
 from filings_api.embedding_cache import QueryEmbeddingCache
-from filings_api.queries import CikFilter, EmbedderDep, SessionDep, filing_select, to_filing_out
+from filings_api.queries import (
+    CikFilter,
+    EmbedderDep,
+    SessionDep,
+    Since,
+    Until,
+    check_dates,
+    filing_select,
+    to_filing_out,
+)
 from filings_api.schemas import SearchResponse, SearchResultOut, SnippetPartOut
 from filings_common.db import Filing
 from filings_common.embeddings import Embedder, EmbeddingError
@@ -56,12 +65,15 @@ def search(
     mode: Literal["hybrid", "keyword", "semantic"] = "hybrid",
     form_type: str | None = None,
     cik: CikFilter = None,
+    since: Since = None,
+    until: Until = None,
     limit: Annotated[int, Query(ge=1, le=50)] = 20,
 ) -> SearchResponse:
     """Keyword search understands quotes, `OR`, and `-word`, and finds a company's filings by its
     ticker typed in capitals (`COST`; `costs` is only a word). Semantic search matches meaning
     ("leadership change" finds CEO appointments). Hybrid, the default, combines both. Without a
     working embedding model, semantic and hybrid fall back to keywords (`degraded: true`)."""
+    check_dates(since, until)
     vector = None
     if mode != "keyword" and embedder is not None:
         vector = query_vector(embedder, query_embeddings, q)
@@ -73,16 +85,33 @@ def search(
     hits: list[SearchHit]
     if vector is None or embedder is None:
         used: Literal["keyword", "semantic", "hybrid"] = "keyword"
-        hits = keyword_search(session, q, limit=limit, form_type=form_type, cik=cik)
+        hits = keyword_search(
+            session, q, limit=limit, form_type=form_type, cik=cik, since=since, until=until
+        )
     elif mode == "semantic":
         used = "semantic"
         hits = semantic_search(
-            session, vector, model=embedder.model, limit=limit, form_type=form_type, cik=cik
+            session,
+            vector,
+            model=embedder.model,
+            limit=limit,
+            form_type=form_type,
+            cik=cik,
+            since=since,
+            until=until,
         )
     else:
         used = "hybrid"
         hits = hybrid_search(
-            session, q, vector, model=embedder.model, limit=limit, form_type=form_type, cik=cik
+            session,
+            q,
+            vector,
+            model=embedder.model,
+            limit=limit,
+            form_type=form_type,
+            cik=cik,
+            since=since,
+            until=until,
         )
 
     rows = session.execute(

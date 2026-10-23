@@ -51,6 +51,26 @@ def test_filters(client: TestClient, ids: Any) -> None:
     ]
 
 
+@pytest.mark.parametrize(
+    ("params", "expected"),
+    [
+        ({"since": "2026-09-29"}, ["form4", "msft_8k"]),
+        ({"until": "2026-09-28"}, ["apple_8k"]),
+        ({"since": "2026-09-29", "until": "2026-09-29"}, ["msft_8k"]),  # both included
+    ],
+)
+def test_filing_dates(
+    client: TestClient, ids: Any, params: dict[str, str], expected: list[str]
+) -> None:
+    page = client.get("/filings", params=params).json()
+    assert accessions(page) == [getattr(ids, name) for name in expected]
+
+
+def test_dates_out_of_order(client: TestClient) -> None:
+    response = client.get("/filings", params={"since": "2026-10-01", "until": "2026-09-01"})
+    assert response.status_code == 422
+
+
 def test_form_4_detail(client: TestClient, ids: Any) -> None:
     detail = client.get(f"/filings/{ids.form4}").json()
     assert detail["summary"]["provider"] == "template"

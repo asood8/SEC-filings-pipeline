@@ -2,10 +2,11 @@
 reporting owners, and a company looked up by ticker."""
 
 from collections.abc import Iterator, Mapping, Sequence
+from datetime import date
 from typing import Annotated, Any
 
 import sqlalchemy as sa
-from fastapi import Depends, Query, Request
+from fastapi import Depends, HTTPException, Query, Request
 from sqlalchemy.orm import Session, sessionmaker
 
 from filings_api.schemas import FilingOut, ReportingOwnerOut
@@ -30,6 +31,13 @@ SessionDep = Annotated[Session, Depends(get_session)]
 EmbedderDep = Annotated[Embedder | None, Depends(get_embedder)]
 # CIKs have at most 10 digits; a bigger number would overflow the bigint column (a 500).
 CikFilter = Annotated[int | None, Query(ge=1, le=9_999_999_999)]
+Since = Annotated[date | None, Query(description="Only filings filed on or after this date.")]
+Until = Annotated[date | None, Query(description="Only filings filed on or before this date.")]
+
+
+def check_dates(since: date | None, until: date | None) -> None:
+    if since is not None and until is not None and since > until:
+        raise HTTPException(status_code=422, detail="since is after until")
 
 
 def filing_select() -> sa.Select[Filing, str, str, str | None]:

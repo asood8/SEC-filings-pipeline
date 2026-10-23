@@ -1259,6 +1259,10 @@ export interface operations {
             query?: {
                 cik?: number | null;
                 form_type?: string | null;
+                /** @description Only filings filed on or after this date. */
+                since?: string | null;
+                /** @description Only filings filed on or before this date. */
+                until?: string | null;
                 limit?: number;
                 cursor?: string | null;
             };
@@ -1551,6 +1555,10 @@ export interface operations {
                 mode?: "hybrid" | "keyword" | "semantic";
                 form_type?: string | null;
                 cik?: number | null;
+                /** @description Only filings filed on or after this date. */
+                since?: string | null;
+                /** @description Only filings filed on or before this date. */
+                until?: string | null;
                 limit?: number;
             };
             header?: never;

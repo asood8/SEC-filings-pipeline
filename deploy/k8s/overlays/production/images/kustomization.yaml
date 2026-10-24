@@ -16,16 +16,16 @@ kind: Component
 images:
 - name: filings-api
   newName: ghcr.io/asood8/filings-api
-  newTag: 0.1.0
+  newTag: sha-ab5f1f1
 - name: filings-discovery
   newName: ghcr.io/asood8/filings-discovery
-  newTag: 0.1.0
+  newTag: sha-ab5f1f1
 - name: filings-notifier
   newName: ghcr.io/asood8/filings-notifier
-  newTag: 0.1.0
+  newTag: sha-ab5f1f1
 - name: filings-parser
   newName: ghcr.io/asood8/filings-parser
-  newTag: 0.1.0
+  newTag: sha-ab5f1f1
 - name: filings-summarizer
   newName: ghcr.io/asood8/filings-summarizer
-  newTag: 0.1.0
+  newTag: sha-ab5f1f1

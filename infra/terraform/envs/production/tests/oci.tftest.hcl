@@ -355,3 +355,51 @@ run "refuses_a_git_url_with_credentials" {
 
   expect_failures = [var.git_repo_url]
 }
+
+run "quotas_cap_the_tenancy_at_the_vm_and_the_free_storage" {
+  command = plan
+
+  module {
+    source = "../../modules/oci"
+  }
+
+  assert {
+    condition = alltrue([
+      for statement in [
+        "zero compute-core quotas in tenancy",
+        "set compute-core quota standard-a1-core-count to 2 in tenancy",
+        "set compute-core quota standard-a1-core-regional-count to 2 in tenancy",
+        "set compute-memory quota standard-a1-memory-regional-count to 12 in tenancy",
+        "set block-storage quota total-storage-gb to 200 in tenancy",
+      ] : contains(oci_limits_quota.always_free.statements, statement)
+    ])
+    error_message = "The quota must allow only the VM's A1 cores and memory, and the free storage."
+  }
+
+  assert {
+    condition     = length(oci_budget_budget.stay_free) == 0
+    error_message = "Without alert emails, no budget is created."
+  }
+}
+
+run "a_budget_alerts_at_the_first_cent" {
+  command = plan
+
+  module {
+    source = "../../modules/oci"
+  }
+
+  variables {
+    budget_alert_emails = ["ops@example.com"]
+  }
+
+  assert {
+    condition     = oci_budget_budget.stay_free[0].amount == 1 && oci_budget_budget.stay_free[0].targets == tolist(["ocid1.tenancy.oc1..mock"])
+    error_message = "A $1 monthly budget on the whole tenancy."
+  }
+
+  assert {
+    condition     = oci_budget_alert_rule.any_spend[0].type == "ACTUAL" && oci_budget_alert_rule.any_spend[0].threshold == 1
+    error_message = "The first alert is on 1% of actual spend: the first cent."
+  }
+}

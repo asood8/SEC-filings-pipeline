@@ -83,7 +83,7 @@ Four layers, all of which run without credentials:
    must fit in `free_block_storage_gbs` (200 by default; lower it if the tenancy has other
    volumes), and Atlas gets a second M0/TENANT check on the cluster itself.
 3. **`check-free-tier.sh`**, run by `make tf-check` and CI, fails if any `.tf` file declares a
-   resource type that isn't on its allowlist of the 24 types above, or uses a module from a
+   resource type that isn't on its allowlist of the 27 types above, or uses a module from a
    registry or URL. Adding a type (a load balancer, a NAT gateway, a paid Cloudflare feature) then
    has to be a deliberate change to that list.
 4. **Tests** (`terraform test`, below) prove the first two layers work: each paid configuration
@@ -91,9 +91,10 @@ Four layers, all of which run without credentials:
    dedicated Atlas provider, Infrequent Access storage, SSH or Atlas open to the internet) must
    fail the plan.
 
-The account settings matter as much as the code: the Oracle account must stay on the Free tier
-(an upgraded account bills what exceeds the allowance instead of refusing it), and Cloudflare
-asks for a payment method when R2 is enabled, even on the free tier (accepted 2026-10-21).
+The account settings matter as much as the code: an upgraded Oracle account bills what exceeds
+the allowance instead of refusing it, so the upgrade comes with quotas (below, "Pay As You Go"),
+and Cloudflare asks for a payment method when R2 is enabled, even on the free tier (accepted
+2026-10-21).
 
 **Usage, not just configuration (added 2026-10-22).** The layers above keep every resource free,
 but R2 also bills by use past its monthly allowance (10 GB of storage, 1 million Class A and 10
@@ -104,6 +105,29 @@ API with a token that can only read analytics, and exports the fraction of each 
 Grafana alerts past half of any of them, and if the job stops reporting. It counts on the safe
 side: current storage, operations over 30 days, and unknown operation types as Class A.
 Cloudflare's own budget alerts exist for pay-as-you-go accounts only, and don't cap either.
+
+### Pay As You Go (added 2026-10-24)
+
+Ashburn had no free A1 capacity for two days and over 600 attempts (`scripts/retry-vm-capacity.sh`,
+runbook "Oracle idle reclamation and capacity errors"). Oracle gives Pay As You Go accounts
+priority for capacity, and doesn't reclaim their idle Always Free VMs, so the account is
+upgraded (the user's decision, 2026-10-24). Always Free resources stay free on it; what changes is
+that a paid resource is billed instead of refused. Two more guardrails, in
+`modules/oci/guardrails.tf`, keep the project at $0:
+
+5. **Quotas** (`oci_limits_quota`), enforced by Oracle on every request, from anyone: compute
+   cores and memory are zero except Ampere A1, which is capped at the VM's OCPUs and memory both
+   per availability domain and region-wide (the limit exists at both levels, and only the
+   regional one holds across Ashburn's three domains); block storage at the free allowance; and
+   the database, MySQL, load balancer, and file storage services, which this project doesn't
+   use, at zero. They come from the same variables as the VM, so the two can't drift apart.
+6. **A budget** of $1 a month on the whole tenancy (`oci_budget_budget`), with an email at 1% of
+   actual spend (the first cent) and when the month's forecast reaches it. Oracle has no
+   spending cap: a budget only alerts, which is why the quotas come first. The recipients are
+   in the gitignored `production.tfvars` (`oci_budget_alert_emails`); without them, no budget is
+   created.
+
+Both are free, so they are on `check-free-tier.sh`'s allowlist.
 
 ### Bootstrapping the VM: cloud-init
 

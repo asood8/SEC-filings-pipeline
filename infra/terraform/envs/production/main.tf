@@ -23,6 +23,7 @@ module "oci" {
   ssh_authorized_keys        = var.ssh_authorized_keys
   k3s_version                = var.k3s_version
   git_revision               = var.git_revision
+  budget_alert_emails        = var.oci_budget_alert_emails
 
   freeform_tags = {
     project    = "sec-filings-pipeline"

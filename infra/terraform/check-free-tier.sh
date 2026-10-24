@@ -20,6 +20,9 @@ oci_core_subnet
 oci_core_instance
 oci_core_volume
 oci_core_volume_attachment
+oci_limits_quota
+oci_budget_budget
+oci_budget_alert_rule
 cloudflare_zero_trust_tunnel_cloudflared
 cloudflare_zero_trust_tunnel_cloudflared_config
 cloudflare_dns_record

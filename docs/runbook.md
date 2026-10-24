@@ -615,8 +615,11 @@ that availability domain right now. The configuration is fine.
   tf-plan` and `make tf-apply`. Ashburn took over 600 attempts across two days in October 2026
   without capacity; the laptop must stay awake for it.
 - Don't terminate or `-replace` a working VM casually: a new one needs capacity again.
-- Don't upgrade the account to pay-as-you-go to get capacity: the project must cost $0, and an
-  upgraded account bills what exceeds the free allowance instead of refusing it.
+- The account was upgraded to Pay As You Go on 2026-10-24 for capacity (ADR-0018, "Pay As You
+  Go"). It bills what exceeds the free allowance instead of refusing it, so quotas cap the
+  tenancy at what this project uses and a $1 budget emails at the first cent. If that email
+  comes, open Billing & Cost Management, Cost Analysis, find what was charged, and remove it;
+  don't lift a quota to make something fit.
 - If capacity never comes, brief §11 lists the fallbacks.
 
 ## Backups and restores

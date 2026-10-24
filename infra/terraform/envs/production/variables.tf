@@ -30,6 +30,13 @@ variable "oci_compartment_ocid" {
   default     = null
 }
 
+variable "oci_budget_alert_emails" {
+  description = "Who Oracle's budget emails at the first cent of spend (set in production.tfvars)."
+  type        = list(string)
+  default     = []
+  sensitive   = true
+}
+
 variable "oci_availability_domain_number" {
   description = "Availability domain (1-3) for the VM; change it if A1 capacity is exhausted in one."
   type        = number

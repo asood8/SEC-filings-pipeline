@@ -47,9 +47,11 @@ before applying), so a typo fails the plan instead of creating a bill:
   when `web/` changes, with previews off.
 - **Access:** SSH and Atlas never open to `0.0.0.0/0` (nothing wider than a /16).
 
-The accounts matter as much as the code: **never upgrade the Oracle account to pay-as-you-go**
-(an upgraded account bills what exceeds the allowance instead of refusing it), and set a
-budget alert in each account that has a card on file.
+The accounts matter as much as the code. The Oracle account is on Pay As You Go (2026-10-24, for
+capacity), which bills what exceeds the allowance instead of refusing it, so `modules/oci`
+creates quotas that cap the tenancy at the Always Free amounts and a $1 budget that emails at
+the first cent (set `oci_budget_alert_emails` in `production.tfvars`; ADR-0018, "Pay As You Go").
+Set a budget alert in each other account that has a card on file.
 
 ## What a first apply needs
 

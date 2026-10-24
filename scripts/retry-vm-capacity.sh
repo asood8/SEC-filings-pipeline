@@ -36,6 +36,8 @@ set +a
 cd "$ENV_DIR" || exit 1
 
 INSTANCE=module.oci.oci_core_instance.k3s
+# Throttling, from Oracle or from R2 (where the state lives): wait THROTTLE_WAIT and try again.
+THROTTLED='TooManyRequests|Status(Code)?: 429|Reduce your rate'
 
 # The plan checks: an attempt may create the instance and nothing else ("instance"); finishing
 # may add only what depends on it ("finish"). Anything more stops the script.
@@ -103,6 +105,11 @@ while [ "$(date +%s)" -lt "$deadline" ]; do
   echo "$(date -u +%FT%TZ) attempt $attempt, availability domain $domain"
   if ! terraform plan -input=false -var-file=production.tfvars -target="$INSTANCE" \
     -var "oci_availability_domain_number=$domain" -out=retry.tfplan >"$WORK/plan.out" 2>&1; then
+    if grep -qE "$THROTTLED" "$WORK/plan.out"; then
+      echo "  throttled while planning; next try in ${THROTTLE_WAIT}s"
+      sleep "$THROTTLE_WAIT"
+      continue
+    fi
     echo "plan failed:"
     grep -A6 'Error' "$WORK/plan.out" | head -20
     exit 1
@@ -125,7 +132,7 @@ while [ "$(date +%s)" -lt "$deadline" ]; do
     sleep "$INTERVAL"
     continue
   fi
-  if grep -qE 'TooManyRequests|Status: 429' "$WORK/apply.out"; then
+  if grep -qE "$THROTTLED" "$WORK/apply.out"; then
     echo "  throttled; next try in ${THROTTLE_WAIT}s"
     sleep "$THROTTLE_WAIT"
     continue

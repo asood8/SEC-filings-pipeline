@@ -18,6 +18,8 @@ module "oci" {
   tenancy_ocid               = var.oci_tenancy_ocid
   compartment_ocid           = coalesce(var.oci_compartment_ocid, var.oci_tenancy_ocid)
   availability_domain_number = var.oci_availability_domain_number
+  instance_ocpus             = var.oci_instance_ocpus
+  instance_memory_gbs        = var.oci_instance_memory_gbs
   data_volume_size_gbs       = var.data_volume_size_gbs
   ssh_ingress_cidr           = var.ssh_ingress_cidr
   ssh_authorized_keys        = var.ssh_authorized_keys

@@ -16,6 +16,9 @@ resources:
 # branch (images/kustomization.yaml).
 components:
   - images
+  # The VM's smaller size (1 OCPU, 6 GB): no local LLM or embedding server. Delete this line once
+  # the VM has 2 OCPU and 12 GB (docs/adr/0020).
+  - ../../components/small-vm
 
 # Replica counts for the workloads that can run more than one copy. The rest must stay at one:
 # the data stores, the LLM servers, the outbox relay, and the summarizer (see each manifest).

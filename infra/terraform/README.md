@@ -16,6 +16,7 @@ modules/cloudflare/   tunnel to the API, DNS records, R2 buckets, Pages project
 modules/atlas/        project, M0 cluster, database user, IP access list
 modules/grafana/      dashboards and alert rules from deploy/grafana
 envs/production/      the root module that wires them together; tests/ holds the tests
+tools/capacity-report/  asks Oracle whether an A1 size fits, creating nothing (ADR-0020)
 check-free-tier.sh    fails on any resource type not on the free-tier allowlist
 ```
 
@@ -137,13 +138,16 @@ make tf-plan     # terraform plan -var-file=production.tfvars -out=production.tf
 make tf-apply    # terraform apply production.tfplan: exactly what the plan showed
 ```
 
-Read the plan before applying it: one A1 instance with 2 OCPU and 12 GB, one 100 GB volume,
+Read the plan before applying it: one A1 instance with 2 OCPU and 12 GB (or 1 and 6 with
+`oci_instance_ocpus` and `oci_instance_memory_gbs`; ADR-0020), one 100 GB volume,
 networking, two R2 buckets, a tunnel, an M0 cluster, and the Grafana folder, dashboards, and rule
 groups, plus two DNS records and a Pages project once `domain` is set. Nothing else.
 
 - **"Out of host capacity"** when creating the instance is Oracle running out of A1 hosts, not
   a configuration error. Everything else is already created; run `terraform apply` again later,
-  or try another `oci_availability_domain_number` in regions that have several.
+  or try another `oci_availability_domain_number` in regions that have several, or let
+  `scripts/retry-vm-capacity.sh` retry at both sizes and grow a smaller VM later
+  ([runbook](../../docs/runbook.md#oracle-idle-reclamation-and-capacity-errors)).
 - **The VM bootstraps itself** in roughly 10 minutes: it mounts the block volume, installs k3s
   and Argo CD, and Argo CD starts syncing (the application from the `production` branch; see
   [The repository](#the-repository)). Its log is `/var/log/cloud-init-output.log`, readable

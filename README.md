@@ -275,7 +275,7 @@ uv run filings-rebuild-key-fields --form-type 4  # refill Form 4 key fields from
 | `make web-types` | Regenerate the website's API types from the API's OpenAPI schema |
 | `make tf-check` / `make tf-fmt` | Check the Terraform code (fmt, validate, tests on mock providers, free-tier allowlist) / format it |
 | `make tf-init` / `make tf-plan` / `make tf-apply` | Production: connect to the state in R2, plan from `production.tfvars` into `production.tfplan`, apply exactly that plan ([infra/terraform/README.md](infra/terraform/README.md#first-apply)) |
-| `scripts/retry-vm-capacity.sh` | Retry creating the A1 VM through "Out of host capacity" every minute, rotating availability domains and applying only plans that create the instance, then finish it (volume, attachment, Atlas access) ([runbook](docs/runbook.md#oracle-idle-reclamation-and-capacity-errors)) |
+| `scripts/retry-vm-capacity.sh` | Retry creating the A1 VM through "Out of host capacity" every minute, at 2 OCPU/12 GB or 1/6 (`SIZES`), rotating availability domains and applying only plans that create the instance, then finish it (volume, attachment, Atlas access) and grow a smaller VM once a capacity report says there is room ([runbook](docs/runbook.md#oracle-idle-reclamation-and-capacity-errors), ADR-0020) |
 | `uv run filings-r2-usage` | Check R2's free tier with Cloudflare's own numbers (`CLOUDFLARE_ACCOUNT_ID`, `CLOUDFLARE_ANALYTICS_TOKEN`); a daily job in production |
 | `make k8s-tools` / `make k8s-check` | Install kubectl, kubeconform, and kubeseal (checksums verified) / render and validate the Kubernetes manifests |
 | `make obs-up` / `make obs-down` | Start / stop the optional local trace and metrics viewer (Grafana on :3001) |

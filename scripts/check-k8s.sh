@@ -35,6 +35,9 @@ SEALED_SECRETS_SHA256=ac8aabccdd9110430d117501705818115b2ab0993700a9c118d4d42cf4
 
 KUSTOMIZATIONS=(
   deploy/k8s/overlays/production
+  # Every workload, the local models too: production leaves them out while it lists the
+  # small-vm component (docs/adr/0020).
+  deploy/k8s/base
   deploy/k8s/platform/sealed-secrets
   deploy/argocd
   deploy/argocd/install

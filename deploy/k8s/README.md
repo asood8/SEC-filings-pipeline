@@ -1,7 +1,10 @@
 # Kubernetes manifests
 
 The production system on one k3s node (Oracle Cloud Ampere A1: arm64, 2 OCPU, 12 GB), as
-Kustomize directories that Argo CD keeps in sync with git. You edit them on `main`; the
+Kustomize directories that Argo CD keeps in sync with git. Until Oracle has room for that size,
+the VM may have 1 OCPU and 6 GB; the production overlay then lists `components/small-vm`, which
+runs everything but the local LLM and the embedding server (8-K summaries from Gemini,
+keyword-only search) within the smaller budget ([ADR-0020](../../docs/adr/0020-start-small-grow-later.md)). You edit them on `main`; the
 application is deployed from the `production` branch, which the image workflow moves after each
 push to `main` that changes the code or the manifests, once the images are built and CI has
 passed ([Deploying](#deploying)). Why it is built this way, the

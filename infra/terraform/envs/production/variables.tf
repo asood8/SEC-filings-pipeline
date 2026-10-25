@@ -36,6 +36,18 @@ variable "oci_availability_domain_number" {
   default     = 1
 }
 
+variable "oci_instance_ocpus" {
+  description = "OCPUs for the VM: 2, or 1 while Oracle has no capacity for 2 (docs/adr/0020). The module refuses more than the free allowance."
+  type        = number
+  default     = 2
+}
+
+variable "oci_instance_memory_gbs" {
+  description = "Memory for the VM in GB: 12, or 6 with 1 OCPU (docs/adr/0020). The module refuses more than the free allowance."
+  type        = number
+  default     = 12
+}
+
 variable "data_volume_size_gbs" {
   description = "Size of the block volume for k3s's persistent volumes, in GB (boot + data must stay within 200 GB)."
   type        = number

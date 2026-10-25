@@ -132,6 +132,19 @@ the 2 cores.
 `tests/test_k8s_manifests.py` recomputes these totals from the rendered manifests and fails if
 they exceed the budget, so adding a workload means trimming another or revisiting the budget.
 
+**At the smaller size (added 2026-10-25, ADR-0020).** While the VM has 1 OCPU and 6 GB, the
+production overlay lists `deploy/k8s/components/small-vm`. It drops the llm and embeddings
+workloads and trims:
+
+- the CPU requests of api to 50m and redpanda to 100m;
+- the memory limits of postgres to 640 Mi, otel-collector to 192 Mi (above its 143 MiB cold
+  start), valkey to 160 Mi, and cloudflared to 96 Mi.
+
+Long-running pods then total 0.44 cores and 3.47 Gi at their limits. With the same jobs, Argo CD,
+and k3s, that comes to 0.92 of 1 core and 5.22 GiB of a 5.25 GiB budget: 6 GiB less 768 MiB for
+the OS and Oracle's agent. The tests render production at both sizes, so the full size stays
+checked while the smaller one runs.
+
 **How the numbers were measured.** On the dev laptop (amd64), with each container run as the
 manifests run it (same UID, read-only root filesystem, no capabilities, Docker memory and CPU
 caps), reading the kernel's `memory.peak` for the container:

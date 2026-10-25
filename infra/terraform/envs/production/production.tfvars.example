@@ -18,6 +18,8 @@ oci_tenancy_ocid = "ocid1.tenancy.oc1..replace-me"
 # oci_compartment_ocid = "ocid1.compartment.oc1..replace-me"  # default: the root compartment
 # oci_config_file_profile = "DEFAULT"
 # oci_availability_domain_number = 1  # try 2 or 3 after "Out of host capacity"
+# oci_instance_ocpus = 2               # or 1 with 6 GB until 2 is available (docs/adr/0020)
+# oci_instance_memory_gbs = 12
 # data_volume_size_gbs = 100           # boot (50) + data must stay within 200 GB
 
 # SSH stays closed unless you set a source range; open it only while you need it.

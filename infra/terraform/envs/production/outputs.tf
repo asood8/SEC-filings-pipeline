@@ -19,6 +19,16 @@ output "vm_image" {
   value       = module.oci.image_name
 }
 
+output "vm_size" {
+  description = "The VM's OCPUs and memory in GB (scripts/retry-vm-capacity.sh grows a smaller one)."
+  value       = module.oci.size
+}
+
+output "vm_availability_domain" {
+  description = "Availability domain of the VM and its data volume."
+  value       = module.oci.availability_domain
+}
+
 output "ssh_command" {
   description = "How to reach the VM while SSH is open."
   value       = var.ssh_ingress_cidr == null ? "SSH is closed (set ssh_ingress_cidr to open it)" : "ssh ubuntu@${module.oci.public_ip}"

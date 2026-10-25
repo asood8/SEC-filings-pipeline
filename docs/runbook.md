@@ -632,9 +632,48 @@ that availability domain right now. The configuration is fine.
   `-var` for `region`, `compartment_ocid`, `availability_domain`, `ocpus`, and `memory_gbs`; it
   creates nothing).
 - Don't terminate or `-replace` a working VM casually: a new one needs capacity again.
-- Don't upgrade the account to pay-as-you-go to get capacity: the project must cost $0, and an
-  upgraded account bills what exceeds the free allowance instead of refusing it.
+- Upgrading the account to Pay As You Go gets priority for capacity, but it bills what exceeds
+  the free allowance instead of refusing it. It is the user's decision, and only with the
+  guardrails below in place.
 - If capacity never comes, brief §11 lists the fallbacks.
+
+## Guardrails against charges
+
+The free Oracle account refuses whatever exceeds Always Free. Its 30-day trial and a Pay As You Go
+upgrade don't: they bill it. Seven layers keep the project at $0 either way (ADR-0018):
+
+1. Variable validations refuse paid settings in Terraform.
+2. Preconditions keep boot + data within 200 GB.
+3. `check-free-tier.sh` refuses resource types not known to be free.
+4. The tests prove the first three work (all in `make tf-check` and CI).
+5. A **quota policy**, `filings-always-free` in the root compartment, which Oracle enforces:
+   - Ampere A1 only, at most 2 OCPU and 12 GB in the whole tenancy;
+   - block storage at 200 GB and two volumes per availability domain, no backups or replicas;
+   - 35 unused services at zero.
+6. A **$1 monthly budget** that emails `oci_budget_alert_emails` at the first cent charged and
+   when the month's forecast reaches $1. It stops nothing.
+7. **`scripts/retry-vm-capacity.sh` refuses to run** without the quota policy, and its plan
+   checks let it create only the VM, finish only its volume, attachment, and Atlas entry, and
+   grow only the VM in place.
+
+What they leave open:
+- Storage spread over several availability domains: there is no region-wide quota, so layer 2
+  and the budget cover it.
+- Services without quotas, such as MySQL.
+- Outbound data past 10 TB a month, far beyond this traffic.
+
+**Before upgrading to Pay As You Go:**
+- Governance & Administration, Quota Policies: `filings-always-free` exists, with its
+  statements.
+- Billing & Cost Management, Budgets: `filings-stay-free` exists, with both alert rules and the
+  right email.
+- Cost Analysis shows $0 for the month.
+- `make tf-plan` shows no change to the quota policy or the budget.
+
+**After upgrading:**
+- Check Cost Analysis daily for a week.
+- If the budget's email comes, find the charge in Cost Analysis and remove what caused it.
+- Never lift a quota to make something fit: anything that needs more costs money.
 
 ## Backups and restores
 

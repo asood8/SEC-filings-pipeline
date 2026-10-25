@@ -21,6 +21,8 @@ oci_tenancy_ocid = "ocid1.tenancy.oc1..replace-me"
 # oci_instance_ocpus = 2               # or 1 with 6 GB until 2 is available (docs/adr/0020)
 # oci_instance_memory_gbs = 12
 # data_volume_size_gbs = 100           # boot (50) + data must stay within 200 GB
+# Who Oracle's $1 budget emails at the first cent of spend (ADR-0018). Empty: no budget.
+# oci_budget_alert_emails = ["you@example.com"]
 
 # SSH stays closed unless you set a source range; open it only while you need it.
 # ssh_ingress_cidr    = "203.0.113.7/32"

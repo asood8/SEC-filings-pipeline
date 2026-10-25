@@ -176,7 +176,9 @@ Each phase ends with something runnable, tests passing, and docs updated. Check 
   - Ampere A1 allowance is 2 OCPU + 12 GB RAM total (halved in June 2026), plus 200 GB block storage.
   - Instances must be in the tenancy's home region, and "out of host capacity" errors are common.
   - Idle instances may be reclaimed if CPU (95th percentile), network, and memory are all under 20% for 7 days.
-  - Stay on the free account (don't upgrade to pay-as-you-go).
+  - Stay on the free account. If capacity takes weeks, the user may upgrade to pay-as-you-go
+    for priority, but only with the quota policy and $1 budget applied first
+    ([runbook](runbook.md#guardrails-against-charges), ADR-0018).
   - Includes 3,000 free emails/month through Email Delivery.
 - **MongoDB Atlas M0:** 512 MB, free forever; auto-pauses after 60 days with zero connections.
 - **Grafana Cloud Free:** 10k active metric series, 50 GB logs, 50 GB traces, 14-day retention, no credit card.

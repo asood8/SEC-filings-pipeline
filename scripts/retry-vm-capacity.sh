@@ -19,7 +19,9 @@
 # already there, it goes straight to growing.
 #
 # The script runs `terraform apply` unattended, so start it only after a reviewed first apply
-# created everything else (docs/runbook.md, "Oracle idle reclamation and capacity errors").
+# created everything else (docs/runbook.md, "Oracle idle reclamation and capacity errors"). It
+# refuses to start without the quota policy that caps the tenancy at the free allowance
+# (modules/oci/guardrails.tf): unattended applies on an account that can be billed need it.
 #
 #   scripts/retry-vm-capacity.sh                 # every minute, for up to 24 hours
 #   INTERVAL=30 MAX_HOURS=72 SIZES="2:12" scripts/retry-vm-capacity.sh
@@ -314,6 +316,11 @@ deadline=$(($(date +%s) + MAX_HOURS * 3600))
 if ! terraform state list -no-color >"$WORK/state.out" 2>&1; then
   echo "can't read the state:"
   tail -20 "$WORK/state.out"
+  exit 1
+fi
+if ! grep -qx "module.oci.oci_limits_quota.always_free" "$WORK/state.out"; then
+  echo "refusing to run: the quota policy that caps the tenancy at the free allowance isn't applied"
+  echo "  (docs/runbook.md, \"Guardrails against charges\")"
   exit 1
 fi
 if ! grep -qx "$INSTANCE" "$WORK/state.out"; then

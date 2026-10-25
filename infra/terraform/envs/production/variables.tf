@@ -48,6 +48,13 @@ variable "oci_instance_memory_gbs" {
   default     = 12
 }
 
+variable "oci_budget_alert_emails" {
+  description = "Who Oracle's $1 budget emails at the first cent of spend (set in production.tfvars; ADR-0018)."
+  type        = list(string)
+  default     = []
+  sensitive   = true
+}
+
 variable "data_volume_size_gbs" {
   description = "Size of the block volume for k3s's persistent volumes, in GB (boot + data must stay within 200 GB)."
   type        = number

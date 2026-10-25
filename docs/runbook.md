@@ -607,7 +607,9 @@ that availability domain right now. The configuration is fine.
 - Or let `scripts/retry-vm-capacity.sh` do both: every minute it plans only the instance
   (`-target`) in the next availability domain, checks the plan creates nothing else, and applies
   it, for up to 24 hours (`INTERVAL`, `MAX_HOURS`; throttling, by Oracle or by R2 where the
-  state lives, waits `THROTTLE_WAIT` and tries again). An attempt takes about 12 seconds and
+  state lives, waits `THROTTLE_WAIT` and tries again; so does the network failing while it
+  plans, and it releases a plan lock it finds left on this machine by a plan that was cut off,
+  with no terraform running). An attempt takes about 12 seconds and
   touches nothing else. Once the instance exists it records the domain in `production.tfvars`
   and applies one more checked plan to finish the VM: its volume attachment, Atlas's entry for
   its IP, and the still-empty data volume moved to that domain if it was in another (the VM's

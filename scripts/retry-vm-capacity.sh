@@ -15,8 +15,9 @@
 #   INTERVAL=300 MAX_HOURS=48 DOMAINS=3 scripts/retry-vm-capacity.sh
 #
 # On success it records the availability domain in production.tfvars, so later plans keep the VM
-# where it is. Throttling (429) backs off for THROTTLE_WAIT seconds instead of stopping.
-# Credentials come from TF_ENV_FILE, like make tf-plan.
+# where it is. Throttling (429) backs off for THROTTLE_WAIT seconds instead of stopping, the
+# network failing while planning waits INTERVAL, and a plan lock this machine left behind is
+# released. Credentials come from TF_ENV_FILE, like make tf-plan.
 set -uo pipefail
 
 ROOT=$(cd "$(dirname "$0")/.." && pwd)
@@ -38,6 +39,26 @@ cd "$ENV_DIR" || exit 1
 INSTANCE=module.oci.oci_core_instance.k3s
 # Throttling, from Oracle or from R2 (where the state lives): wait THROTTLE_WAIT and try again.
 THROTTLED='TooManyRequests|Status(Code)?: 429|Reduce your rate'
+# The network failing (Wi-Fi dropping, the laptop waking up) while planning: a plan changes
+# nothing, so wait INTERVAL and try again. Not while applying, where Oracle may have created an
+# instance Terraform never heard back about: that still stops the script.
+NETWORK='dial tcp|i/o timeout|no such host|connection reset by peer|TLS handshake timeout'
+
+# A plan cut off (by the network, or by stopping the script) can leave its state lock behind,
+# and every later plan fails on it. A plan's lock taken by this user on this machine, with no
+# terraform running here, is stale, and plans don't write state, so releasing it is safe. Any
+# other lock stops the script.
+release_stale_lock() {
+  local id
+  if ! grep -q 'Error acquiring the state lock' "$WORK/plan.out" ||
+    ! grep -qE '^ *Operation: +OperationTypePlan$' "$WORK/plan.out" ||
+    ! grep -qE "^ *Who: +$(whoami)@$(hostname)$" "$WORK/plan.out" ||
+    pgrep -x terraform >/dev/null; then
+    return 1
+  fi
+  id=$(sed -nE 's/^ *ID: +([0-9a-f-]+)$/\1/p' "$WORK/plan.out" | head -1)
+  [ -n "$id" ] && terraform force-unlock -force "$id" >/dev/null
+}
 
 # The plan checks: an attempt may create the instance and nothing else ("instance"); finishing
 # may add only what depends on it ("finish"). Anything more stops the script.
@@ -103,11 +124,20 @@ while [ "$(date +%s)" -lt "$deadline" ]; do
   domain=$((attempt % DOMAINS + 1))
   attempt=$((attempt + 1))
   echo "$(date -u +%FT%TZ) attempt $attempt, availability domain $domain"
-  if ! terraform plan -input=false -var-file=production.tfvars -target="$INSTANCE" \
+  if ! terraform plan -input=false -no-color -var-file=production.tfvars -target="$INSTANCE" \
     -var "oci_availability_domain_number=$domain" -out=retry.tfplan >"$WORK/plan.out" 2>&1; then
     if grep -qE "$THROTTLED" "$WORK/plan.out"; then
       echo "  throttled while planning; next try in ${THROTTLE_WAIT}s"
       sleep "$THROTTLE_WAIT"
+      continue
+    fi
+    if grep -qE "$NETWORK" "$WORK/plan.out"; then
+      echo "  network trouble while planning; next try in ${INTERVAL}s"
+      sleep "$INTERVAL"
+      continue
+    fi
+    if release_stale_lock; then
+      echo "  released the stale lock of an earlier plan here; trying again"
       continue
     fi
     echo "plan failed:"

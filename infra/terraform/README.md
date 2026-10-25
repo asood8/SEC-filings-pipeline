@@ -47,10 +47,16 @@ before applying), so a typo fails the plan instead of creating a bill:
 - **Cloudflare:** R2's Standard class only, backups expire (at most 90 days); Pages builds only
   when `web/` changes, with previews off.
 - **Access:** SSH and Atlas never open to `0.0.0.0/0` (nothing wider than a /16).
+- **Spending** (`modules/oci/guardrails.tf`):
+  - a quota policy that Oracle enforces: A1 only, at most 2 OCPU and 12 GB in the tenancy;
+    block storage within the allowance; 35 unused services at zero;
+  - a $1 monthly budget that emails `oci_budget_alert_emails` at the first cent.
 
-The accounts matter as much as the code: **never upgrade the Oracle account to pay-as-you-go**
-(an upgraded account bills what exceeds the allowance instead of refusing it), and set a
-budget alert in each account that has a card on file.
+The accounts matter as much as the code. Keep the Oracle account on the free tier: an upgraded
+account bills what exceeds the allowance instead of refusing it. If it is ever upgraded for
+capacity, do it only with the quota policy and budget applied
+([runbook](../../docs/runbook.md#guardrails-against-charges)). Set a budget alert in each
+account that has a card on file.
 
 ## What a first apply needs
 

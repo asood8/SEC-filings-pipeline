@@ -86,15 +86,44 @@ Four layers, all of which run without credentials:
    resource type that isn't on its allowlist of the 24 types above, or uses a module from a
    registry or URL. Adding a type (a load balancer, a NAT gateway, a paid Cloudflare feature) then
    has to be a deliberate change to that list. Added since: `oci_core_compute_capacity_report`
-   (2026-10-25, ADR-0020), a question to Oracle about capacity that creates nothing.
+   (2026-10-25, ADR-0020), a question to Oracle about capacity that creates nothing; and
+   `oci_limits_quota`, `oci_budget_budget`, and `oci_budget_alert_rule` (2026-10-25, below),
+   which are free and exist to keep everything else free.
 4. **Tests** (`terraform test`, below) prove the first two layers work: each paid configuration
    (`ocpus = 4`, 24 GB, a non-A1 shape, 250 GB of volumes, Higher Performance storage, `M10`, a
    dedicated Atlas provider, Infrequent Access storage, SSH or Atlas open to the internet) must
    fail the plan.
 
-The account settings matter as much as the code: the Oracle account must stay on the Free tier
+The account settings matter as much as the code: the Oracle account stays on the Free tier
 (an upgraded account bills what exceeds the allowance instead of refusing it), and Cloudflare
 asks for a payment method when R2 is enabled, even on the free tier (accepted 2026-10-21).
+
+**Guardrails against charges (added 2026-10-25).** The A1 VM has waited days for capacity
+(ADR-0020), and the user may upgrade the Oracle account to Pay As You Go if it takes weeks:
+Oracle gives those accounts priority for capacity. Always Free resources stay free on them, but
+a paid resource is billed instead of refused, and Oracle has no spending cap. The free trial
+behaves the same while it lasts. So, applied before any upgrade (`modules/oci/guardrails.tf`):
+
+5. **A quota policy** (`oci_limits_quota`, `filings-always-free` in the root compartment), which
+   Oracle enforces on every request from anyone:
+   - Ampere A1 only, at most the free 2 OCPU and 12 GB, capped both per availability domain and
+     region-wide. The cap is fixed at the allowance, not at the VM's current size, so a smaller
+     VM can still grow (ADR-0020).
+   - Block storage at 200 GB and two volumes per availability domain, with no volume backups or
+     replicas.
+   - 35 services this project doesn't use, and which support quotas, at zero. They were checked
+     against Oracle's Limits API; MySQL has no quotas, so only the budget watches it.
+
+   Oracle has no region-wide storage quota, so layer 2's check (boot + data within 200 GB) and
+   the budget cover storage spread over several domains.
+6. **A budget** of $1 a month on the whole tenancy (`oci_budget_budget`). It emails at 1% of
+   actual spend (the first cent) and when the month's forecast reaches the budget. It only
+   alerts, which is why the quotas come first. The recipients are in the gitignored
+   `production.tfvars` (`oci_budget_alert_emails`).
+7. **`scripts/retry-vm-capacity.sh` refuses to run** unless the quota policy is in the state:
+   unattended applies on an account that can be billed need the cap underneath them.
+
+The runbook's "Guardrails against charges" has the checklist for before and after an upgrade.
 
 **Usage, not just configuration (added 2026-10-22).** The layers above keep every resource free,
 but R2 also bills by use past its monthly allowance (10 GB of storage, 1 million Class A and 10

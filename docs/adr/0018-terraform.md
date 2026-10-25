@@ -85,7 +85,8 @@ Four layers, all of which run without credentials:
 3. **`check-free-tier.sh`**, run by `make tf-check` and CI, fails if any `.tf` file declares a
    resource type that isn't on its allowlist of the 24 types above, or uses a module from a
    registry or URL. Adding a type (a load balancer, a NAT gateway, a paid Cloudflare feature) then
-   has to be a deliberate change to that list.
+   has to be a deliberate change to that list. Added since: `oci_core_compute_capacity_report`
+   (2026-10-25, ADR-0020), a question to Oracle about capacity that creates nothing.
 4. **Tests** (`terraform test`, below) prove the first two layers work: each paid configuration
    (`ocpus = 4`, 24 GB, a non-A1 shape, 250 GB of volumes, Higher Performance storage, `M10`, a
    dedicated Atlas provider, Infrequent Access storage, SSH or Atlas open to the internet) must

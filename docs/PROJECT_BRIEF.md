@@ -211,7 +211,7 @@ CLAUDE.md
 
 ## 11. Fallback plan
 
-- **If Oracle A1 capacity isn't available:** keep retrying (try other availability domains), or pivot to one of:
+- **If Oracle A1 capacity isn't available:** keep retrying (try other availability domains); start on 1 OCPU and 6 GB without the local models and grow the same VM in place later (decided 2026-10-25, [ADR-0020](adr/0020-start-small-grow-later.md)); or pivot to one of:
   - a serverless variant: Cloud Run workers, Pub/Sub instead of Redpanda, Neon Postgres, Atlas, Gemini as the only LLM provider
   - the same k3s stack on an always-on spare machine at home behind Cloudflare Tunnel
 - The summarizer already supports Gemini, and storage/LLM sit behind interfaces, so a pivot shouldn't touch business logic.

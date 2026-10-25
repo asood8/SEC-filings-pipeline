@@ -1,9 +1,10 @@
 """Project rules for the Kubernetes manifests, checked on the rendered output.
 
 kubeconform (`make k8s-check`) checks that every object is valid Kubernetes. These tests check
-what the project requires on top of that (docs/adr/0017-kubernetes-manifests.md):
+what the project requires on top of that (docs/adr/0017-kubernetes-manifests.md), at both sizes
+the VM can have, with and without the small-vm component (docs/adr/0020):
 - every container, init containers included, has CPU and memory requests and limits, and their
-  total fits the VM's budget;
+  total fits that size's budget;
 - every pod meets the "restricted" Pod Security Standard that the namespace enforces;
 - every image is pinned to a version;
 - the config uses real setting names, and every Secret a workload reads has an example;
@@ -45,6 +46,13 @@ NAMESPACE = "filings"
 # 2 cores with k3s's add-ons (0.2) and Argo CD (0.18).
 MEMORY_BUDGET_MIB = (9 * 1024) - 614 - 768
 CPU_REQUEST_BUDGET_MILLICORES = 2000 - 200 - 180
+# The smaller size, 1 OCPU and 6 GB (the small-vm component), keeps 768 MiB for the OS and Oracle's
+# agent instead of 3 GiB: tighter, for a size meant to be temporary.
+SMALL_VM_COMPONENT = "../../components/small-vm"
+BUDGETS = {
+    "full": (MEMORY_BUDGET_MIB, CPU_REQUEST_BUDGET_MILLICORES),
+    "small": ((6 * 1024) - 768 - 614 - 768, 1000 - 200 - 180),
+}
 
 # Volume types the restricted Pod Security Standard allows.
 ALLOWED_VOLUME_TYPES = {
@@ -80,9 +88,27 @@ def _render(directory: Path) -> list[dict[str, Any]]:
     return [doc for doc in yaml.safe_load_all(output) if doc]
 
 
+def _render_production(workspace: Path, *, small: bool) -> list[dict[str, Any]]:
+    """The production overlay at one VM size: rendered from a copy of deploy/k8s whose overlay
+    lists the small-vm component or not, whichever the real one does now."""
+    copy = workspace / "k8s"
+    shutil.copytree(PRODUCTION.parents[1], copy)
+    kustomization = copy / "overlays" / "production" / "kustomization.yaml"
+    config = yaml.safe_load(kustomization.read_text())
+    components = [c for c in config.get("components", []) if c != SMALL_VM_COMPONENT]
+    config["components"] = components + ([SMALL_VM_COMPONENT] if small else [])
+    kustomization.write_text(yaml.safe_dump(config))
+    return _render(copy / "overlays" / "production")
+
+
+@pytest.fixture(scope="module", params=["full", "small"])
+def size(request: pytest.FixtureRequest) -> str:
+    return str(request.param)
+
+
 @pytest.fixture(scope="module")
-def production() -> list[dict[str, Any]]:
-    return _render(PRODUCTION)
+def production(size: str, tmp_path_factory: pytest.TempPathFactory) -> list[dict[str, Any]]:
+    return _render_production(tmp_path_factory.mktemp(size), small=size == "small")
 
 
 @pytest.fixture(scope="module")
@@ -190,8 +216,9 @@ def test_requests_never_exceed_limits(
 
 
 def test_memory_limits_and_cpu_requests_fit_the_vm_budget(
-    production: list[dict[str, Any]], platform: list[dict[str, Any]]
+    size: str, production: list[dict[str, Any]], platform: list[dict[str, Any]]
 ) -> None:
+    memory_budget, cpu_budget = BUDGETS[size]
     all_pods = pods(production + platform)
     always = [p for p in all_pods if p.long_running]
     jobs = [p for p in all_pods if not p.long_running]
@@ -201,11 +228,34 @@ def test_memory_limits_and_cpu_requests_fit_the_vm_budget(
 
     memory = sum(pod_total(p, "limits", "memory") * p.replicas for p in always)
     memory += two_largest("limits", "memory")
-    assert memory <= MEMORY_BUDGET_MIB
+    assert memory <= memory_budget
 
     cpu = sum(pod_total(p, "requests", "cpu") * p.replicas for p in always)
     cpu += two_largest("requests", "cpu")
-    assert cpu <= CPU_REQUEST_BUDGET_MILLICORES
+    assert cpu <= cpu_budget
+
+
+def test_the_small_size_runs_no_local_models(size: str, production: list[dict[str, Any]]) -> None:
+    # Without them, the services summarize 8-Ks with Gemini alone and search by keywords only.
+    names = {(o["kind"], o["metadata"]["name"]) for o in production}
+    models = {
+        ("Deployment", "llm"),
+        ("Deployment", "embeddings"),
+        ("PersistentVolumeClaim", "llm-models"),
+        ("PersistentVolumeClaim", "embedding-models"),
+    }
+    config = next(
+        o["data"]
+        for o in production
+        if o["kind"] == "ConfigMap" and o["metadata"]["name"].startswith("filings-config-")
+    )
+    if size == "small":
+        assert names & models == set()
+        assert (config["LLM_MODEL"], config["EMBEDDING_MODEL"]) == ("", "")
+    else:
+        assert models <= names
+        assert config["LLM_MODEL"]
+        assert config["EMBEDDING_MODEL"]
 
 
 def test_pods_meet_the_restricted_pod_security_standard(

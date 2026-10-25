@@ -89,6 +89,20 @@ run "extra_atlas_addresses_join_the_vm" {
   }
 }
 
+run "the_smaller_vm_size_reaches_the_instance" {
+  command = plan
+
+  variables {
+    oci_instance_ocpus      = 1
+    oci_instance_memory_gbs = 6
+  }
+
+  assert {
+    condition     = output.vm_size == { ocpus = 1, memory_gbs = 6 }
+    error_message = "oci_instance_ocpus and oci_instance_memory_gbs size the VM."
+  }
+}
+
 run "refuses_a_malformed_region" {
   command = plan
 

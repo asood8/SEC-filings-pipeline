@@ -112,6 +112,7 @@ api-loadtest: ## Run the API with the per-client rate limit raised, as `make loa
 
 TF_DIR := infra/terraform
 TF_ENV := $(TF_DIR)/envs/production
+TF_CAPACITY := $(TF_DIR)/tools/capacity-report
 # Providers are large (about 700 MB in all); keep one downloaded copy for every checkout.
 export TF_PLUGIN_CACHE_DIR ?= $(HOME)/.terraform.d/plugin-cache
 
@@ -125,6 +126,8 @@ tf-check: ## Check the Terraform code: format, validate, tests on mock providers
 	$(TF_CHECK) terraform -chdir=$(TF_ENV) init -backend=false -input=false -lockfile=readonly
 	$(TF_CHECK) terraform -chdir=$(TF_ENV) validate
 	$(TF_CHECK) terraform -chdir=$(TF_ENV) test
+	$(TF_CHECK) terraform -chdir=$(TF_CAPACITY) init -backend=false -input=false -lockfile=readonly
+	$(TF_CHECK) terraform -chdir=$(TF_CAPACITY) validate
 	$(TF_DIR)/check-free-tier.sh
 
 # Production runs read credentials from TF_ENV_FILE (`export NAME=value` lines; see

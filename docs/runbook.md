@@ -581,7 +581,9 @@ uv run filings-search-eval --per-query --json data/eval-after.json
 **Idle reclamation.** Oracle may reclaim (stop) an Always Free instance whose CPU (95th
 percentile), network, and memory use all stay under 20% for 7 days. While the workloads run, the
 loaded models and the data stores should keep memory above 20% of 12 GB (their requests alone add
-up to 4.5 GiB); the risk is a VM that is stopped, or whose workloads are down, for a week.
+up to 4.5 GiB); the risk is a VM that is stopped, or whose workloads are down, for a week. At the
+smaller size (1 OCPU, 6 GB; ADR-0020) there are no models, but the data stores still hold more
+than 20% (Redpanda alone reserves 1 GiB).
 
 - **Check:** the OCI console, Compute, Instances, the instance, Metrics; or `kubectl top node`.
   Memory utilization must have data there: Oracle sees memory only through the Oracle Cloud
@@ -610,12 +612,25 @@ that availability domain right now. The configuration is fine.
   state lives, waits `THROTTLE_WAIT` and tries again; so does the network failing while it
   plans, and it releases a plan lock it finds left on this machine by a plan that was cut off,
   with no terraform running). An attempt takes about 12 seconds and
-  touches nothing else. Once the instance exists it records the domain in `production.tfvars`
-  and applies one more checked plan to finish the VM: its volume attachment, Atlas's entry for
-  its IP, and the still-empty data volume moved to that domain if it was in another (the VM's
-  bootstrap waits up to 20 minutes for the volume). If that last step fails, run `make
-  tf-plan` and `make tf-apply`. Ashburn took over 600 attempts across two days in October 2026
-  without capacity; the laptop must stay awake for it.
+  touches nothing else. Attempts alternate between the sizes in `SIZES` (default `"2:12 1:6"`,
+  OCPU:GB, largest first): Oracle often has room for the smaller one sooner (ADR-0020). Once the
+  instance exists it records the domain and size in `production.tfvars` and finishes the VM in
+  two checked steps. First the still-empty data volume (moved to that domain if it was in
+  another) and its attachment, which the VM's bootstrap waits up to 20 minutes for. Then Atlas's
+  entry for its IP, which Atlas's API refuses while the laptop's IP isn't on the service
+  account's API access list (a home IP changes now and then): the VM runs anyway, and the log
+  says to add the IP and run `make tf-plan` and `make tf-apply`. Ashburn refused about 2,700
+  attempts over three days in October 2026; the laptop must stay awake for it.
+- **A VM with the smaller size grows in place.** The same script, started again or still
+  running, asks Oracle for a compute capacity report every `GROW_INTERVAL` seconds (5 minutes)
+  and resizes the VM to 2 OCPU and 12 GB only once Oracle answers `AVAILABLE`. A resize reboots
+  the VM, so it is never retried blindly. Once it has grown, delete the `small-vm` line in
+  `deploy/k8s/overlays/production/kustomization.yaml` in a pull request: the local LLM and
+  semantic search come back with the next deploy.
+- **Ask Oracle by hand** with the capacity report itself, from
+  `infra/terraform/tools/capacity-report` (`terraform init`, then `terraform apply` with
+  `-var` for `region`, `compartment_ocid`, `availability_domain`, `ocpus`, and `memory_gbs`; it
+  creates nothing).
 - Don't terminate or `-replace` a working VM casually: a new one needs capacity again.
 - Don't upgrade the account to pay-as-you-go to get capacity: the project must cost $0, and an
   upgraded account bills what exceeds the free allowance instead of refusing it.

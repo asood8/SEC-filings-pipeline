@@ -1,0 +1,159 @@
+# The VM's smaller size, 1 OCPU and 6 GB, which Oracle may have capacity for when it has none for
+# 2 OCPU and 12 GB (docs/adr/0020). The production overlay lists this component until the VM grows;
+# then delete that one line and everything below comes back.
+#
+# - No local LLM or embedding server (about 3.5 GiB at their limits): 8-K summaries come from
+#   Gemini alone (the gemini Secret; without it 8-Ks stay parsed, unsummarized), and search is
+#   keyword-only. Both are what the services already do with LLM_MODEL and EMBEDDING_MODEL unset.
+# - Smaller CPU requests and memory limits, so the rest fits one core and 6 GB with the same
+#   headroom as the full size (tests/test_k8s_manifests.py checks both).
+apiVersion: kustomize.config.k8s.io/v1alpha1
+kind: Component
+
+configMapGenerator:
+  - name: filings-config
+    behavior: merge
+    literals:
+      - LLM_MODEL=
+      - EMBEDDING_MODEL=
+
+patches:
+  - patch: |-
+      $patch: delete
+      apiVersion: apps/v1
+      kind: Deployment
+      metadata:
+        name: llm
+  - patch: |-
+      $patch: delete
+      apiVersion: v1
+      kind: Service
+      metadata:
+        name: llm
+  - patch: |-
+      $patch: delete
+      apiVersion: networking.k8s.io/v1
+      kind: NetworkPolicy
+      metadata:
+        name: llm
+  - patch: |-
+      $patch: delete
+      apiVersion: apps/v1
+      kind: Deployment
+      metadata:
+        name: embeddings
+  - patch: |-
+      $patch: delete
+      apiVersion: v1
+      kind: Service
+      metadata:
+        name: embeddings
+  - patch: |-
+      $patch: delete
+      apiVersion: networking.k8s.io/v1
+      kind: NetworkPolicy
+      metadata:
+        name: embeddings
+  # The models' volumes: unused, they would wait for a pod forever and keep Argo CD's health at
+  # Progressing. They come back empty with the servers, which download the models again.
+  - patch: |-
+      $patch: delete
+      apiVersion: v1
+      kind: PersistentVolumeClaim
+      metadata:
+        name: llm-models
+  - patch: |-
+      $patch: delete
+      apiVersion: v1
+      kind: PersistentVolumeClaim
+      metadata:
+        name: embedding-models
+  - patch: |-
+      $patch: delete
+      apiVersion: v1
+      kind: ConfigMap
+      metadata:
+        name: model-fetch
+
+  # One core: smaller CPU requests. The API asked for 200m to stay responsive while the local LLM
+  # kept the cores busy; without it, 50m does.
+  - patch: |-
+      apiVersion: apps/v1
+      kind: Deployment
+      metadata:
+        name: api
+      spec:
+        template:
+          spec:
+            containers:
+              - name: api
+                resources:
+                  requests:
+                    cpu: 50m
+  - patch: |-
+      apiVersion: apps/v1
+      kind: StatefulSet
+      metadata:
+        name: redpanda
+      spec:
+        template:
+          spec:
+            containers:
+              - name: redpanda
+                resources:
+                  requests:
+                    cpu: 100m
+
+  # 6 GB: lower memory limits where there is slack. Redpanda keeps its 1 GiB, its minimum.
+  - patch: |-
+      apiVersion: apps/v1
+      kind: StatefulSet
+      metadata:
+        name: postgres
+      spec:
+        template:
+          spec:
+            containers:
+              - name: postgres
+                resources:
+                  limits:
+                    memory: 640Mi # shared_buffers 192MB, a dozen connections, and page cache
+  - patch: |-
+      apiVersion: apps/v1
+      kind: Deployment
+      metadata:
+        name: otel-collector
+      spec:
+        template:
+          spec:
+            containers:
+              - name: otel-collector
+                resources:
+                  limits:
+                    memory: 192Mi # its memory_limiter stops at 120 MiB plus a 30 MiB spike
+  - patch: |-
+      apiVersion: apps/v1
+      kind: Deployment
+      metadata:
+        name: valkey
+      spec:
+        template:
+          spec:
+            containers:
+              - name: valkey
+                resources:
+                  limits:
+                    memory: 160Mi # --maxmemory 128mb
+  - patch: |-
+      apiVersion: apps/v1
+      kind: Deployment
+      metadata:
+        name: cloudflared
+      spec:
+        template:
+          spec:
+            containers:
+              - name: cloudflared
+                resources:
+                  limits:
+                    memory: 96Mi

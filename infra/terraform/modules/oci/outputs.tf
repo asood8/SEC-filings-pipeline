@@ -18,6 +18,14 @@ output "availability_domain" {
   value       = oci_core_instance.k3s.availability_domain
 }
 
+output "size" {
+  description = "The VM's OCPUs and memory in GB."
+  value = {
+    ocpus      = oci_core_instance.k3s.shape_config[0].ocpus
+    memory_gbs = oci_core_instance.k3s.shape_config[0].memory_in_gbs
+  }
+}
+
 output "image_name" {
   description = "Ubuntu image the VM was created from (newer images don't replace it)."
   value       = data.oci_core_images.ubuntu.images[0].display_name

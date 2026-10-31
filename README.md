@@ -4,14 +4,20 @@
 
 > **Work in progress.** This project is under active development. Ingestion, parsing,
 > summarization, search, the API, Google sign-in, alerts, the website, and tracing and metrics
-> run end to end locally on real SEC data. The cloud deployment (Kubernetes manifests and
-> Terraform) is written and validated offline but not yet applied. See [Progress](#progress).
+> run end to end locally on real SEC data. In the cloud, Terraform has created the network,
+> storage, MongoDB Atlas, dashboards, and spending guardrails. The server itself is waiting on
+> Oracle's free-tier capacity, so there is no public site yet. See [Progress](#progress).
 
 A pipeline that watches SEC EDGAR for new filings from a watchlist of public companies, parses
 them, summarizes them in plain English, makes them searchable by keyword and by meaning, and
 alerts subscribed users on Discord, Slack, or email. It is designed to run indefinitely on free tiers at $0/month, on a single arm64
 VM, and it's built with production practices: event-driven services, infrastructure as code,
 CI, tests against real filings, and architecture decision records.
+
+**Stack:** Python, FastAPI, Pydantic, and SQLAlchemy; Redpanda (Kafka API); Postgres with
+pgvector, MongoDB Atlas, Valkey, and Cloudflare R2; a local LLM (llama.cpp or Ollama) with Gemini
+as a fallback; React, TypeScript, and Vite; k3s, Terraform, Argo CD, GitHub Actions, Cloudflare
+Tunnel, and OpenTelemetry with Grafana Cloud.
 
 ## What it does today
 
@@ -110,7 +116,7 @@ Example headlines from that run (public filings):
 | 4. Users and alerts | Google sign-in, subscriptions, Discord/Slack/email alerts | Done |
 | 5. Frontend | React site (Vite + TypeScript) on Cloudflare Pages | Done |
 | 6. Observability | OpenTelemetry traces, metrics, Grafana dashboards and alerts | Done |
-| 7. Production | Terraform, k3s on Oracle Cloud's free tier, Argo CD, multi-arch images | In progress: images and their CI build and deploy, Kubernetes manifests (sealed secrets, Argo CD), and Terraform written and validated offline; nothing applied yet (needs cloud accounts and a domain) |
+| 7. Production | Terraform, k3s on Oracle Cloud's free tier, Argo CD, multi-arch images | In progress: CI builds and publishes arm64 and amd64 images; Kubernetes manifests (sealed secrets, Argo CD) are written and validated; Terraform has created everything except the VM, which is waiting on Oracle's capacity ([ADR-0020](docs/adr/0020-start-small-grow-later.md)). Nothing runs on a cluster yet |
 | 8. Hardening | Load tests, local-model benchmark, backups, runbook | In progress: k6 load test, model benchmark tool, search-quality evaluation, backup restore drill, outbox pruning and capacity planning, runbook, dependency audit; the runs on the production VM (benchmark, load test, first backup) are still to do |
 
 The full plan is in the [project brief](docs/PROJECT_BRIEF.md#8-build-plan).

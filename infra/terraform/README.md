@@ -5,10 +5,12 @@ and its network, Cloudflare (tunnel, DNS, R2, Pages), MongoDB Atlas, and Grafana
 dashboards and alerts. Argo CD deploys everything inside the cluster from `deploy/`. The design
 and its reasons are in [ADR-0018](../../docs/adr/0018-terraform.md).
 
-**Nothing here has been applied yet.** No accounts exist, and the code is checked only with
-`terraform validate` and tests against mock providers. The first real apply may still surface
-things only a live account shows: A1 capacity, which Atlas regions offer M0, the Pages GitHub
-link, the Grafana Cloud data source UIDs.
+**Partly applied.** The first apply (2026-10-22) created the network, block volume, R2 buckets,
+tunnel, Atlas project and cluster, and Grafana folder, dashboards, and rules; the quota policy and
+budget followed on 2026-10-25. The VM, its volume attachment, and its Atlas access-list entry wait
+on Oracle's A1 capacity
+([runbook](../../docs/runbook.md#oracle-idle-reclamation-and-capacity-errors), ADR-0020). No domain
+is set yet, so there are no DNS records or Pages project.
 
 ```
 modules/oci/          network, Ampere A1 VM, block volume, cloud-init (k3s + Argo CD)

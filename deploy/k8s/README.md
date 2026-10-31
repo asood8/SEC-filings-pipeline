@@ -11,8 +11,8 @@ passed ([Deploying](#deploying)). Why it is built this way, the
 resource budget, and the security posture are in
 [ADR-0017](../../docs/adr/0017-kubernetes-manifests.md).
 
-Nothing here has been applied to a cluster yet: the cluster and the cloud accounts are created in
-Phase 7. Everything renders and validates without one.
+Nothing here has been applied to a cluster yet: the cluster is waiting on Oracle's capacity for
+its VM (ADR-0020). Everything renders and validates without one.
 
 Operating it (alerts, dead letters, deploys and rollbacks, rotating secrets, backups and restores,
 capacity) is in the [runbook](../../docs/runbook.md).

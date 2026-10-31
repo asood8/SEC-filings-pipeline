@@ -160,10 +160,10 @@ Each phase ends with something runnable, tests passing, and docs updated. Check 
   - Metrics from §7, Grafana Cloud dashboards and alerts
   - _Done when:_ one trace follows a filing from discovery to alert.
 - [ ] **Phase 7: Production.**
-  - Terraform (OCI VM + network + block volume, Cloudflare tunnel/DNS/R2/Pages, Atlas, Grafana), k3s via cloud-init. _Written and validated offline (`make tf-check`, ADR-0018); not applied._
+  - Terraform (OCI VM + network + block volume, Cloudflare tunnel/DNS/R2/Pages, Atlas, Grafana), k3s via cloud-init. _Written and validated offline (`make tf-check`, ADR-0018); applied except for the VM, which is waiting on Oracle's capacity (ADR-0020)._
   - Manifests with requests/limits, encrypted secrets, Argo CD. _Written and validated offline (`make k8s-check`, ADR-0017); the SealedSecrets themselves need the cluster's key; not applied._
-  - Multi-arch image builds to GHCR, llama.cpp server on arm64. _Image workflow written and tested offline (ADR-0019; its jobs run only while the repository is public); llama.cpp manifests written; nothing built or run on arm64 yet._
-  - _Done when:_ `terraform apply` plus an Argo CD sync brings up a working system, and a push to `main` deploys automatically. _Pending: needs the accounts, a domain, and a real apply._
+  - Multi-arch image builds to GHCR, llama.cpp server on arm64. _Image workflow runs on pushes to `main`, publishing arm64 and amd64 images to GHCR (ADR-0019); llama.cpp manifests written; nothing has run on an arm64 server yet._
+  - _Done when:_ `terraform apply` plus an Argo CD sync brings up a working system, and a push to `main` deploys automatically. _Pending: the VM (Oracle's capacity), the production secrets, and a domain for the public API._
 - [ ] **Phase 8: Hardening.**
   - k6 load test of the API. _Done on the laptop (`make loadtest`, numbers in the README); a run against the VM waits for Phase 7._
   - Local model benchmark (speed vs summary quality across 2–3 small models/quantizations on the A1 VM). _The tool is done (`filings-benchmark`, with summary quality scored against 22 hand-labeled 8-Ks; laptop numbers in the README); the A1 run is pending._

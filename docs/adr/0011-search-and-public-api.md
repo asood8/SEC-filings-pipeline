@@ -273,7 +273,9 @@ data: 500 companies, 10 years, 452,000 filings; runbook, "Capacity planning", ha
   90, 100–250 ms for 365; without the filing-date condition, 130–185 ms for 30 days (up to 2 s
   with a cold cache). The planner still reads `form4_filings` whole (420,000 rows, about 10 ms
   per worker) rather than probe it 3,400 times at the default `random_page_cost` of 4; at 1.1
-  it probes, and 30 days take 25–44 ms. The same filing-date condition would bound insider
+  it probes, and 30 days take 25–44 ms. Production keeps 4: measured on every query
+  (2026-11-04), 1.1 changes nothing at the watchlist's real size and slows keyword search for
+  common words at 13 times it (runbook, "Capacity planning"). The same filing-date condition would bound insider
   activity; `period_of_report` wouldn't, since it is a filing's earliest trade.
 - **Semantic search scans the HNSW index iteratively** (`hnsw.iterative_scan = strict_order`, set
   for the transaction). An HNSW scan returns its `hnsw.ef_search` (40) nearest vectors and filters

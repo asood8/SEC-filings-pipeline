@@ -16,7 +16,9 @@ can't be explained alone; it is reported with the time the client measured.
   back, and so does each EXPLAIN ANALYZE (which executes the statement).
 - **Production's planner settings:** sessions use production's work_mem and effective_cache_size
   (deploy/k8s/base/postgres.yaml); the local shared_buffers (128 MB) is close to production's
-  (192 MB). The laptop's cores are faster than the A1's, so expect higher times there.
+  (192 MB). The laptop's cores are faster than the A1's, so expect higher times there. To try a
+  setting production doesn't have, run twice, once with `--set name=value` (docs/runbook.md,
+  "Capacity planning", has the random_page_cost comparison).
 - **No Redis:** responses are never cached and nothing is rate limited, so the API numbers are
   the database's plus FastAPI's. Query embeddings are random vectors: semantic results are
   meaningless, their timing is not.
@@ -637,11 +639,20 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--runs", type=int, default=20, help="timed runs per scenario")
     parser.add_argument("--only", help="only scenarios whose name contains this text")
     parser.add_argument("--plans-dir", type=Path, help="write every statement's plan here")
-    args = parser.parse_args(argv)
-
-    engine = sa.create_engine(
-        args.database_url, connect_args={"options": PRODUCTION_SETTINGS}, pool_size=10
+    parser.add_argument(
+        "--set",
+        action="append",
+        default=[],
+        metavar="NAME=VALUE",
+        help="a setting on top of production's, to try one (repeatable): random_page_cost=1.1",
     )
+    args = parser.parse_args(argv)
+    for setting in args.set:
+        if not re.fullmatch(r"[a-z_.]+=[\w.]+", setting):
+            parser.error(f"--set {setting!r}: expected NAME=VALUE, such as random_page_cost=1.1")
+
+    options = " ".join([PRODUCTION_SETTINGS, *(f"-c {setting}" for setting in args.set)])
+    engine = sa.create_engine(args.database_url, connect_args={"options": options}, pool_size=10)
     recorder = Recorder(engine)
     with engine.connect() as conn:
         model = conn.exec_driver_sql("SELECT model FROM filing_embeddings LIMIT 1").scalar()

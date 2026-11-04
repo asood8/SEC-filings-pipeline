@@ -18,6 +18,8 @@ class Topic(StrEnum):
     FILINGS_DISCOVERED = "filings.discovered"
     FILINGS_PARSED = "filings.parsed"
     FILINGS_READY = "filings.ready"
+    # An earnings call's Q&A got its first summary (ADR-0022): the notifier alerts about it.
+    CALLS_SUMMARIZED = "calls.summarized"
 
     @property
     def dlq(self) -> str:
@@ -61,3 +63,20 @@ class FilingReady(Event):
     cik: int
     form_type: str
     summary_id: int
+
+
+class CallSummarized(BaseModel):
+    """A stored earnings-call transcript (`call_transcripts` row `transcript_id`) has its first
+    Q&A summary (`call_summaries` row `summary_id`). Later summaries (a new prompt version) are
+    not announced: the call was alerted once already."""
+
+    model_config = ConfigDict(frozen=True)
+
+    schema_version: Literal[1] = 1
+    transcript_id: int
+    summary_id: int
+    cik: int
+
+    @property
+    def key(self) -> str:
+        return f"call-{self.transcript_id}"

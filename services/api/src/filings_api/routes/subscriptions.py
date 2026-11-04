@@ -151,6 +151,7 @@ def _subscription_out(
         else DeliveryOut(
             status=last.status.value,
             accession_no=last.accession_no,
+            call_id=last.transcript_id,
             at=last.sent_at or last.updated_at,
             error=last.last_error if last.status is not NotificationStatus.SENT else None,
         ),

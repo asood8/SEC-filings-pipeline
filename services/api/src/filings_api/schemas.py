@@ -521,7 +521,13 @@ class DeliveryOut(BaseModel):
     status: Literal["pending", "sent", "failed"] = Field(
         description="pending: not delivered yet and will be retried; failed: rejected for good."
     )
-    accession_no: str = Field(description="The filing the alert was about.")
+    accession_no: str | None = Field(
+        description="The filing the alert was about; null for an earnings call's Q&A."
+    )
+    call_id: int | None = Field(
+        default=None,
+        description="The earnings call whose Q&A the alert was about (GET /call-summaries/{id}).",
+    )
     at: datetime = Field(description="When it was sent, or last attempted.")
     error: str | None = Field(
         description="Why the last attempt failed, e.g. a deleted webhook. Null once sent."

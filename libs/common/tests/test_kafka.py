@@ -19,9 +19,11 @@ def test_pipeline_topics_include_dead_letter_topics() -> None:
         "filings.discovered",
         "filings.parsed",
         "filings.ready",
+        "calls.summarized",
         "filings.discovered.dlq",
         "filings.parsed.dlq",
         "filings.ready.dlq",
+        "calls.summarized.dlq",
     ]
 
 

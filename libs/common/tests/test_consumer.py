@@ -541,3 +541,33 @@ def test_offsets_are_not_measured_when_metrics_are_off(monkeypatch: pytest.Monke
 
     OffsetMonitor(Counting(threading.Event()), TOPIC, "parser", interval=0).measure_if_due()
     assert calls == []
+
+
+class TwoTopicSource(FakeSource):
+    def subscribe(self, topics: list[str]) -> None:
+        self.subscribed = topics
+
+
+def test_one_loop_consumes_several_topics_each_with_its_dead_letter_topic(measured: Any) -> None:
+    other = "calls.summarized"
+    stop = threading.Event()
+    calls = Message(topic=other, partition=0, offset=3, key=b"call-1", value=b"{}", headers=None)
+    source = TwoTopicSource(stop, message(0, "filing"), calls)
+    source.topics = {DLQ: 1, f"{other}.dlq": 1}
+    source.watermarks = {(DLQ, 0): (0, 0), (f"{other}.dlq", 0): (0, 2)}
+    seen: list[tuple[str, dict[str, float]]] = []
+
+    def handler(received: Received) -> None:
+        seen.append((received.topic, measured.gauge("filings.dlq.depth")))
+        if received.topic == other:
+            raise PermanentError("bad call event")
+
+    dlq = RecordingPublisher()
+    run_consumer(
+        source, [TOPIC, other], handler, dlq, stop, consumer_group="notifier", offsets_interval=0
+    )
+    assert source.subscribed == [TOPIC, other]
+    assert [topic for topic, _ in seen] == [TOPIC, other]
+    assert seen[0][1] == {DLQ: 0, f"{other}.dlq": 2}  # both dead-letter topics measured
+    assert [m.topic for m in dlq.messages] == [f"{other}.dlq"]  # its own topic's
+    assert source.commits == [0, 3]

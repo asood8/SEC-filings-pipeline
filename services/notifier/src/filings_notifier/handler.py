@@ -25,10 +25,10 @@ URL or a personal email address), and errors by type only, since their messages 
 """
 
 import logging
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from dataclasses import replace
 from datetime import datetime
-from typing import Literal
+from typing import Any, Literal
 
 import sqlalchemy as sa
 from opentelemetry import trace
@@ -39,6 +39,7 @@ from sqlalchemy.orm import Session, sessionmaker
 
 from filings_common import metrics, telemetry
 from filings_common.alert_filters import (
+    CALL_QA,
     OPEN_MARKET_CODES,
     TradeLine,
     alert_reason,
@@ -48,6 +49,8 @@ from filings_common.alert_filters import (
 from filings_common.amendments import base_form, changes_nothing
 from filings_common.consumer import PermanentError, Received
 from filings_common.db import (
+    CallSummary,
+    CallTranscript,
     Channel,
     Company,
     Filing,
@@ -61,7 +64,7 @@ from filings_common.db import (
     Subscription,
     Summary,
 )
-from filings_common.events import FilingReady, Topic
+from filings_common.events import CallSummarized, FilingReady, Topic
 from filings_common.names import company_name
 from filings_common.parsed import InvestorCall
 from filings_common.summaries import FilingSummary
@@ -226,16 +229,25 @@ class NotificationHandler:
         good, retry after a transient failure, or already_settled) and the channel tried, if
         any."""
         with self._sessions.begin() as session:
+            # One notification per subscription and filing, or per subscription and call.
+            subject: dict[str, Any] = (
+                {"accession_no": alert.accession_no}
+                if alert.call_id is None
+                else {"transcript_id": alert.call_id}
+            )
+            column = (
+                Notification.accession_no if alert.call_id is None else Notification.transcript_id
+            )
             session.execute(
                 pg_insert(Notification)
-                .values(subscription_id=subscription_id, accession_no=alert.accession_no)
-                .on_conflict_do_nothing(index_elements=["subscription_id", "accession_no"])
+                .values(subscription_id=subscription_id, **subject)
+                .on_conflict_do_nothing(index_elements=["subscription_id", *subject])
             )
             notification = session.execute(
                 sa.select(Notification)
                 .where(
                     Notification.subscription_id == subscription_id,
-                    Notification.accession_no == alert.accession_no,
+                    column == next(iter(subject.values())),
                 )
                 .with_for_update()
             ).scalar_one()
@@ -295,3 +307,74 @@ def _trade_lines(session: Session, accession_no: str) -> list[TradeLine]:
         )
     )
     return [TradeLine(row.code, row.shares, row.price_per_share) for row in rows]
+
+
+class CallNotificationHandler(NotificationHandler):
+    """Handle one `calls.summarized` event: alert, once, every subscription that follows the
+    company and wants earnings-call Q&A (alert_filters.CALL_QA among its form types, or no form
+    types: every form), created before the summary was written (ADR-0022). Keyword alerts match
+    filings' search documents, which calls don't have, so they aren't alerted. Delivery is the
+    filings' (one `notifications` row per subscription and call)."""
+
+    def __call__(self, received: Received) -> None:
+        try:
+            event = CallSummarized.model_validate_json(received.value)
+        except ValidationError as exc:
+            raise PermanentError(f"invalid {Topic.CALLS_SUMMARIZED} event: {exc}") from exc
+        with self._sessions() as session:
+            row = session.execute(
+                sa.select(CallSummary, CallTranscript, Company)
+                .join(CallTranscript, CallTranscript.id == CallSummary.transcript_id)
+                .join(Company, Company.cik == CallTranscript.cik)
+                .where(CallSummary.id == event.summary_id)
+            ).one_or_none()
+            if row is None:
+                raise PermanentError(f"no summary {event.summary_id} of call {event.transcript_id}")
+            summary, transcript, company = row
+            takeaways = FilingSummary.model_validate(summary.takeaways)
+            alert = Alert(
+                accession_no="",
+                company_name=company_name(company.name),
+                ticker=company.ticker,
+                form_type=CALL_QA,
+                filed_at=transcript.call_date,
+                headline=f"Earnings call Q&A: {takeaways.headline}",
+                summary=takeaways.summary,
+                key_points=takeaways.key_points,
+                url=transcript.source_url,
+                call_id=transcript.id,
+            )
+            subscription_ids = list(
+                session.scalars(
+                    sa.select(Subscription.id)
+                    .where(
+                        Subscription.cik == transcript.cik,
+                        Subscription.query.is_(None),
+                        Subscription.created_at <= summary.created_at,
+                        (sa.func.cardinality(Subscription.form_types) == 0)
+                        | Subscription.form_types.contains([CALL_QA]),
+                    )
+                    .order_by(Subscription.id)
+                )
+            )
+        pending = [sid for sid in subscription_ids if not self._deliver(sid, alert)]
+        if pending:
+            raise PendingAlertsError(
+                f"{len(pending)} alert(s) for call {event.transcript_id} not delivered yet"
+            )
+        logger.info(
+            "call %d: %d subscription(s) alerted", event.transcript_id, len(subscription_ids)
+        )
+
+
+class TopicHandler:
+    """One handler per topic, for a consumer of several topics."""
+
+    def __init__(self, handlers: Mapping[str, Callable[[Received], None]]) -> None:
+        self._handlers = dict(handlers)
+
+    def __call__(self, received: Received) -> None:
+        handler = self._handlers.get(received.topic)
+        if handler is None:
+            raise PermanentError(f"no handler for {received.topic}")
+        handler(received)

@@ -516,18 +516,27 @@ class Subscription(Base):
 
 
 class Notification(Base):
-    """One alert per (subscription, filing), enforced by the unique constraint: replays and
-    redeliveries can never alert the same subscription about the same filing twice."""
+    """One alert per (subscription, filing), or per (subscription, earnings call) for a call's
+    Q&A summary (ADR-0022), enforced by the unique constraints: replays and redeliveries can
+    never alert the same subscription about the same thing twice."""
 
     __tablename__ = "notifications"
-    __table_args__ = (sa.UniqueConstraint("subscription_id", "accession_no"),)
+    __table_args__ = (
+        sa.UniqueConstraint("subscription_id", "accession_no"),
+        sa.UniqueConstraint("subscription_id", "transcript_id"),
+        sa.CheckConstraint("(accession_no IS NULL) <> (transcript_id IS NULL)", name="subject"),
+    )
 
     id: Mapped[int] = mapped_column(sa.BigInteger, sa.Identity(always=True), primary_key=True)
     subscription_id: Mapped[int] = mapped_column(
         sa.BigInteger, sa.ForeignKey("subscriptions.id", ondelete="CASCADE")
     )
-    accession_no: Mapped[str] = mapped_column(
+    # What the alert is about: a filing, or an earnings call's Q&A. Exactly one is set.
+    accession_no: Mapped[str | None] = mapped_column(
         sa.ForeignKey("filings.accession_no", ondelete="CASCADE")
+    )
+    transcript_id: Mapped[int | None] = mapped_column(
+        sa.BigInteger, sa.ForeignKey("call_transcripts.id", ondelete="CASCADE")
     )
     status: Mapped[NotificationStatus] = mapped_column(
         _text_enum(NotificationStatus, "status"),

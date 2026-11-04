@@ -12,7 +12,13 @@ import sqlalchemy as sa
 from pymongo.database import Database
 from sqlalchemy.engine import Engine
 
-from filings_common.db import CallSummary, CallTranscript, Company, session_factory
+from filings_common.db import (
+    CallSummary,
+    CallTranscript,
+    Company,
+    OutboxEvent,
+    session_factory,
+)
 from filings_common.mongo import TranscriptStore
 from filings_common.summaries import FilingSummary
 from filings_summarizer.call_benchmark import load_cases, run
@@ -410,3 +416,37 @@ def test_the_company_name_from_the_prompt_is_not_an_unknown_name() -> None:
     result = summarize_call(*chains(Named()), context, transcript)
     assert result is not None
     assert result.ungrounded_names == []
+
+
+@pytest.mark.integration
+def test_only_a_calls_first_summary_is_announced_for_alerts(
+    clean_db: Engine, mongo_db: Database[dict[str, Any]]
+) -> None:
+    seed(clean_db, mongo_db, date(2026, 10, 13))
+    sessions = session_factory(clean_db)
+    summarize_calls(sessions, TranscriptStore(mongo_db), *chains(Stub()))
+    with clean_db.begin() as conn:
+        events = conn.execute(sa.select(OutboxEvent.topic, OutboxEvent.payload)).all()
+        summary_id = conn.scalar(sa.select(CallSummary.id))
+        assert events == [
+            (
+                "calls.summarized",
+                {"schema_version": 1, "transcript_id": 1, "summary_id": summary_id, "cik": CIK},
+            ),
+        ]
+        conn.execute(sa.delete(CallSummary))  # as after a new prompt version, minus the old row
+        conn.execute(
+            sa.insert(CallSummary).values(
+                transcript_id=1,
+                provider="ollama",
+                model="old",
+                prompt_version=0,
+                takeaways={"headline": "h", "summary": "s", "key_points": []},
+                exchanges=[],
+                ungrounded_numbers=[],
+                ungrounded_names=[],
+            )
+        )
+    summarize_calls(sessions, TranscriptStore(mongo_db), *chains(Stub()))  # a later summary
+    with clean_db.connect() as conn:
+        assert conn.scalar(sa.select(sa.func.count()).select_from(OutboxEvent)) == 1

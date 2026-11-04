@@ -129,6 +129,22 @@ A Form 4/A or 8-K/A alerts the subscriptions its form would: a subscription to F
 filters. A Form 4/A that restates its original's trades unchanged alerts nobody. The preview
 matches the same way. Details in ADR-0021.
 
+### Earnings-call Q&A alerts (added 2026-11-04)
+
+A call's first Q&A summary (ADR-0022) is announced on `calls.summarized`: the nightly job writes
+the event to the outbox in the summary's transaction, the relay publishes it, and the notifier
+consumes that topic too (one loop, a handler per topic). It alerts every subscription that
+follows the company and takes earnings-call Q&A (`earnings-call` among its form types, or no
+form types: the user chose "every form type" to include them, 2026-11-04), created before the
+summary was written. Keyword alerts match filings' search documents, so they aren't alerted. A
+later summary of the call (a new prompt version) isn't announced again.
+
+`notifications` holds either a filing (`accession_no`) or a call (`transcript_id`), one per
+subscription each (migration 361ec3434211), so the once-only rule is the same. The alert's title
+starts "Earnings call Q&A:", it gives the call's day instead of a form and a filing date, and it
+links the transcript on the company's site; a link to the website's call page needs the public
+domain.
+
 ## Alternatives considered
 
 - **Dedupe in Redis.** It's lost on eviction or restart, and can't show what was delivered. The

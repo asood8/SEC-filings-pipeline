@@ -24,7 +24,7 @@ loop (see `health`).
 import logging
 import threading
 import time
-from collections.abc import Callable, Iterator
+from collections.abc import Callable, Iterator, Sequence
 from contextlib import contextmanager
 from dataclasses import dataclass
 from typing import Any, Literal, Protocol
@@ -112,7 +112,7 @@ def make_consumer(
 
 def run_consumer(
     source: MessageSource,
-    topic: str,
+    topic: str | Sequence[str],
     handler: Handler,
     dead_letters: Publisher,
     stop: threading.Event,
@@ -125,16 +125,19 @@ def run_consumer(
     heartbeat: Heartbeat | None = None,
     attempt_seconds: float = DEFAULT_MAX_POLL_INTERVAL_SECONDS,
 ) -> None:
-    """Consume `topic` until `stop` is set. Closes the source on exit.
+    """Consume `topic` (or several topics, one handler for all: `Received.topic` says which)
+    until `stop` is set. Closes the source on exit.
 
     `consumer_group` labels the spans and metrics (the source already belongs to its group); lag
     is measured only when it is given. `attempt_seconds` is the longest one attempt at handling a
     message may legitimately take; the heartbeat allows that much before each attempt. By default
     it is the poll interval, past which the broker gives the partition away anyway.
     """
-    source.subscribe([topic])
-    monitor = OffsetMonitor(source, topic, consumer_group, interval=offsets_interval)
-    metrics.DLQ_MESSAGES.add(0, metrics.topic(dead_letter_topic(topic)))
+    topics = [topic] if isinstance(topic, str) else list(topic)
+    source.subscribe(topics)
+    monitor = OffsetMonitor(source, topics, consumer_group, interval=offsets_interval)
+    for name in topics:
+        metrics.DLQ_MESSAGES.add(0, metrics.topic(dead_letter_topic(name)))
     try:
         while not stop.is_set():
             if heartbeat is not None:
@@ -145,10 +148,10 @@ def run_consumer(
                 continue
             error = message.error()
             if error is not None:
-                logger.warning("consumer error on %s: %s", topic, error)
+                logger.warning("consumer error on %s: %s", ", ".join(topics), error)
                 continue
             received = Received(
-                topic=message.topic() or topic,
+                topic=message.topic() or topics[0],
                 partition=message.partition() or 0,
                 offset=message.offset() or 0,
                 key=(message.key() or b"").decode() or None,
@@ -215,7 +218,7 @@ class OffsetMonitor:
     def __init__(
         self,
         source: MessageSource,
-        topic: str,
+        topic: str | Sequence[str],
         consumer_group: str | None,
         *,
         interval: float,
@@ -223,7 +226,7 @@ class OffsetMonitor:
         clock: Callable[[], float] = time.monotonic,
     ) -> None:
         self._source = source
-        self._topic = topic
+        self._topics = [topic] if isinstance(topic, str) else list(topic)
         self._group = consumer_group
         self._interval = interval
         self._timeout = timeout
@@ -235,12 +238,14 @@ class OffsetMonitor:
         if now < self._due or not _metrics_exported():
             return
         self._due = now + self._interval
-        dlq = dead_letter_topic(self._topic)
         try:
             lag = consumer_lag(self._source, timeout=self._timeout) if self._group else {}
-            depth = topic_depth(self._source, dlq, timeout=self._timeout)
+            depths = {
+                dlq: topic_depth(self._source, dlq, timeout=self._timeout)
+                for dlq in map(dead_letter_topic, self._topics)
+            }
         except KafkaException as exc:
-            logger.warning("could not measure the offsets of %s: %s", self._topic, exc)
+            logger.warning("could not measure the offsets of %s: %s", ", ".join(self._topics), exc)
             return
         if self._group:
             metrics.CONSUMER_LAG_VALUES.replace(
@@ -250,8 +255,11 @@ class OffsetMonitor:
                     for (name, partition), messages in sorted(lag.items())
                 ],
             )
-        if depth is not None:
-            metrics.DLQ_DEPTH_VALUES.replace(self, [(depth, metrics.topic(dlq))])
+        measured = [
+            (depth, metrics.topic(dlq)) for dlq, depth in depths.items() if depth is not None
+        ]
+        if measured:
+            metrics.DLQ_DEPTH_VALUES.replace(self, measured)
 
     @staticmethod
     def _partition_attributes(group: str, topic: str, partition: int) -> dict[str, str]:

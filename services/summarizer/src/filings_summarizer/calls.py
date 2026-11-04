@@ -8,6 +8,7 @@ and on the takeaways against the whole transcript.
 Changing a prompt in any way that changes answers means bumping CALL_PROMPT_VERSION.
 """
 
+import re
 from dataclasses import dataclass, field
 from datetime import date
 from typing import Annotated, Any
@@ -17,7 +18,12 @@ from pydantic import AfterValidator, BaseModel, Field
 from filings_common.summaries import FilingSummary, OneLine
 from filings_common.transcripts import Exchange, split
 from filings_summarizer.form8k_prompt import SUMMARY_SCHEMA, truncate
-from filings_summarizer.grounding import ungrounded_names, ungrounded_numbers
+from filings_summarizer.grounding import (
+    figure_value,
+    states_value,
+    ungrounded_names,
+    ungrounded_numbers,
+)
 from filings_summarizer.llm import FailoverChain, LlmError
 
 CALL_PROMPT_VERSION = 1
@@ -165,13 +171,44 @@ def summarize_call(
     )
     takeaways = FilingSummary.model_validate_json(answer.text)
     said = " ".join([takeaways.headline, takeaways.summary, *takeaways.key_points])
+    numbers = ungrounded_numbers(said, text)
+    names = ungrounded_names(takeaways.headline, takeaways.summary, takeaways.key_points, text)
     return CallResult(
         takeaways=takeaways,
         provider=answer.provider,
         model=answer.model,
         exchanges=exchanges,
-        ungrounded_numbers=ungrounded_numbers(said, text),
-        ungrounded_names=ungrounded_names(
-            takeaways.headline, takeaways.summary, takeaways.key_points, text
-        ),
+        ungrounded_numbers=numbers + _repeated_numbers(said, summarized, numbers),
+        ungrounded_names=names + _repeated_names(said, summarized, names),
     )
+
+
+def _repeated_numbers(said: str, exchanges: list[dict[str, Any]], known: list[str]) -> list[str]:
+    """Figures flagged in an exchange's summary that the takeaways repeat. Checked against the
+    whole transcript, such a figure can pass when the same number appears elsewhere in the call
+    (an exchange summary that made up "a 10% increase in margins", in a call that says "10"
+    about something else)."""
+    seen = {figure.lower() for figure in known}
+    repeated = []
+    for exchange in exchanges:
+        for figure in exchange["ungrounded_numbers"]:
+            try:
+                value = figure_value(figure)
+            except ValueError:
+                continue
+            if figure.lower() not in seen and states_value(said, value):
+                seen.add(figure.lower())
+                repeated.append(figure)
+    return repeated
+
+
+def _repeated_names(said: str, exchanges: list[dict[str, Any]], known: list[str]) -> list[str]:
+    """Names flagged in an exchange's summary that the takeaways repeat (as for figures)."""
+    seen = set(known)
+    repeated = []
+    for exchange in exchanges:
+        for name in exchange["ungrounded_names"]:
+            if name not in seen and re.search(rf"\b{re.escape(name)}\b", said):
+                seen.add(name)
+                repeated.append(name)
+    return repeated

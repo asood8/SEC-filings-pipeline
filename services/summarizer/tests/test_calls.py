@@ -93,7 +93,9 @@ def test_each_exchange_is_summarized_then_the_takeaways() -> None:
     assert result.exchanges[0]["ungrounded_numbers"] == []  # 3% and $40 billion are in it
     # The same answer for the second exchange states figures its own text doesn't have.
     assert result.exchanges[1]["ungrounded_numbers"] == ["3", "40 billion"]
-    assert result.ungrounded_numbers == []  # the takeaways' figures are in the transcript
+    # "3%" is in the transcript, but the takeaways repeat it from the second exchange's summary,
+    # where it was flagged.
+    assert result.ungrounded_numbers == ["3"]
 
 
 def test_a_transcript_without_questions_gets_no_summary() -> None:
@@ -344,3 +346,28 @@ def test_a_long_question_or_answer_is_clipped_not_refused() -> None:
     assert summary.question.endswith("...")
     assert long.startswith(summary.question.removesuffix("..."))  # cut at a word
     assert summary.answer == "Up 3%."
+
+
+class MadeUp(Stub):
+    """An exchange summary that makes up a figure, and takeaways that repeat it: the number is
+    elsewhere in the transcript ("3%"), so only the exchange check sees it's not in that one."""
+
+    def generate_json(self, system: str, prompt: str, schema: dict[str, Any]) -> str:
+        if system == EXCHANGE_SYSTEM and "Analyst: Mary Major," in prompt:
+            return json.dumps({"question": "Buybacks?", "answer": "Up 3%, said Jane Roe."})
+        if system == TAKEAWAYS_SYSTEM:
+            return json.dumps(
+                {
+                    "headline": "Example Corp: buybacks",
+                    "summary": "Buybacks rose 3%.",
+                    "key_points": ["Jane Roe on buybacks"],
+                }
+            )
+        return super().generate_json(system, prompt, schema)
+
+
+def test_takeaways_repeating_a_figure_an_exchange_made_up_are_flagged() -> None:
+    result = summarize_call(*chains(MadeUp()), CONTEXT, TRANSCRIPT)
+    assert result is not None
+    assert result.exchanges[1]["ungrounded_numbers"] == ["3"]
+    assert result.ungrounded_numbers == ["3"]  # "3%" is in the transcript, not in that exchange

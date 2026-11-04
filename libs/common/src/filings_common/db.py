@@ -302,6 +302,36 @@ class CallTranscript(Base):
     fetched_at: Mapped[datetime] = mapped_column(server_default=sa.func.now())
 
 
+class CallSummary(Base):
+    """One summary of a call's Q&A (ADR-0022): each exchange, then the takeaways. History is kept
+    like a filing's: the newest row is current, and the same provider, model and prompt version
+    replace their row."""
+
+    __tablename__ = "call_summaries"
+    __table_args__ = (
+        sa.UniqueConstraint("transcript_id", "provider", "model", "prompt_version"),
+        sa.Index("ix_call_summaries_transcript_id_created_at", "transcript_id", "created_at"),
+    )
+
+    id: Mapped[int] = mapped_column(sa.BigInteger, sa.Identity(always=True), primary_key=True)
+    transcript_id: Mapped[int] = mapped_column(
+        sa.BigInteger, sa.ForeignKey("call_transcripts.id", ondelete="CASCADE")
+    )
+    # The provider and model that wrote the takeaways; each exchange records its own, since a
+    # failover can switch providers partway through a call.
+    provider: Mapped[str]
+    model: Mapped[str]
+    prompt_version: Mapped[int]
+    takeaways: Mapped[dict[str, Any]] = mapped_column(JSONB)  # a FilingSummary
+    # [{analyst, firm, question, answer, provider, model, ungrounded_numbers, ungrounded_names}];
+    # an exchange no provider could summarize is {analyst, firm, failed: true}.
+    exchanges: Mapped[list[dict[str, Any]]] = mapped_column(JSONB)
+    # The takeaways' grounding checks, against the whole transcript.
+    ungrounded_numbers: Mapped[list[str]] = mapped_column(ARRAY(sa.Text()))
+    ungrounded_names: Mapped[list[str]] = mapped_column(ARRAY(sa.Text()))
+    created_at: Mapped[datetime] = mapped_column(server_default=sa.func.now())
+
+
 class Summary(Base):
     """One summary of a filing. History is kept; the most recent row is the current summary.
 

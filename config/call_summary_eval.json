@@ -1,0 +1,237 @@
+{
+  "description": "Hand-written labels for Q&A exchanges of real earnings calls (ADR-0022), from the companies' own transcripts: facts a correct summary of the exchange states, and claims it must not make. Patterns match the question or the answer, case-insensitively. Written 2026-11-04 by reading each exchange; two patterns were corrected after the pilot showed they missed correct wording (a fact split across two sentences, a claim matching inside \"now\").",
+  "exchanges": [
+    {
+      "ticker": "JPM",
+      "call_date": "2026-10-13",
+      "analyst": "Chris McGratty",
+      "note": "Two questions: where JPMorgan is pulling back on capital (Dimon: credit terms), and the consumer's durability under high rates (Barnum).",
+      "facts": [
+        {
+          "fact": "JPMorgan is tightening credit a little",
+          "patterns": [
+            "tighten"
+          ]
+        },
+        {
+          "fact": "credit terms have gotten loose",
+          "patterns": [
+            "loose",
+            "weak covenants",
+            "\\bPIK\\b"
+          ]
+        },
+        {
+          "fact": "the consumer is healthy because of the labor market",
+          "patterns": [
+            "labor market",
+            "(consumer|consumers)[^.]{0,60}(healthy|resilient)"
+          ]
+        },
+        {
+          "fact": "a long high-rate cycle would mean weaker consumer credit",
+          "patterns": [
+            "(unemployment|weaker)[^.]{0,80}(credit|consumer)",
+            "(rates?)[^.]{0,80}(weaker|impact|slow)"
+          ]
+        }
+      ],
+      "forbidden": [
+        {
+          "claim": "the consumer is weak now",
+          "patterns": [
+            "consumers? (is|are) (currently |now )?(weak|weakening|struggling|deteriorating)"
+          ]
+        }
+      ]
+    },
+    {
+      "ticker": "JPM",
+      "call_date": "2026-10-13",
+      "analyst": "Matt O'Connor",
+      "note": "Growth in non-interest-bearing deposits; Barnum's 650,000 net new checking accounts, Dimon on consumer vs wholesale.",
+      "facts": [
+        {
+          "fact": "650,000 net new checking accounts this quarter",
+          "numbers": [
+            "650,000"
+          ]
+        },
+        {
+          "fact": "most non-interest-bearing deposits are consumer",
+          "patterns": [
+            "(most|majority)[^.]{0,60}consumer"
+          ]
+        },
+        {
+          "fact": "wholesale deposits are more competitive",
+          "patterns": [
+            "(wholesale|commercial)[^.]{0,60}competitive",
+            "competitive[^.]{0,60}(wholesale|commercial)"
+          ]
+        }
+      ],
+      "forbidden": [
+        {
+          "claim": "most non-interest-bearing deposits are wholesale",
+          "patterns": [
+            "(most|majority) of (the |its |JPMorgan's )?non-interest[- ]bearing (deposits )?(are|is|come from) (in |from )?(the )?(wholesale|commercial|corporate)"
+          ]
+        }
+      ]
+    },
+    {
+      "ticker": "NKE",
+      "call_date": "2026-10-01",
+      "analyst": "Jay Sole",
+      "note": "Q2 and fiscal '27 guidance: no gross margin guide, supply chain helps and discounts hurt, a tough Q2 comparison.",
+      "facts": [
+        {
+          "fact": "no specific gross margin guidance",
+          "patterns": [
+            "(not|won't|no|declin\\w*)[^.]{0,40}(guidance|guide)[^.]{0,60}gross margin",
+            "gross margin[^.]{0,60}(not|won't|no)[^.]{0,30}(guidance|guide|provide)"
+          ]
+        },
+        {
+          "fact": "supply chain and sourcing moves help gross margin",
+          "patterns": [
+            "(supply chain|sourcing).{0,120}(bolster|help|improv|support|boost|benefit)",
+            "(bolster|help|improv|support|boost|benefit).{0,80}(supply chain|sourcing)"
+          ]
+        },
+        {
+          "fact": "Q2 faces a tough comparison",
+          "patterns": [
+            "tough (comparison|compare)",
+            "(difficult|challenging) (comparison|compare)",
+            "Cyber Week"
+          ]
+        }
+      ],
+      "forbidden": [
+        {
+          "claim": "Q2 growth will accelerate",
+          "patterns": [
+            "(second quarter|Q2|2Q)[^.]{0,60}\\b(accelerat\\w*|stronger growth)"
+          ]
+        }
+      ]
+    },
+    {
+      "ticker": "NKE",
+      "call_date": "2026-10-01",
+      "analyst": "Matthew Boss",
+      "note": "\"Pain before gain\": Sportswear, Jordan and China into fiscal '28; Pace savings starting now, peaking in '29 and '30.",
+      "facts": [
+        {
+          "fact": "deliberate actions in Sportswear, Jordan and China",
+          "patterns": [
+            "(Sportswear|Jordan|China)[^.]{0,60}(Sportswear|Jordan|China)"
+          ]
+        },
+        {
+          "fact": "the pain lasts into fiscal '28",
+          "patterns": [
+            "(fiscal |FY ?)?('|20)28\\b"
+          ]
+        },
+        {
+          "fact": "Pace savings peak in '29 and '30",
+          "patterns": [
+            "(29|2029)[^.]{0,30}(30|2030)",
+            "(max|maximum|full|peak)[^.]{0,40}savings[^.]{0,40}(29|2029)"
+          ]
+        }
+      ],
+      "forbidden": [
+        {
+          "claim": "Pace has not produced savings yet",
+          "patterns": [
+            "\\b(no|not yet|haven't|have not)\\b[^.]{0,20}(seen |produced |delivered )?(any )?savings"
+          ]
+        }
+      ]
+    },
+    {
+      "ticker": "GOOGL",
+      "call_date": "2026-10-28",
+      "analyst": "Ross Sandler",
+      "note": "TPU system sales: no product-level financials; backlog, then inventory, then revenue through 2027.",
+      "facts": [
+        {
+          "fact": "no product-level financials",
+          "patterns": [
+            "(don't|do not|doesn't|does not|not|won't|declin\\w*)[^.]{0,20}(provide|give|disclose|break out|share)[^.]{0,40}(product|specific|financials|level)"
+          ]
+        },
+        {
+          "fact": "a signed TPU deal shows up in backlog first",
+          "patterns": [
+            "backlog"
+          ]
+        },
+        {
+          "fact": "inventory is built before the revenue",
+          "patterns": [
+            "inventor(y|ies)"
+          ]
+        },
+        {
+          "fact": "more system-sale revenue through 2027",
+          "patterns": [
+            "2027|'27"
+          ]
+        }
+      ],
+      "forbidden": [
+        {
+          "claim": "a share of the $35 billion is recognized as revenue",
+          "patterns": [
+            "\\d+ ?(%|percent)[^.]{0,60}(revenue|recogni)"
+          ]
+        }
+      ]
+    },
+    {
+      "ticker": "GOOGL",
+      "call_date": "2026-10-28",
+      "analyst": "Mark Shmulik",
+      "note": "Two questions: agentic use (Pichai, the Gemini app's Task tab) and Cloud growth (Kurian: up 103% to $30.7 billion, capacity-limited).",
+      "facts": [
+        {
+          "fact": "Cloud revenue of $30.7 billion",
+          "numbers": [
+            "30.7 billion"
+          ]
+        },
+        {
+          "fact": "Cloud revenue up 103%",
+          "numbers": [
+            "103%"
+          ]
+        },
+        {
+          "fact": "a Task tab in the Gemini app",
+          "patterns": [
+            "tasks? tab"
+          ]
+        },
+        {
+          "fact": "more capacity would serve more demand",
+          "patterns": [
+            "capacity"
+          ]
+        }
+      ],
+      "forbidden": [
+        {
+          "claim": "a growth rate excluding TPU system sales was given",
+          "patterns": [
+            "exclud\\w*[^.]{0,40}TPU[^.]{0,60}\\d+ ?(%|percent)"
+          ]
+        }
+      ]
+    }
+  ]
+}

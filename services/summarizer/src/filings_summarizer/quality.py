@@ -26,6 +26,7 @@ import re
 import statistics
 from collections.abc import Iterable
 from dataclasses import dataclass
+from datetime import date
 from pathlib import Path
 from typing import Annotated, Any, Self
 
@@ -144,6 +145,47 @@ class LabelFile(BaseModel):
         return value
 
 
+class ExchangeLabels(BaseModel):
+    """Labels for one Q&A exchange of an earnings call (ADR-0022): the call by company and day,
+    the exchange by the analyst who asked. The summary's question is scored as its headline, the
+    answer as its summary."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    ticker: Text
+    call_date: date
+    analyst: Text
+    note: str = ""
+    facts: tuple[Fact, ...] = Field(min_length=1)
+    forbidden: tuple[ForbiddenClaim, ...] = ()
+
+
+class CallLabelFile(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    description: str = ""
+    exchanges: list[ExchangeLabels] = Field(min_length=1)
+
+    @field_validator("exchanges")
+    @classmethod
+    def _unique_exchanges(cls, value: list[ExchangeLabels]) -> list[ExchangeLabels]:
+        keys = [(x.ticker, x.call_date, x.analyst) for x in value]
+        if len(set(keys)) != len(keys):
+            raise ValueError("an exchange is labeled twice")
+        return value
+
+
+def load_call_labels(path: Path) -> list[ExchangeLabels]:
+    try:
+        text = path.read_text(encoding="utf-8")
+    except OSError as exc:
+        raise LabelError(f"can't read {path}: {exc.strerror or exc}") from exc
+    try:
+        return CallLabelFile.model_validate_json(text).exchanges
+    except ValidationError as exc:
+        raise LabelError(f"{path} is not a valid label file:\n{exc}") from exc
+
+
 def load_labels(path: Path) -> dict[str, FilingLabels]:
     """Labels by accession number."""
     try:
@@ -200,7 +242,7 @@ class QualityScore:
     forbidden: list[str]  # the forbidden claims made
 
 
-def score_summary(summary: FilingSummary, labels: FilingLabels) -> QualityScore:
+def score_summary(summary: FilingSummary, labels: FilingLabels | ExchangeLabels) -> QualityScore:
     parts = segments(summary)
     missing = [fact.fact for fact in labels.facts if not states(fact, parts)]
     stated = len(labels.facts) - len(missing)

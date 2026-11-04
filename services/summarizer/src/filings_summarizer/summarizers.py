@@ -110,11 +110,15 @@ def amended(summary: FilingSummary) -> FilingSummary:
     return summary.model_copy(update={"headline": headline})
 
 
-def build_summarizers(
-    llm: LlmSettings, gemini: GeminiSettings, redis_client: redis.Redis
-) -> dict[str, Summarizer]:
-    template = Form4TemplateSummarizer()
-    summarizers: dict[str, Summarizer] = {"4": template, "4/A": template}
+def build_providers(
+    llm: LlmSettings,
+    gemini: GeminiSettings,
+    redis_client: redis.Redis,
+    *,
+    max_output_tokens: int | None = None,
+) -> list[LlmProvider]:
+    """The configured providers in failover order: the local model, then Gemini (paced by the
+    bucket every process shares through Redis)."""
     providers: list[LlmProvider] = []
     if llm.model:
         providers.append(
@@ -123,6 +127,7 @@ def build_summarizers(
                 base_url=llm.base_url,
                 model=llm.model,
                 timeout=llm.timeout_seconds,
+                max_output_tokens=max_output_tokens,
             )
         )
     if gemini.api_key is not None:
@@ -135,8 +140,18 @@ def build_summarizers(
                 model=gemini.model,
                 timeout=gemini.timeout_seconds,
                 limiter=limiter,
+                max_output_tokens=max_output_tokens,
             )
         )
+    return providers
+
+
+def build_summarizers(
+    llm: LlmSettings, gemini: GeminiSettings, redis_client: redis.Redis
+) -> dict[str, Summarizer]:
+    template = Form4TemplateSummarizer()
+    summarizers: dict[str, Summarizer] = {"4": template, "4/A": template}
+    providers = build_providers(llm, gemini, redis_client)
     if providers:
         chain = FailoverChain(providers, validate=FilingSummary.model_validate_json)
         summarizers["8-K"] = summarizers["8-K/A"] = Form8KLlmSummarizer(chain)

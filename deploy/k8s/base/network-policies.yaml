@@ -74,8 +74,8 @@ spec:
               - key: app.kubernetes.io/name
                 operator: In
                 # The SEC token bucket (discovery, load-companies), the Gemini pacing bucket
-                # (summarizer), and the API's rate limits and cache.
-                values: [api, discovery, load-companies, summarizer]
+                # (summarizer, call-transcripts), and the API's rate limits and cache.
+                values: [api, discovery, load-companies, summarizer, call-transcripts]
       ports:
         - port: 6379
 ---
@@ -91,8 +91,10 @@ spec:
   ingress:
     - from:
         - podSelector:
-            matchLabels:
-              app.kubernetes.io/name: summarizer
+            matchExpressions:
+              - key: app.kubernetes.io/name
+                operator: In
+                values: [summarizer, call-transcripts]
       ports:
         - port: 8080
 ---

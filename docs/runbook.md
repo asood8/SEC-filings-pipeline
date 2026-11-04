@@ -692,6 +692,13 @@ Run the job by hand after a fix:
 kubectl -n filings create job --from=cronjob/call-transcripts call-transcripts-manual
 ```
 
+The job's second step, `summarize`, writes the Q&A summaries (`call_summaries`): each exchange,
+then the takeaways, newest calls first, for up to 3 hours a night. A call whose summary failed
+(every provider down) or that the budget didn't reach is tried the next night; its log says
+which. After changing the prompts in `filings_summarizer/calls.py`, bump `CALL_PROMPT_VERSION`
+(every call is summarized again, newest first) and compare with `filings-call-benchmark` first:
+read the summaries behind any score change, as for the 8-K benchmark.
+
 ## Oracle idle reclamation and capacity errors
 
 **Idle reclamation.** Oracle may reclaim (stop) an Always Free instance whose CPU (95th

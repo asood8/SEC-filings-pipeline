@@ -96,10 +96,13 @@ class OpenAICompatibleProvider:
         base_url: str,
         model: str,
         timeout: float,
+        max_output_tokens: int | None = None,
         transport: httpx2.BaseTransport | None = None,
     ) -> None:
         self.name = name
         self.model = model
+        # A cap on the answer: a small model can run on for thousands of tokens until the timeout.
+        self._max_output_tokens = max_output_tokens
         self._http = httpx2.Client(
             base_url=base_url.rstrip("/"), timeout=timeout, transport=transport
         )
@@ -119,7 +122,12 @@ class OpenAICompatibleProvider:
                         "json_schema": {"name": "filing_summary", "schema": schema, "strict": True},
                     },
                     "temperature": 0.2,
-                },
+                }
+                | (
+                    {"max_tokens": self._max_output_tokens}
+                    if self._max_output_tokens is not None
+                    else {}
+                ),
             )
         except httpx2.TransportError as exc:
             raise LlmError(f"{self.name} unreachable: {exc!r}") from exc
@@ -143,10 +151,12 @@ class GeminiProvider:
         model: str,
         timeout: float,
         limiter: RateLimiter | None = None,
+        max_output_tokens: int | None = None,
         transport: httpx2.BaseTransport | None = None,
     ) -> None:
         self.model = model
         self._limiter = limiter
+        self._max_output_tokens = max_output_tokens
         # The key travels in a header, never in the URL, so it can't leak into logs.
         self._http = httpx2.Client(
             base_url=GEMINI_API,
@@ -169,7 +179,12 @@ class GeminiProvider:
                         "responseMimeType": "application/json",
                         "responseJsonSchema": schema,
                         "temperature": 0.2,
-                    },
+                    }
+                    | (
+                        {"maxOutputTokens": self._max_output_tokens}
+                        if self._max_output_tokens is not None
+                        else {}
+                    ),
                 },
             )
         except httpx2.TransportError as exc:
@@ -268,6 +283,7 @@ class FailoverChain:
                 },
             ) as span:
                 answered, opened = False, False
+                error: Exception | None = None
                 started = time.monotonic()
                 try:
                     text = provider.generate_json(system, prompt, schema)
@@ -275,11 +291,13 @@ class FailoverChain:
                     if self._validate is not None:
                         self._validate(text)
                 except RateLimitedError as exc:
+                    error = exc
                     opened = breaker.record_failure(retry_after=exc.retry_after)
                     failures.append(f"{provider.name}: {exc}")
                     outcome = "rate_limited"
                     telemetry.record_error(span, exc, redact=True)
                 except Exception as exc:  # any provider failure means: try the next provider
+                    error = exc
                     opened = breaker.record_failure()
                     failures.append(f"{provider.name}: {exc!r}"[:300])
                     outcome = "invalid" if answered else "error"
@@ -298,5 +316,11 @@ class FailoverChain:
                     if position > 0:
                         metrics.LLM_FAILOVERS.add(1, provider_attribute)
                     return Answer(text, provider.name, provider.model)
-            logger.warning("LLM provider %s failed; trying the next one", provider.name)
+            # The outcome and the error's type only: messages can hold the model's answer.
+            logger.warning(
+                "LLM provider %s failed (%s: %s); trying the next one",
+                provider.name,
+                outcome,
+                type(error).__name__,
+            )
         raise LlmUnavailableError("; ".join(failures))

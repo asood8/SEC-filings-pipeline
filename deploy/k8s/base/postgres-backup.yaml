@@ -1,6 +1,9 @@
-# Nightly backup (brief §7): pg_dump into a scratch volume, then upload to the R2 backups bucket.
-# The dump uses Postgres's custom format (compressed; restore with pg_restore). How long backups
-# are kept is a lifecycle rule on the bucket (Terraform, Phase 7), so this job never deletes.
+# Nightly backup (brief §7): pg_dump into a scratch volume, upload it to the R2 backups bucket,
+# then report its size (filings-backup-report). The three steps run one after another, each only if
+# the one before succeeded, so a report means the dump is in R2; the "Postgres backup missing" and
+# "Postgres backup shrank" alerts (deploy/grafana) read it. The dump uses Postgres's custom format
+# (compressed; restore with pg_restore). How long backups are kept is a lifecycle rule on the
+# bucket (Terraform, Phase 7), so this job never deletes.
 apiVersion: batch/v1
 kind: CronJob
 metadata:
@@ -25,6 +28,8 @@ spec:
           restartPolicy: Never
           automountServiceAccountToken: false
           enableServiceLinks: false
+          # Time for the report's final telemetry export, as for discovery.
+          terminationGracePeriodSeconds: 45
           securityContext:
             runAsNonRoot: true
             runAsUser: 999
@@ -73,7 +78,6 @@ spec:
                   mountPath: /backup
                 - name: tmp
                   mountPath: /tmp
-          containers:
             # rclone, configured entirely from environment variables (no config file): a remote
             # named "r2" of type s3. The R2 token is scoped to the backups bucket, so rclone must
             # not try to create or list buckets.
@@ -127,6 +131,36 @@ spec:
                   cpu: 250m
                   memory: 128Mi
               securityContext:
+                allowPrivilegeEscalation: false
+                readOnlyRootFilesystem: true
+                capabilities:
+                  drop: ["ALL"]
+              volumeMounts:
+                - name: backup
+                  mountPath: /backup
+                  readOnly: true
+                - name: tmp
+                  mountPath: /tmp
+          containers:
+            - name: report
+              # Any service image has filings-common's commands; discovery's is the jobs' image.
+              image: filings-discovery
+              command: ["filings-backup-report", "/backup/filings.dump"]
+              envFrom:
+                - configMapRef:
+                    name: filings-config
+              resources:
+                requests:
+                  cpu: 20m
+                  memory: 64Mi
+                limits:
+                  cpu: 250m
+                  memory: 128Mi
+              securityContext:
+                # The image's own user. It only reads the dump's size, which needs no permission on
+                # the file the Postgres user wrote.
+                runAsUser: 10001
+                runAsGroup: 10001
                 allowPrivilegeEscalation: false
                 readOnlyRootFilesystem: true
                 capabilities:

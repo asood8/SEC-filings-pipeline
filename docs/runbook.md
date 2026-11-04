@@ -20,6 +20,8 @@ applying, reaching the cluster, Terraform state).
 - [Alert: Pipeline service not reporting](#alert-pipeline-service-not-reporting)
 - [Alert: R2 free tier half used](#alert-r2-free-tier-half-used)
 - [Alert: R2 usage not measured](#alert-r2-usage-not-measured)
+- [Alert: Postgres backup missing](#alert-postgres-backup-missing)
+- [Alert: Postgres backup shrank](#alert-postgres-backup-shrank)
 - [Dead letters: inspect, fix, replay, trim](#dead-letters-inspect-fix-replay-trim)
 - [Deploys and rollbacks](#deploys-and-rollbacks)
 - [Pausing Argo CD for hands-on work](#pausing-argo-cd-for-hands-on-work)
@@ -179,6 +181,47 @@ above can't fire. `kubectl -n filings get cronjob r2-usage` (last schedule) and 
 log, as above. A 400 or 403 from Cloudflare's analytics API means the `cloudflare-analytics`
 token was revoked or lost its Account Analytics: Read permission ([Rotating
 secrets](#rotating-secrets)).
+
+## Alert: Postgres backup missing
+
+Warning. No nightly backup (03:30 UTC) has reported an upload to R2 for 28 hours. The job's
+last step, `filings-backup-report`, runs only after the dump and the upload both succeeded, so
+one of them failed, or the job didn't start. Older backups are still in the bucket (30 days).
+
+```
+kubectl -n filings get cronjob postgres-backup                   # LAST SCHEDULE
+kubectl -n filings get jobs -l app.kubernetes.io/name=postgres-backup
+kubectl -n filings describe job <the newest>                     # events: deadline, OOMKilled
+kubectl -n filings logs job/<the newest> -c dump                 # pg_dump's error
+kubectl -n filings logs job/<the newest> -c upload               # rclone's error
+```
+
+- **upload failed with 401 or 403:** the `r2-backups` token was revoked or lost access to the
+  bucket ([Rotating secrets](#rotating-secrets)).
+- **dump failed:** Postgres was down or the password changed; or the dump outgrew the job's
+  2 GiB scratch volume (`sizeLimit` in deploy/k8s/base/postgres-backup.yaml).
+- **No job at all:** the node was down at 03:30 for over an hour (`startingDeadlineSeconds`).
+- **report failed** while upload succeeded: the dump is in R2; the alert clears after the next
+  night. The report's log says why.
+
+Then [run a backup now](#backups-and-restores) and check that the alert clears.
+
+## Alert: Postgres backup shrank
+
+Critical. Last night's dump is under half the size of the largest in the past 8 days. The
+database only grows, so it probably lost data: a volume recreated empty, a mistaken restore, or a
+dump of the wrong database. The backups from before the drop are the good ones, and the bucket's
+lifecycle rule deletes each one 30 days after it was made: act before they expire.
+
+```
+kubectl -n filings exec postgres-0 -- sh -c 'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" \
+  -c "SELECT count(*) FROM filings" -c "SELECT count(*) FROM users"'
+```
+
+- **The counts look right:** something big was deleted on purpose (synthetic test data, a
+  pruned table). The alert clears itself within 20 hours.
+- **They don't:** stop anything that writes (scale the deployments to 0), keep a copy of the
+  newest good dump outside the bucket, and restore from it (below).
 
 ## Dead letters: inspect, fix, replay, trim
 
@@ -687,7 +730,9 @@ What they leave open:
 | Sealed Secrets key | kube-system | Exported by hand to a password manager (deploy/k8s/README.md) | Every secret must be sealed again |
 | Terraform state | Your machine | Your own copy (infra/terraform/README.md, "State") | `terraform import` |
 
-**Check last night's backup.** No alert watches the backup job, so look now and then:
+**Check last night's backup.** Two alerts watch it: [Postgres backup missing](#alert-postgres-backup-missing)
+and [Postgres backup shrank](#alert-postgres-backup-shrank) (the dashboard's "Postgres backup size" panel
+shows each night's size). To look by hand:
 
 ```
 kubectl -n filings get cronjob postgres-backup                                       # LAST SCHEDULE

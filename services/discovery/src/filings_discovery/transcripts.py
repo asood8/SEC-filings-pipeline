@@ -7,10 +7,13 @@ gives `urls` templates filled from a call's date. Call dates come from the earni
 2.02) discovery already stored, so nothing here calls SEC.
 
 Requests are polite: a User-Agent that names the project, robots.txt honored for every request
-and redirect, at least a second between requests to one site, documents capped at 4 MB, and only
-transcripts of the last `lookback_days`. The text goes to MongoDB, then a row to Postgres (the
-source URL is the natural key, so a re-run stores nothing twice). Neither is ever served: the API
-serves only summaries and the link.
+and redirect, at least a second between requests to one site, and documents capped at 4 MB. Only
+recent transcripts are fetched: calls of the last `lookback_days` for addresses built from dates
+and dated links, and a listing's newest few (`keep`) otherwise.
+
+The text goes to MongoDB, then a row to Postgres. The source URL is the natural key, and a
+company has one transcript per call day, so a re-run (or a listing whose links moved) stores
+nothing twice. Neither is ever served: the API serves only summaries and the link.
 """
 
 import logging
@@ -241,16 +244,22 @@ class SiteClient:
         return robots is None or robots.can_fetch(self._agent, url)
 
     def _read_robots(self, origin: str) -> RobotFileParser | None:
-        """None allows everything: no robots.txt (a 4xx, as RFC 9309 says). A server error
-        allows nothing this run."""
-        reply = self._request(f"{origin}/robots.txt")
-        if 400 <= reply.status < 500:
-            return None
-        if reply.status != 200:  # a redirect included: robots.txt is read where it is asked for
-            raise SourceError(f"{origin}/robots.txt: HTTP {reply.status}")
-        robots = RobotFileParser()
-        robots.parse(reply.body.decode("utf-8", errors="replace").splitlines())
-        return robots
+        """None allows everything: no robots.txt (a 4xx, as RFC 9309 says). Redirects are
+        followed (up to five, as it asks); a server error allows nothing this run."""
+        url = f"{origin}/robots.txt"
+        for _ in range(MAX_REDIRECTS + 1):
+            reply = self._request(url)
+            if reply.status in _REDIRECTS and reply.location:
+                url = urljoin(url, reply.location)
+                continue
+            if 400 <= reply.status < 500:
+                return None
+            if reply.status != 200:
+                raise SourceError(f"{url}: HTTP {reply.status}")
+            robots = RobotFileParser()
+            robots.parse(reply.body.decode("utf-8", errors="replace").splitlines())
+            return robots
+        raise SourceError(f"{origin}/robots.txt: more than {MAX_REDIRECTS} redirects")
 
 
 class _Text(HTMLParser):

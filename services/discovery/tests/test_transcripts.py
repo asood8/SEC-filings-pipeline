@@ -256,6 +256,22 @@ def test_a_site_without_robots_txt_allows_everything_and_a_broken_one_nothing() 
             client.get("https://b.example/x")
 
 
+def test_a_redirected_robots_txt_is_followed() -> None:
+    site = FakeSite(
+        {
+            "https://cdn.example/robots.txt": httpx2.Response(
+                301, headers={"location": "https://www.example/robots.txt"}
+            ),
+            "https://www.example/robots.txt": ok("User-agent: *\nDisallow: /private/\n"),
+            "https://cdn.example/doc.pdf": ok(b"%PDF", "application/pdf"),
+        }
+    )
+    with site.client() as client:
+        assert client.get("https://cdn.example/doc.pdf") is not None
+        with pytest.raises(SourceError, match="disallows"):
+            client.get("https://cdn.example/private/x")
+
+
 def test_redirects_are_followed_checking_each_sites_robots_txt() -> None:
     site = FakeSite(
         {

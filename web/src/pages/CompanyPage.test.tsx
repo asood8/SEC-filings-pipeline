@@ -1,7 +1,14 @@
 import { screen, waitFor, within } from '@testing-library/react'
 import { describe, expect, it } from 'vitest'
 import { API_BASE_URL } from '../api/client'
-import { BERKSHIRE, BUFFETT, COOK, filing, insiderActivity } from '../test/data'
+import {
+  BERKSHIRE,
+  BUFFETT,
+  COOK,
+  callSummary,
+  filing,
+  insiderActivity,
+} from '../test/data'
 import { mockApi, renderRoute } from '../test/render'
 import { rowText } from '../test/table'
 
@@ -217,5 +224,31 @@ describe('CompanyPage', () => {
     expect(
       await screen.findByText('Loading insider trades…'),
     ).toBeInTheDocument()
+  })
+
+  it("shows the company's latest summarized earnings call", async () => {
+    const requests = mockApi({
+      '/companies/AAPL': apple,
+      '/companies/AAPL/insider-activity': () => insiderActivity(),
+      '/filings': () => ({ items: [], next_cursor: null }),
+      '/calls': () => ({ since: '2026-10-22', until: '2027-02-19', items: [] }),
+      '/call-summaries': () => ({
+        items: [
+          callSummary({ ticker: 'AAPL', headline: 'Apple: iPhone demand' }),
+        ],
+      }),
+    })
+    renderRoute('/companies/AAPL')
+    const heading = await screen.findByRole('heading', {
+      name: 'Latest earnings call Q&A',
+    })
+    const section = heading.closest('section')!
+    expect(
+      within(section).getByRole('link', { name: 'Apple: iPhone demand' }),
+    ).toHaveAttribute('href', '/calls/qa/7')
+    expect(section).toHaveTextContent("2 analysts' questions")
+    const asked = requests.find((url) => url.pathname === '/call-summaries')
+    expect(asked?.searchParams.get('ticker')).toBe('AAPL')
+    expect(asked?.searchParams.get('limit')).toBe('1')
   })
 })

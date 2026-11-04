@@ -195,6 +195,49 @@ class UpcomingCalls(BaseModel):
     )
 
 
+class CallExchangeOut(BaseModel):
+    analyst: str
+    firm: str
+    question: str | None = Field(description="What the analyst asked; null when it failed.")
+    answer: str | None = Field(description="What management said; null when it failed.")
+    failed: bool = Field(
+        default=False, description="No LLM could summarize this exchange; the others stand."
+    )
+    ungrounded_numbers: list[str] = Field(
+        default_factory=list,
+        description="Numbers in this summary that the exchange never states, worth verifying.",
+    )
+
+
+class CallSummaryOut(BaseModel):
+    """An automated summary of an earnings call's Q&A, from the company's own transcript
+    (ADR-0022). The transcript itself is never served: follow `source_url` to read it."""
+
+    id: int = Field(description="The transcript's id, for GET /call-summaries/{id}.")
+    ticker: str
+    company_name: str
+    call_date: date
+    source_url: str = Field(description="The transcript on the company's own site.")
+    headline: str
+    summary: str
+    key_points: list[str]
+    exchanges: list[CallExchangeOut] = Field(description="In the order they were asked.")
+    provider: str
+    model: str
+    prompt_version: int
+    created_at: datetime
+    ungrounded_numbers: list[str] = Field(
+        description="Numbers in the takeaways that the transcript never states."
+    )
+    ungrounded_names: list[str] = Field(
+        description="Capitalized words in the takeaways that the transcript never uses."
+    )
+
+
+class CallSummaries(BaseModel):
+    items: list[CallSummaryOut] = Field(description="Newest call first.")
+
+
 class FilingDetail(FilingOut):
     summary: SummaryOut | None
     form4: Form4Details | None

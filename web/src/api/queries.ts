@@ -99,6 +99,27 @@ export const callsQuery = (days: number, ticker?: string) =>
       unwrap(api.GET('/calls', { params: { query: { days, ticker } } })),
   })
 
+/** Summaries of past earnings calls' Q&A, newest call first (all companies, or one). */
+export const callSummariesQuery = (limit: number, ticker?: string) =>
+  queryOptions({
+    queryKey: ['call-summaries', limit, ticker],
+    queryFn: () =>
+      unwrap(
+        api.GET('/call-summaries', { params: { query: { limit, ticker } } }),
+      ),
+  })
+
+export const callSummaryQuery = (id: number) =>
+  queryOptions({
+    queryKey: ['call-summary', id],
+    queryFn: () =>
+      unwrap(
+        api.GET('/call-summaries/{transcript_id}', {
+          params: { path: { transcript_id: id } },
+        }),
+      ),
+  })
+
 export type SearchMode = 'hybrid' | 'keyword' | 'semantic'
 export type SearchParams = {
   q: string

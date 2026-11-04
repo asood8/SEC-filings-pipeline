@@ -7,7 +7,13 @@ from sqlalchemy.engine import Engine
 
 from filings_api import ical
 from filings_api.routes import calls
-from filings_common.db import Filing, Form8KFiling, session_factory
+from filings_common.db import (
+    CallSummary,
+    CallTranscript,
+    Filing,
+    Form8KFiling,
+    session_factory,
+)
 
 pytestmark = pytest.mark.integration
 
@@ -160,3 +166,118 @@ def test_the_calendar_version_ignores_when_it_was_written(
     assert later.headers["ETag"] == first.headers["ETag"]
     again = client.get("/calls.ics", headers={"If-None-Match": first.headers["ETag"]})
     assert (again.status_code, again.content) == (304, b"")
+
+
+# --- Earnings-call Q&A summaries (ADR-0022) -------------------------------------------------------
+
+TAKEAWAYS = {
+    "headline": "Microsoft: questions on AI capacity",
+    "summary": "Analysts asked about capacity and capital.",
+    "key_points": ["Capacity constrained through the year"],
+}
+
+
+@pytest.fixture
+def summarized(seeded: Engine) -> dict[str, int]:
+    """Two Microsoft calls (the older summarized twice) and an Apple one."""
+    with session_factory(seeded).begin() as session:
+        transcripts = {
+            key: CallTranscript(
+                cik=cik,
+                call_date=day,
+                source_url=f"https://ir.example/{key}.pdf",
+                text_sha256="x",
+                words=9000,
+                exchanges=2,
+            )
+            for key, cik, day in [
+                ("msft-july", 789019, date(2026, 7, 29)),
+                ("msft-october", 789019, date(2026, 10, 28)),
+                ("aapl-october", 320193, date(2026, 10, 30)),
+            ]
+        }
+        session.add_all(transcripts.values())
+        session.flush()
+        exchanges = [
+            {
+                "analyst": "Adam Wood",
+                "firm": "Morgan Stanley",
+                "question": "Capacity?",
+                "answer": "Constrained, said Amy Hood.",
+                "provider": "ollama",
+                "model": "m",
+                "ungrounded_numbers": [],
+                "ungrounded_names": [],
+            },
+            {"analyst": "Karl Keirstead", "firm": "UBS", "failed": True},
+        ]
+        for key, transcript in transcripts.items():
+            for created, headline in [
+                (datetime(2026, 11, 1, tzinfo=UTC), "Older summary"),
+                (datetime(2026, 11, 2, tzinfo=UTC), TAKEAWAYS["headline"]),
+            ]:
+                if key != "msft-july" and headline == "Older summary":
+                    continue
+                session.add(
+                    CallSummary(
+                        transcript_id=transcript.id,
+                        provider="ollama",
+                        model="llama3.2:3b" if headline != "Older summary" else "old",
+                        prompt_version=1,
+                        takeaways=TAKEAWAYS | {"headline": headline},
+                        exchanges=exchanges,
+                        ungrounded_numbers=[],
+                        ungrounded_names=[],
+                        created_at=created,
+                    )
+                )
+        return {key: t.id for key, t in transcripts.items()}
+
+
+def test_call_summaries_are_listed_newest_call_first_with_their_current_summary(
+    client: TestClient, summarized: dict[str, int]
+) -> None:
+    response = client.get("/call-summaries")
+    assert response.status_code == 200
+    items = response.json()["items"]
+    assert [(i["ticker"], i["call_date"]) for i in items] == [
+        ("AAPL", "2026-10-30"),
+        ("MSFT", "2026-10-28"),
+        ("MSFT", "2026-07-29"),
+    ]
+    july = items[2]
+    assert july["headline"] == TAKEAWAYS["headline"]  # the newer of its two summaries
+    assert july["model"] == "llama3.2:3b"
+    assert july["source_url"] == "https://ir.example/msft-july.pdf"
+    assert july["exchanges"] == [
+        {
+            "analyst": "Adam Wood",
+            "firm": "Morgan Stanley",
+            "question": "Capacity?",
+            "answer": "Constrained, said Amy Hood.",
+            "failed": False,
+            "ungrounded_numbers": [],
+        },
+        {
+            "analyst": "Karl Keirstead",
+            "firm": "UBS",
+            "question": None,
+            "answer": None,
+            "failed": True,
+            "ungrounded_numbers": [],
+        },
+    ]
+    assert "text" not in july  # never the transcript itself
+    assert "transcript" not in july
+
+
+def test_call_summaries_by_company_and_one_by_id(
+    client: TestClient, summarized: dict[str, int]
+) -> None:
+    msft = client.get("/call-summaries", params={"ticker": "msft", "limit": 1}).json()["items"]
+    assert [i["call_date"] for i in msft] == ["2026-10-28"]
+    one = client.get(f"/call-summaries/{summarized['aapl-october']}")
+    assert one.status_code == 200
+    assert one.json()["company_name"] == "Apple Inc."
+    assert client.get("/call-summaries/999999").status_code == 404
+    assert client.get("/call-summaries", params={"ticker": "NOPE"}).status_code == 404

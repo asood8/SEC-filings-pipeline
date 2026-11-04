@@ -346,6 +346,14 @@ a filing's page adds the filing it amends (`amends`) and its amendments (`amende
 Form 4 line says whether an amendment restated it (`superseded_by`). The website shows both
 sides as notices with links, and marks restated lines in words, not only by color.
 
+### Earnings-call Q&A (added 2026-11-04)
+
+`GET /call-summaries` (newest call first; `ticker`, `limit` up to 50) and
+`GET /call-summaries/{id}` serve the current summary of each summarized call (ADR-0022): the
+takeaways, each exchange's question and answer (or `failed`), the grounding flags, and
+`source_url`, the transcript on the company's own site. The transcript's text is never served.
+The responses are cached like every other anonymous GET.
+
 ## Alternatives considered
 
 - **A dedicated search engine (OpenSearch, Meilisearch).** Another always-on service on a 12 GB VM,

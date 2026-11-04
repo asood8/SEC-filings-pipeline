@@ -32,6 +32,7 @@ from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.orm import Session, aliased, sessionmaker
 
 from filings_common import names
+from filings_common.amendments import matching_forms
 from filings_common.db import Company, Filing, FilingEmbedding, FilingSearch, Summary
 from filings_common.embeddings import Embedder, EmbeddingError
 from filings_common.summaries import FilingSummary
@@ -262,9 +263,9 @@ def _filters(
     *, form_type: str | None, cik: int | None, since: date | None, until: date | None
 ) -> list[sa.ColumnElement[bool]]:
     """`since` and `until` are filing dates, both included."""
-    clauses = []
-    if form_type is not None:
-        clauses.append(Filing.form_type == form_type)
+    clauses: list[sa.ColumnElement[bool]] = []
+    if form_type is not None:  # a form and its amendments (amendments.matching_forms)
+        clauses.append(Filing.form_type.in_(matching_forms(form_type)))
     if cik is not None:
         clauses.append(Filing.cik == cik)
     if since is not None:

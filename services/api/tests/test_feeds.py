@@ -184,3 +184,35 @@ def test_unchanged_feeds_answer_not_modified(client: TestClient, seeded: Engine,
     changed = client.get("/feeds/filings.atom", headers={"If-None-Match": etag})
     assert changed.status_code == 200
     assert changed.headers["ETag"] != etag
+
+
+def test_a_forms_feed_includes_its_amendments(client: TestClient, seeded: Engine) -> None:
+    amendment = "0001214156-26-000009"
+    with session_factory(seeded).begin() as session:
+        session.add(
+            Filing(
+                accession_no=amendment,
+                cik=320193,
+                form_type="4/A",
+                filed_at=date(2026, 10, 2),
+                primary_doc_url=f"https://www.sec.gov/Archives/{amendment}.xml",
+                raw_object_key=f"filings/320193/{amendment}/form4a.xml",
+            )
+        )
+        session.flush()
+        session.add(
+            Summary(
+                accession_no=amendment,
+                provider="template",
+                model="form4-template",
+                prompt_version=2,
+                summary={
+                    "headline": "Amended: Timothy D Cook sold 30,000 AAPL shares",
+                    "summary": "This amends the Form 4 filed on Sep 30, 2026.",
+                    "key_points": [],
+                },
+            )
+        )
+    feed = parse(client.get("/feeds/filings.atom", params={"form_type": "4"}))
+    assert titles(feed)[0] == "AAPL Form 4/A: Amended: Timothy D Cook sold 30,000 AAPL shares"
+    assert len(titles(feed)) == 2  # and the Form 4 it amends

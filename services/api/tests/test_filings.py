@@ -2,11 +2,12 @@ from datetime import date
 from typing import Any
 
 import pytest
+import sqlalchemy as sa
 from fastapi.testclient import TestClient
 from sqlalchemy.engine import Engine
 
 from filings_api.routes import filings
-from filings_common.db import Filing, Form4Filing, session_factory
+from filings_common.db import Filing, Form4Filing, Form4Transaction, session_factory
 
 pytestmark = pytest.mark.integration
 
@@ -103,6 +104,8 @@ def test_form_4_detail(client: TestClient, ids: Any) -> None:
         "transaction_date": "2026-09-29",
         "code": "S",
         "acquired_disposed": "D",
+        "nature_of_ownership": None,  # not stored for the seeded lines
+        "superseded_by": None,
     }
     assert detail["form4"] == {
         "period_of_report": "2026-09-29",
@@ -273,3 +276,92 @@ def test_nearby_keeps_the_nearest(
     nearby = client.get(f"/filings/{ids.form4}").json()["nearby"]  # filed 2026-09-30
     # The two nearest (1 and 2 days away), not the one 10 days away; shown newest first.
     assert [f["accession_no"] for f in nearby] == ["0000320193-26-000063", ids.apple_8k]
+
+
+# --- Amendments (ADR-0021) ---------------------------------------------------------------------
+
+AMENDMENT = "0001214156-26-000009"  # a Form 4/A correcting Tim Cook's sale (ids.form4)
+
+
+@pytest.fixture
+def amended(seeded: Engine, ids: Any) -> None:
+    """A Form 4/A restating the sale's first line with another price; the parser has linked it
+    and marked the line it restates."""
+    with session_factory(seeded).begin() as session:
+        session.add(
+            Filing(
+                accession_no=AMENDMENT,
+                cik=320193,
+                form_type="4/A",
+                filed_at=date(2026, 10, 2),
+                primary_doc_url=f"https://www.sec.gov/Archives/{AMENDMENT}.xml",
+                raw_object_key=f"filings/320193/{AMENDMENT}/form4a.xml",
+                amends_filed_at=date(2026, 9, 30),
+                amends_accession_no=ids.form4,
+            )
+        )
+        session.flush()
+        original = session.get_one(Form4Filing, ids.form4)
+        session.add(
+            Form4Filing(
+                accession_no=AMENDMENT,
+                period_of_report=original.period_of_report,
+                issuer_cik=original.issuer_cik,
+                issuer_name=original.issuer_name,
+                issuer_ticker=original.issuer_ticker,
+                reporting_owners=original.reporting_owners,
+                reporting_owner_ciks=original.reporting_owner_ciks,
+                reporting_owner_relationships=original.reporting_owner_relationships,
+                transaction_codes=["S"],
+                is_10b5_1=True,
+            )
+        )
+        session.flush()
+        session.add(
+            Form4Transaction(
+                accession_no=AMENDMENT,
+                line=1,
+                is_derivative=False,
+                security_title="Common Stock",
+                transaction_date=date(2026, 9, 29),
+                code="S",
+                shares=30_000,
+                price_per_share=255.5,
+                acquired_disposed="D",
+                shares_owned_after=3_250_000,
+                direct_or_indirect="D",
+            )
+        )
+        session.execute(
+            sa.update(Form4Transaction)
+            .where(Form4Transaction.accession_no == ids.form4, Form4Transaction.line == 1)
+            .values(superseded_by=AMENDMENT)
+        )
+
+
+@pytest.mark.usefixtures("amended")
+def test_an_amendment_and_its_original_point_at_each_other(client: TestClient, ids: Any) -> None:
+    amendment = client.get(f"/filings/{AMENDMENT}").json()
+    assert (amendment["form_type"], amendment["amends_filed_at"]) == ("4/A", "2026-09-30")
+    assert amendment["amends_accession_no"] == ids.form4
+    assert amendment["amends"]["accession_no"] == ids.form4
+    assert amendment["amends"]["headline"] == "Tim Cook sold 50,000 AAPL shares"
+    assert amendment["amended_by"] == []
+
+    original = client.get(f"/filings/{ids.form4}").json()
+    assert (original["amends"], original["amends_accession_no"]) == (None, None)
+    assert [a["accession_no"] for a in original["amended_by"]] == [AMENDMENT]
+    lines = original["form4"]["transactions"]
+    assert [line["superseded_by"] for line in lines] == [AMENDMENT, None]
+
+
+@pytest.mark.usefixtures("amended")
+def test_a_form_filter_includes_its_amendments(client: TestClient, ids: Any) -> None:
+    page = client.get("/filings", params={"form_type": "4"}).json()
+    assert accessions(page) == [AMENDMENT, ids.form4]
+    assert page["items"][0]["amends_accession_no"] == ids.form4  # in lists too
+    assert accessions(client.get("/filings", params={"form_type": "4/A"}).json()) == [AMENDMENT]
+    assert accessions(client.get("/filings", params={"form_type": "8-K"}).json()) == [
+        ids.msft_8k,
+        ids.apple_8k,
+    ]

@@ -114,8 +114,14 @@ export function formatMoney(amount: number): string {
   return (Math.abs(amount) < 1000 ? centsFormat : dollarsFormat).format(amount)
 }
 
+/** "Form 4", "Form 4/A"; 8-Ks are known by their number alone ("8-K", "8-K/A"). */
 export function formLabel(formType: string): string {
-  return formType === '4' ? 'Form 4' : formType
+  return /^4(\/A)?$/.test(formType) ? `Form ${formType}` : formType
+}
+
+/** An amendment (4/A, 8-K/A) of an earlier filing. */
+export function isAmendment(formType: string): boolean {
+  return formType.endsWith('/A')
 }
 
 export function edgarCompanyUrl(cik: number): string {

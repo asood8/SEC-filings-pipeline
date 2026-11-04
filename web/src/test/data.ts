@@ -85,6 +85,8 @@ export function filing(overrides: Partial<Filing> = {}): Filing {
     status: 'ready',
     headline: 'Apple names Kevan Parekh chief financial officer',
     sec_url: 'https://www.sec.gov/Archives/edgar/data/320193/x.htm',
+    amends_accession_no: null,
+    amends_filed_at: null,
     ...overrides,
   }
 }
@@ -109,6 +111,8 @@ export function filingDetail(
     investor_call: null,
     exhibits: [],
     nearby: [],
+    amends: null,
+    amended_by: [],
     ...overrides,
   }
 }
@@ -128,6 +132,8 @@ export function form4Transaction(
     acquired_disposed: 'D',
     shares_owned_after: 2460,
     direct_or_indirect: 'D',
+    nature_of_ownership: null,
+    superseded_by: null,
     ...overrides,
   }
 }

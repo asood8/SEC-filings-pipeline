@@ -183,7 +183,8 @@ export interface paths {
          * Latest filings as an Atom feed
          * @description The 50 latest filings that have a summary, newest first, each with its summary, key
          *     points, and a link to the filing on sec.gov. Paste the URL into a feed reader; `cik`,
-         *     `form_type`, and `item` narrow it to one company, one form, or 8-Ks reporting one item.
+         *     `form_type`, and `item` narrow it to one company, one form (with its amendments: 4/As are
+         *     Form 4s), or 8-Ks reporting one item.
          */
         get: operations["filings_feed_feeds_filings_atom_get"];
         put?: never;
@@ -530,6 +531,16 @@ export interface components {
              * @description The filing's primary document on sec.gov.
              */
             sec_url: string;
+            /**
+             * Amends Accession No
+             * @description An amendment's (4/A, 8-K/A) original Form 4 or 8-K, when it is among the collected filings and could be told apart from others. Null for other forms.
+             */
+            amends_accession_no: string | null;
+            /**
+             * Amends Filed At
+             * @description The filing date of the filing an amendment amends, as the amendment states it; null when it states none, and for other forms.
+             */
+            amends_filed_at: string | null;
             summary: components["schemas"]["SummaryOut"] | null;
             form4: components["schemas"]["Form4Details"] | null;
             /**
@@ -546,6 +557,13 @@ export interface components {
              * @description The same company's other filings within 14 days either side, newest first (the 10 nearest).
              */
             nearby: components["schemas"]["FilingOut"][];
+            /** @description For an amendment, the filing it amends (`amends_accession_no`), if found. */
+            amends: components["schemas"]["FilingOut"] | null;
+            /**
+             * Amended By
+             * @description Amendments of this filing, oldest first. A Form 4's lines they restate are marked `superseded_by`.
+             */
+            amended_by: components["schemas"]["FilingOut"][];
         };
         /** FilingOut */
         FilingOut: {
@@ -577,6 +595,16 @@ export interface components {
              * @description The filing's primary document on sec.gov.
              */
             sec_url: string;
+            /**
+             * Amends Accession No
+             * @description An amendment's (4/A, 8-K/A) original Form 4 or 8-K, when it is among the collected filings and could be told apart from others. Null for other forms.
+             */
+            amends_accession_no: string | null;
+            /**
+             * Amends Filed At
+             * @description The filing date of the filing an amendment amends, as the amendment states it; null when it states none, and for other forms.
+             */
+            amends_filed_at: string | null;
         };
         /**
          * FilingStatus
@@ -651,6 +679,16 @@ export interface components {
              * @description D: owned directly; I: indirectly, for example through a trust or a fund.
              */
             direct_or_indirect: ("D" | "I") | null;
+            /**
+             * Nature Of Ownership
+             * @description How an indirect holding is held, as filed: "By Spouse", "By Trust".
+             */
+            nature_of_ownership: string | null;
+            /**
+             * Superseded By
+             * @description The Form 4/A that restates this line, correcting it or repeating it: insider totals count the amendment's line instead. Null while this line is current.
+             */
+            superseded_by: string | null;
         };
         /** GoogleSignIn */
         GoogleSignIn: {
@@ -959,6 +997,16 @@ export interface components {
              * @description The filing's primary document on sec.gov.
              */
             sec_url: string;
+            /**
+             * Amends Accession No
+             * @description An amendment's (4/A, 8-K/A) original Form 4 or 8-K, when it is among the collected filings and could be told apart from others. Null for other forms.
+             */
+            amends_accession_no: string | null;
+            /**
+             * Amends Filed At
+             * @description The filing date of the filing an amendment amends, as the amendment states it; null when it states none, and for other forms.
+             */
+            amends_filed_at: string | null;
             /**
              * Score
              * @description Higher is better; comparable within one response only.
@@ -1295,6 +1343,7 @@ export interface operations {
         parameters: {
             query?: {
                 cik?: number | null;
+                /** @description A form and its amendments (4: Form 4s and 4/As), or an amendment. */
                 form_type?: string | null;
                 /** @description Only 8-Ks reporting this item, e.g. 2.02 (results) or 5.02 (officer changes). */
                 item?: string | null;

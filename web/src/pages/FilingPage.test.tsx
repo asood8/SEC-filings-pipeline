@@ -327,6 +327,115 @@ describe('FilingPage', () => {
     ).not.toBeInTheDocument()
   })
 
+  it('says what an amendment amends, with a link to it', async () => {
+    const original = filing({
+      accession_no: '0001193125-26-014384',
+      form_type: '4',
+      filed_at: '2026-01-15',
+      headline: 'John Kent Walker received 47,574 GOOGL shares',
+    })
+    mockApi({
+      '/filings/0001193125-26-061630': () =>
+        filingDetail({
+          accession_no: '0001193125-26-061630',
+          form_type: '4/A',
+          items: null,
+          amends_accession_no: original.accession_no,
+          amends_filed_at: '2026-01-15',
+          amends: original,
+        }),
+    })
+    renderRoute('/filings/0001193125-26-061630')
+
+    const notice = (await screen.findByText(/This is an amendment/))
+      .parentElement as HTMLElement
+    expect(notice).toHaveTextContent(
+      'This is an amendment. It amends the Form 4 filed on Jan 15, 2026.',
+    )
+    expect(
+      within(notice).getByRole('link', {
+        name: 'the Form 4 filed on Jan 15, 2026',
+      }),
+    ).toHaveAttribute('href', '/filings/0001193125-26-014384')
+    expect(screen.getByText('Form 4/A', { selector: '.badge' })).toBeVisible()
+  })
+
+  it("says when an amendment's original isn't collected", async () => {
+    mockApi({
+      '/filings/a': () =>
+        filingDetail({
+          accession_no: 'a',
+          form_type: '8-K/A',
+          amends_filed_at: '2023-03-28',
+        }),
+    })
+    renderRoute('/filings/a')
+    expect((await screen.findByText(/This is an amendment/)).textContent).toBe(
+      "This is an amendment. It amends the 8-K filed on Mar 28, 2023, which isn't among the filings collected here.",
+    )
+    expect(screen.queryByRole('link', { name: /filed on/ })).toBeNull()
+  })
+
+  it('says an amendment amends an earlier filing when it gives no date', async () => {
+    mockApi({
+      '/filings/b': () =>
+        filingDetail({ accession_no: 'b', form_type: '8-K/A' }),
+    })
+    renderRoute('/filings/b')
+    expect((await screen.findByText(/This is an amendment/)).textContent).toBe(
+      'This is an amendment. It amends an earlier 8-K.',
+    )
+  })
+
+  it('marks the lines a later amendment restates', async () => {
+    const amendment = filing({
+      accession_no: '0001193125-26-061630',
+      form_type: '4/A',
+      filed_at: '2026-02-20',
+    })
+    mockApi({
+      '/filings/x': () =>
+        filingDetail({
+          accession_no: 'x',
+          form_type: '4',
+          items: null,
+          amended_by: [amendment],
+          form4: {
+            period_of_report: '2026-09-08',
+            issuer_cik: 320193,
+            issuer_name: 'Apple Inc.',
+            issuer_ticker: 'AAPL',
+            reporting_owners: [TANEJA],
+            transaction_codes: ['S'],
+            is_10b5_1: null,
+            transactions: [
+              form4Transaction({ superseded_by: amendment.accession_no }),
+              form4Transaction({ line: 2, shares: 100 }),
+            ],
+          },
+        }),
+    })
+    renderRoute('/filings/x')
+
+    const notice = (await screen.findByText(/Amended later by/))
+      .parentElement as HTMLElement
+    expect(notice).toHaveTextContent(
+      'Amended later by the Form 4/A filed on Feb 20, 2026. Lines an amendment restates are marked below; insider totals count its lines instead.',
+    )
+    const table = screen.getByRole('table', {
+      name: 'Transactions reported in this filing',
+    })
+    const [, restated, current] = within(table).getAllByRole('row')
+    expect(within(restated).getByRole('rowheader')).toHaveTextContent(
+      'Open-market or private saleRestated by the amendment',
+    )
+    expect(
+      within(restated).getByRole('link', { name: 'the amendment' }),
+    ).toHaveAttribute('href', '/filings/0001193125-26-061630')
+    expect(within(current).queryByText(/Restated by/)).toBeNull()
+    expect(screen.getByText(/^Restated lines:/)).toBeInTheDocument()
+  })
+
   it('shows not found for an unknown filing', async () => {
     mockApi({})
     renderRoute('/filings/nope')

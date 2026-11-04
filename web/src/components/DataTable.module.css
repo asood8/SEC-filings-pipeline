@@ -50,6 +50,11 @@
   font-weight: 600;
 }
 
+/* A line a later amendment restated: shown, but quieter (it says so in words too). */
+.superseded {
+  color: var(--muted);
+}
+
 /* A second, quieter line in a cell. */
 .detail {
   display: block;

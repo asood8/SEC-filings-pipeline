@@ -27,6 +27,7 @@ from filings_api.schemas import (
     Page,
     SummaryOut,
 )
+from filings_common.amendments import matching_forms
 from filings_common.db import (
     Filing,
     FilingExhibit,
@@ -50,7 +51,10 @@ NEARBY_LIMIT = 10
 def list_filings(
     session: SessionDep,
     cik: CikFilter = None,
-    form_type: str | None = None,
+    form_type: Annotated[
+        str | None,
+        Query(description="A form and its amendments (4: Form 4s and 4/As), or an amendment."),
+    ] = None,
     item: ItemFilter = None,
     since: Since = None,
     until: Until = None,
@@ -62,7 +66,7 @@ def list_filings(
     if cik is not None:
         query = query.where(Filing.cik == cik)
     if form_type is not None:
-        query = query.where(Filing.form_type == form_type)
+        query = query.where(Filing.form_type.in_(matching_forms(form_type)))
     if item is not None:
         query = query.where(reports_item(item))
     if since is not None:
@@ -131,6 +135,18 @@ def get_filing(
         )
         .limit(NEARBY_LIMIT)
     ).all()
+    amendments = session.execute(
+        filing_select()
+        .where(Filing.amends_accession_no == accession_no)
+        .order_by(Filing.filed_at, Filing.accepted_at, Filing.accession_no)
+    ).all()
+    original = (
+        session.execute(
+            filing_select().where(Filing.accession_no == filing.amends_accession_no)
+        ).one_or_none()
+        if filing.amends_accession_no is not None
+        else None
+    )
     return FilingDetail(
         **to_filing_out(*row).model_dump(),
         summary=(
@@ -183,4 +199,6 @@ def get_filing(
             key=lambda f: (f.filed_at, f.accession_no),
             reverse=True,
         ),
+        amends=to_filing_out(*original) if original is not None else None,
+        amended_by=[to_filing_out(*row) for row in amendments],
     )

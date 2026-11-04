@@ -5,7 +5,7 @@ import logging
 from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
 from datetime import date
-from typing import Any, cast
+from typing import Any, cast, get_args
 
 import httpx2
 import pytest
@@ -18,6 +18,8 @@ from filings_api.auth import current_user
 from filings_api.queries import SessionDep
 from filings_api.routes import subscriptions
 from filings_api.routes.subscriptions import MAX_SUBSCRIPTIONS, _lock_user
+from filings_api.schemas import AlertFormType
+from filings_common.alert_filters import CALL_QA
 from filings_common.db import (
     CallTranscript,
     Company,
@@ -213,7 +215,7 @@ def test_email_alerts_go_only_to_the_account_address(sign_in: SignIn) -> None:
     [
         ({"ticker": "NOPE"}, "unknown ticker: NOPE"),
         ({"ticker": "ZZZZ"}, "ZZZZ is not on the watchlist"),
-        ({"form_types": ["4", "10-K"]}, "Input should be '4' or '8-K'"),
+        ({"form_types": ["4", "10-K"]}, "Input should be '4', '8-K' or 'earnings-call'"),
         ({"channel": "sms"}, "Input should be 'discord', 'slack' or 'email'"),
         ({"target": None}, "target is required: a Discord webhook URL, https://discord.com/"),
         ({"cik": 320193}, "Extra inputs are not permitted"),  # refused, not silently ignored
@@ -866,3 +868,12 @@ def test_preview_refuses_settings_an_alert_couldnt_have(
 
 def test_preview_needs_sign_in(client: TestClient) -> None:
     assert client.get("/subscriptions/preview", params={"tickers": "AAPL"}).status_code == 401
+
+
+def test_an_alert_can_ask_for_earnings_call_qa(sign_in: SignIn, seeded: Engine) -> None:
+    alice = sign_in("alice")
+    created = subscribe(alice, form_types=["earnings-call", "8-K", "8-K"])
+    assert created.status_code == 201
+    assert created.json()["form_types"] == ["8-K", "earnings-call"]  # sorted, once each
+    assert CALL_QA in get_args(AlertFormType)  # the notifier's name for it
+    assert subscribe(alice, form_types=["10-K"]).status_code == 422

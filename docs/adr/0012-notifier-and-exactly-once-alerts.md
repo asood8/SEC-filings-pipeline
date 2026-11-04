@@ -134,9 +134,9 @@ matches the same way. Details in ADR-0021.
 A call's first Q&A summary (ADR-0022) is announced on `calls.summarized`: the nightly job writes
 the event to the outbox in the summary's transaction, the relay publishes it, and the notifier
 consumes that topic too (one loop, a handler per topic). It alerts every subscription that
-follows the company and takes earnings-call Q&A (`earnings-call` among its form types, or no
-form types: the user chose "every form type" to include them, 2026-11-04), created before the
-summary was written. Keyword alerts match filings' search documents, so they aren't alerted. A
+follows the company and takes earnings-call Q&A (`earnings-call` among its form types, the
+alert form's "Earnings call Q&A" box, or no form types: the user chose "every form type" to
+include them, 2026-11-04), created before the summary was written. Keyword alerts match filings' search documents, so they aren't alerted. A
 later summary of the call (a new prompt version) isn't announced again.
 
 `notifications` holds either a filing (`accession_no`) or a call (`transcript_id`), one per

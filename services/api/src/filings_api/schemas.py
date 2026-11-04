@@ -18,7 +18,9 @@ from filings_common.parsed import ITEM_TITLES, CallKind
 
 # The forms a subscription can choose to be alerted about: the ones the pipeline parses and
 # summarizes. A form the pipeline learns later must be added here before anyone can pick it.
-AlertFormType = Literal["4", "8-K"]
+# "earnings-call" is earnings-call Q&A summaries (filings_common.alert_filters.CALL_QA, ADR-0022);
+# no form types means every form, call Q&A included.
+AlertFormType = Literal["4", "8-K", "earnings-call"]
 
 
 class Page[T](BaseModel):
@@ -429,7 +431,10 @@ def _sorted_unique(forms: list[AlertFormType]) -> list[AlertFormType]:
 
 
 FormTypes = Annotated[list[AlertFormType], AfterValidator(_sorted_unique)]
-_FORM_TYPES_HELP = "Alert only about these forms; empty means every form."
+_FORM_TYPES_HELP = (
+    "Alert only about these forms (earnings-call: a call's Q&A summary); empty means every form, "
+    "call Q&A included."
+)
 _TARGET_HELP = (
     "A Discord or Slack webhook URL. For email, your account's address: the default, and the only "
     "one allowed."

@@ -1,4 +1,5 @@
 import type {
+  CallSummary,
   Filing,
   FilingDetail,
   Form4Transaction,
@@ -173,6 +174,46 @@ export function insiderTrade(
     average_price: 332.9588,
     unpriced_shares: 0,
     is_10b5_1: true,
+    ...overrides,
+  }
+}
+
+/** An earnings call's Q&A summary: one exchange answered, one that failed. */
+export function callSummary(overrides: Partial<CallSummary> = {}): CallSummary {
+  return {
+    id: 7,
+    ticker: 'JPM',
+    company_name: 'JPMorgan Chase & Co.',
+    call_date: '2026-10-13',
+    source_url: 'https://www.jpmorganchase.com/ir/3q26-earnings-transcript.pdf',
+    headline: 'JPMorgan Chase: deposits, credit and the consumer',
+    summary: 'Analysts asked about deposit growth and consumer credit.',
+    key_points: ['650,000 net new checking accounts this quarter'],
+    exchanges: [
+      {
+        analyst: 'Matt O’Connor',
+        firm: 'Deutsche Bank',
+        question: 'How is JPMorgan growing non-interest-bearing deposits?',
+        answer:
+          'Jeremy Barnum said 650,000 net new checking accounts were opened this quarter.',
+        failed: false,
+        ungrounded_numbers: [],
+      },
+      {
+        analyst: 'Mike Mayo',
+        firm: 'Wells Fargo Securities',
+        question: null,
+        answer: null,
+        failed: true,
+        ungrounded_numbers: [],
+      },
+    ],
+    provider: 'ollama',
+    model: 'llama3.2:3b',
+    prompt_version: 1,
+    created_at: '2026-11-04T03:50:00Z',
+    ungrounded_numbers: [],
+    ungrounded_names: [],
     ...overrides,
   }
 }

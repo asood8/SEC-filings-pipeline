@@ -31,6 +31,12 @@ On a live run against EDGAR, for a watchlist of 35 large US companies:
   day, time, and webcast link are shown on the filing's page, in alerts, and on an Upcoming calls
   page with a calendar feed ("Q&A session: Oct 21, 2026, 5:30 pm ET, https://ir.tesla.com"):
   9 of the 22 8-Ks do, and all 9 were read correctly.
+- **Earnings-call Q&A** is summarized from the transcripts 7 companies publish on their own
+  sites (the only ones of the 35 whose terms allow automated downloads; ADR-0022): each
+  analyst's question and management's answer, then the call's takeaways, with a link to the
+  transcript. A nightly job fetches politely (robots.txt, a second between requests) and never
+  republishes the transcript. On 6 hand-labeled exchanges the local model states 69% of the key
+  facts, with no false claim and no number the transcript lacks.
 - **Insider trades** are queryable line by line (646 transactions in 256 Form 4s), and each
   insider is shown with their role ("Amy Hood (EVP, CFO)"). A filing's page lists its trades,
   and a company's page totals 90 days of insider buying and selling by owner:
@@ -246,7 +252,10 @@ purchases and sales per owner, grouped by owner CIK), `GET /insider-trades?side=
 (the largest purchases or sales across companies, one row per Form 4; `include_planned=false`
 leaves out 10b5-1 plan trades), and `GET /calls?days=60`
 (the earnings calls and other investor events 8-Ks announce, also as an iCalendar feed to
-subscribe to, `GET /calls.ics`; both take `ticker` for one company's). `GET /feeds/filings.atom` (optionally `cik`, `form_type`) is
+subscribe to, `GET /calls.ics`; both take `ticker` for one company's), and
+`GET /call-summaries?ticker=MSFT` / `GET /call-summaries/{id}` (automated summaries of past
+earnings calls' Q&A, from the companies' own transcripts: takeaways, then each analyst's
+question and management's answer, with a link to the transcript, ADR-0022). `GET /feeds/filings.atom` (optionally `cik`, `form_type`) is
 the latest summarized filings as an Atom feed, for a feed reader. A Form 4's reporting
 owners come with the name as filed and a readable one ("COOK TIMOTHY D" as "Timothy D Cook"),
 and with who they are to the company: a short `relationship` ("Executive Chair, Director",

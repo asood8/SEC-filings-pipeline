@@ -1,7 +1,12 @@
 import { useInfiniteQuery, useQuery } from '@tanstack/react-query'
 import { Link, useParams } from 'react-router'
 import { API_BASE_URL, filingsFeedUrl, isNotFound } from '../api/client'
-import { callsQuery, companyQuery, filingsQuery } from '../api/queries'
+import {
+  callSummariesQuery,
+  callsQuery,
+  companyQuery,
+  filingsQuery,
+} from '../api/queries'
 import { PagedFilingList } from '../components/PagedFilingList'
 import { ExternalLink } from '../components/ExternalLink'
 import { InsiderActivity } from '../components/InsiderActivity'
@@ -51,6 +56,7 @@ export function CompanyPage() {
         </ExternalLink>
       </p>
       <NextCall ticker={company.data.ticker} />
+      <LatestCallQA ticker={company.data.ticker} />
       <InsiderActivity ticker={company.data.ticker} />
       <h2>Recent filings</h2>
       {filings.data ? (
@@ -99,5 +105,26 @@ function NextCall({ ticker }: { ticker: string }) {
       · <Link to={`/filings/${next.accession_no}`}>Announcement</Link> ·{' '}
       <ExternalLink href={feed}>Calendar feed of {ticker} calls</ExternalLink>
     </p>
+  )
+}
+
+/** The company's latest earnings call whose Q&A was summarized, if any (ADR-0022). */
+function LatestCallQA({ ticker }: { ticker: string }) {
+  const calls = useQuery(callSummariesQuery(1, ticker))
+  const latest = calls.data?.items[0]
+  if (!latest) return null
+  return (
+    <section>
+      <h2>Latest earnings call Q&amp;A</h2>
+      <p>
+        <time dateTime={latest.call_date}>{formatDate(latest.call_date)}</time>:{' '}
+        <Link to={`/calls/qa/${latest.id}`}>{latest.headline}</Link>
+      </p>
+      <p>{latest.summary}</p>
+      <p className="muted">
+        An automated summary of {latest.exchanges.length} analysts' questions,
+        from {ticker}'s own transcript.
+      </p>
+    </section>
   )
 }

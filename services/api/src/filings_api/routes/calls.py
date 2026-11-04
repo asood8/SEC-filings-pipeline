@@ -1,6 +1,7 @@
 """Upcoming investor calls announced in the watchlist's 8-Ks (docs/adr/0007, "Investor calls"):
 as a list for the website, and as an iCalendar feed to subscribe to in a calendar app. Both can
-be narrowed to one company with `ticker`."""
+be narrowed to one company with `ticker`. And summaries of past earnings calls' Q&A, from the
+companies' own transcripts (ADR-0022): only the summaries and a link, never the transcript."""
 
 import re
 from datetime import date, datetime, timedelta
@@ -8,13 +9,20 @@ from typing import Annotated, Any
 
 import sqlalchemy as sa
 from fastapi import APIRouter, HTTPException, Query, Request, Response
-from sqlalchemy.orm import Session
+from sqlalchemy.dialects.postgresql import distinct_on
+from sqlalchemy.orm import Session, aliased
 
 from filings_api import ical
 from filings_api.conditional import conditional_response
 from filings_api.queries import SessionDep, company_by_ticker
-from filings_api.schemas import UpcomingCall, UpcomingCalls
-from filings_common.db import Company, Filing, Form8KFiling
+from filings_api.schemas import (
+    CallExchangeOut,
+    CallSummaries,
+    CallSummaryOut,
+    UpcomingCall,
+    UpcomingCalls,
+)
+from filings_common.db import CallSummary, CallTranscript, Company, Filing, Form8KFiling
 from filings_common.names import company_name
 from filings_common.parsed import EASTERN, InvestorCall
 
@@ -164,3 +172,91 @@ def calls_calendar(session: SessionDep, request: Request, ticker: TickerFilter =
         version=_WRITTEN_AT.sub(b"", body),
         headers={"Content-Disposition": 'inline; filename="investor-calls.ics"'},
     )
+
+
+def call_summaries(
+    session: Session,
+    *,
+    cik: int | None = None,
+    transcript_id: int | None = None,
+    limit: int = 20,
+) -> list[CallSummaryOut]:
+    """The current (newest) summary of each summarized call, newest call first."""
+    current = (
+        sa.select(CallSummary)
+        .ext(distinct_on(CallSummary.transcript_id))
+        .order_by(CallSummary.transcript_id, CallSummary.created_at.desc(), CallSummary.id.desc())
+        .subquery()
+    )
+    summary = aliased(CallSummary, current)
+    query = (
+        sa.select(summary, CallTranscript, Company.ticker, Company.name)
+        .join(CallTranscript, CallTranscript.id == summary.transcript_id)
+        .join(Company, Company.cik == CallTranscript.cik)
+        .order_by(CallTranscript.call_date.desc(), CallTranscript.id.desc())
+        .limit(limit)
+    )
+    if cik is not None:
+        query = query.where(CallTranscript.cik == cik)
+    if transcript_id is not None:
+        query = query.where(CallTranscript.id == transcript_id)
+    return [
+        CallSummaryOut(
+            id=transcript.id,
+            ticker=ticker,
+            company_name=company_name(name),
+            call_date=transcript.call_date,
+            source_url=transcript.source_url,
+            headline=row.takeaways["headline"],
+            summary=row.takeaways["summary"],
+            key_points=row.takeaways.get("key_points", []),
+            exchanges=[
+                CallExchangeOut(
+                    analyst=x["analyst"],
+                    firm=x["firm"],
+                    question=x.get("question"),
+                    answer=x.get("answer"),
+                    failed=bool(x.get("failed")),
+                    ungrounded_numbers=x.get("ungrounded_numbers", []),
+                )
+                for x in row.exchanges
+            ],
+            provider=row.provider,
+            model=row.model,
+            prompt_version=row.prompt_version,
+            created_at=row.created_at,
+            ungrounded_numbers=row.ungrounded_numbers,
+            ungrounded_names=row.ungrounded_names,
+        )
+        for row, transcript, ticker, name in session.execute(query).all()
+    ]
+
+
+@router.get("/call-summaries", summary="Earnings-call Q&A summaries")
+def list_call_summaries(
+    session: SessionDep,
+    ticker: Annotated[
+        str | None, Query(min_length=1, max_length=20, description="Only this company's calls.")
+    ] = None,
+    limit: Annotated[int, Query(ge=1, le=50)] = 20,
+) -> CallSummaries:
+    """Automated summaries of past earnings calls' Q&A, newest call first: the takeaways, then
+    each analyst's question and management's answer. Written from the transcripts that
+    Microsoft, Alphabet, JPMorgan, Bank of America, J&J, PepsiCo and Nike publish on their own
+    sites (ADR-0022); `source_url` links each transcript."""
+    company = _company(session, ticker)
+    return CallSummaries(
+        items=call_summaries(session, cik=company.cik if company is not None else None, limit=limit)
+    )
+
+
+@router.get(
+    "/call-summaries/{transcript_id}",
+    summary="One earnings call's Q&A summary",
+    responses={404: {"description": "No summary of that call."}},
+)
+def get_call_summary(session: SessionDep, transcript_id: int) -> CallSummaryOut:
+    found = call_summaries(session, transcript_id=transcript_id, limit=1)
+    if not found:
+        raise HTTPException(status_code=404, detail="call summary not found")
+    return found[0]

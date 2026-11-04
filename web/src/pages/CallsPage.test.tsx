@@ -2,6 +2,7 @@ import { screen, within } from '@testing-library/react'
 import { describe, expect, it } from 'vitest'
 import { API_BASE_URL, type UpcomingCall } from '../api/client'
 import { mockApi, renderRoute } from '../test/render'
+import { callSummary } from '../test/data'
 
 const MSFT: UpcomingCall = {
   kind: 'Earnings call',
@@ -81,5 +82,29 @@ describe('CallsPage', () => {
     expect(
       await screen.findByText('No calls announced for the next 60 days.'),
     ).toBeInTheDocument()
+  })
+
+  it('lists the latest summarized earnings calls under the upcoming ones', async () => {
+    const requests = mockApi({
+      '/calls': () => answer([]),
+      '/call-summaries': () => ({ items: [callSummary()] }),
+    })
+    renderRoute('/calls')
+    const heading = await screen.findByRole('heading', {
+      level: 2,
+      name: 'Recent earnings call Q&A',
+    })
+    const [item] = within(heading.closest('section')!).getAllByRole('listitem')
+    expect(item).toHaveTextContent('Oct 13, 2026')
+    expect(
+      within(item).getByRole('link', {
+        name: 'JPMorgan Chase: deposits, credit and the consumer',
+      }),
+    ).toHaveAttribute('href', '/calls/qa/7')
+    expect(
+      requests
+        .find((url) => url.pathname === '/call-summaries')
+        ?.searchParams.get('limit'),
+    ).toBe('10')
   })
 })

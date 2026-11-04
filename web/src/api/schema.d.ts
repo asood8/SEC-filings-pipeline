@@ -172,6 +172,46 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/call-summaries": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Earnings-call Q&A summaries
+         * @description Automated summaries of past earnings calls' Q&A, newest call first: the takeaways, then
+         *     each analyst's question and management's answer. Written from the transcripts that
+         *     Microsoft, Alphabet, JPMorgan, Bank of America, J&J, PepsiCo and Nike publish on their own
+         *     sites (ADR-0022); `source_url` links each transcript.
+         */
+        get: operations["list_call_summaries_call_summaries_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/call-summaries/{transcript_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** One earnings call's Q&A summary */
+        get: operations["get_call_summary_call_summaries__transcript_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/feeds/filings.atom": {
         parameters: {
             query?: never;
@@ -396,6 +436,100 @@ export interface components {
              * @description The newest of them, at most 10.
              */
             items: components["schemas"]["FilingOut"][];
+        };
+        /** CallExchangeOut */
+        CallExchangeOut: {
+            /** Analyst */
+            analyst: string;
+            /** Firm */
+            firm: string;
+            /**
+             * Question
+             * @description What the analyst asked; null when it failed.
+             */
+            question: string | null;
+            /**
+             * Answer
+             * @description What management said; null when it failed.
+             */
+            answer: string | null;
+            /**
+             * Failed
+             * @description No LLM could summarize this exchange; the others stand.
+             * @default false
+             */
+            failed: boolean;
+            /**
+             * Ungrounded Numbers
+             * @description Numbers in this summary that the exchange never states, worth verifying.
+             */
+            ungrounded_numbers?: string[];
+        };
+        /** CallSummaries */
+        CallSummaries: {
+            /**
+             * Items
+             * @description Newest call first.
+             */
+            items: components["schemas"]["CallSummaryOut"][];
+        };
+        /**
+         * CallSummaryOut
+         * @description An automated summary of an earnings call's Q&A, from the company's own transcript
+         *     (ADR-0022). The transcript itself is never served: follow `source_url` to read it.
+         */
+        CallSummaryOut: {
+            /**
+             * Id
+             * @description The transcript's id, for GET /call-summaries/{id}.
+             */
+            id: number;
+            /** Ticker */
+            ticker: string;
+            /** Company Name */
+            company_name: string;
+            /**
+             * Call Date
+             * Format: date
+             */
+            call_date: string;
+            /**
+             * Source Url
+             * @description The transcript on the company's own site.
+             */
+            source_url: string;
+            /** Headline */
+            headline: string;
+            /** Summary */
+            summary: string;
+            /** Key Points */
+            key_points: string[];
+            /**
+             * Exchanges
+             * @description In the order they were asked.
+             */
+            exchanges: components["schemas"]["CallExchangeOut"][];
+            /** Provider */
+            provider: string;
+            /** Model */
+            model: string;
+            /** Prompt Version */
+            prompt_version: number;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /**
+             * Ungrounded Numbers
+             * @description Numbers in the takeaways that the transcript never states.
+             */
+            ungrounded_numbers: string[];
+            /**
+             * Ungrounded Names
+             * @description Capitalized words in the takeaways that the transcript never uses.
+             */
+            ungrounded_names: string[];
         };
         /**
          * Channel
@@ -1603,6 +1737,77 @@ export interface operations {
                 };
             };
             /** @description No company with that ticker. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_call_summaries_call_summaries_get: {
+        parameters: {
+            query?: {
+                /** @description Only this company's calls. */
+                ticker?: string | null;
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CallSummaries"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_call_summary_call_summaries__transcript_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                transcript_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CallSummaryOut"];
+                };
+            };
+            /** @description No summary of that call. */
             404: {
                 headers: {
                     [name: string]: unknown;

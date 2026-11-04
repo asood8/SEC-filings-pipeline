@@ -6,6 +6,7 @@ import { AlertsPage } from './pages/AlertsPage'
 import { ErrorPage } from './pages/ErrorPage'
 import { CompaniesPage } from './pages/CompaniesPage'
 import { CompanyPage } from './pages/CompanyPage'
+import { EarningsCallPage } from './pages/EarningsCallPage'
 import { FeedPage } from './pages/FeedPage'
 import { FilingPage } from './pages/FilingPage'
 import { InsiderTradesPage } from './pages/InsiderTradesPage'
@@ -20,6 +21,7 @@ export const routes: RouteObject[] = [
       { index: true, element: <FeedPage /> },
       { path: 'insiders', element: <InsiderTradesPage /> },
       { path: 'calls', element: <CallsPage /> },
+      { path: 'calls/qa/:id', element: <EarningsCallPage /> },
       { path: 'search', element: <SearchPage /> },
       { path: 'companies', element: <CompaniesPage /> },
       { path: 'companies/:ticker', element: <CompanyPage /> },

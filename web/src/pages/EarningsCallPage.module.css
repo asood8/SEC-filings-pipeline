@@ -1,0 +1,18 @@
+.exchanges {
+  display: grid;
+  gap: 1.25rem;
+  margin: 0.75rem 0 0;
+  padding-left: 1.5rem;
+}
+
+.exchange p {
+  margin: 0.25rem 0;
+}
+
+.analyst {
+  margin-bottom: 0.4rem;
+}
+
+.label {
+  font-weight: 600;
+}

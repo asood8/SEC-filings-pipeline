@@ -1,10 +1,10 @@
 import { useQuery } from '@tanstack/react-query'
 import { Link } from 'react-router'
 import { API_BASE_URL, type UpcomingCall } from '../api/client'
-import { callsQuery } from '../api/queries'
+import { callSummariesQuery, callsQuery } from '../api/queries'
 import { ExternalLink } from '../components/ExternalLink'
 import { ErrorMessage, Loading } from '../components/QueryStatus'
-import { formatEasternClock, formatWeekday } from '../lib/format'
+import { formatDate, formatEasternClock, formatWeekday } from '../lib/format'
 import { usePageTitle } from '../lib/usePageTitle'
 import styles from './CallsPage.module.css'
 
@@ -60,7 +60,42 @@ export function CallsPage() {
           </section>
         ))
       )}
+      <RecentQA />
     </>
+  )
+}
+
+const RECENT = 10
+
+/** The latest earnings calls whose Q&A was summarized, from the companies' own transcripts
+ * (ADR-0022). Nothing while loading or before any call was summarized. */
+function RecentQA() {
+  const query = useQuery(callSummariesQuery(RECENT))
+  if (query.isError) return <ErrorMessage error={query.error} />
+  if (!query.data?.items.length) return null
+  return (
+    <section className={styles.day}>
+      <h2>Recent earnings call Q&amp;A</h2>
+      <p className="muted">
+        Automated summaries of what analysts asked and management answered, from
+        the transcripts some companies publish on their own sites.
+      </p>
+      <ul className={styles.calls}>
+        {query.data.items.map((call) => (
+          <li key={call.id} className={styles.call}>
+            <span className={styles.time}>
+              <time dateTime={call.call_date}>
+                {formatDate(call.call_date)}
+              </time>
+            </span>
+            <Link to={`/companies/${call.ticker}`}>
+              <strong>{call.ticker}</strong>
+            </Link>
+            <Link to={`/calls/qa/${call.id}`}>{call.headline}</Link>
+          </li>
+        ))}
+      </ul>
+    </section>
   )
 }
 

@@ -30,11 +30,21 @@ export function AboutPage() {
           results, agreements, executive changes, and shareholder votes, with
           any press release attached.
         </li>
+        <li>
+          <strong>Amendments</strong> (4/A, 8-K/A): corrections, linked to the
+          filing they amend. A corrected insider trade counts once, with the
+          corrected figures.
+        </li>
+        <li>
+          <strong>Earnings-call Q&amp;A</strong>: what analysts asked and
+          management answered, for the companies that publish their call
+          transcripts and allow automated downloads.
+        </li>
       </ul>
       <p>
-        Other forms, such as annual and quarterly reports, and amended filings
-        (4/A, 8-K/A) aren't collected yet. When a company joins the watchlist,
-        its filings from the previous 30 days are collected; older ones aren't.
+        Other forms, such as annual and quarterly reports, aren't collected yet.
+        When a company joins the watchlist, its filings from the previous 30
+        days are collected; older ones aren't.
       </p>
 
       <h2>Where the data comes from</h2>
@@ -47,6 +57,11 @@ export function AboutPage() {
         filings. Each filing's page links to the original on sec.gov, which is
         always the authoritative version. This site isn't affiliated with or
         endorsed by the SEC.
+      </p>
+      <p>
+        Earnings-call transcripts come from the companies' own investor sites,
+        only where their terms allow automated downloads. Only summaries are
+        shown here; each links to the full transcript on the company's site.
       </p>
 
       <h2>How fresh it is</h2>
@@ -64,7 +79,8 @@ export function AboutPage() {
         summaries are written by a small AI language model, and can misstate or
         leave out facts. A check compares every number in an 8-K summary with
         the filing and lists any it can't find on the filing's page, but it
-        can't catch every mistake.
+        can't catch every mistake. Earnings-call Q&amp;A is summarized the same
+        way, one question at a time, and is checked against the transcript.
       </p>
 
       <h2>Limits</h2>

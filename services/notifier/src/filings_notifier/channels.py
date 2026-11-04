@@ -37,6 +37,10 @@ class PermanentDeliveryError(DeliveryError):
 
 @dataclass(frozen=True)
 class Alert:
+    """An alert about a filing, or about an earnings call's Q&A summary (`call_id` set; ADR-0022):
+    then `form_type` is alert_filters.CALL_QA, `filed_at` the call's day, `url` the transcript
+    on the company's site, and `accession_no` empty."""
+
     accession_no: str
     company_name: str
     ticker: str
@@ -50,6 +54,12 @@ class Alert:
     investor_call: InvestorCall | None = None
     # Why this subscription sent it, when the alert alone doesn't say (alert_filters.alert_reason).
     reason: str | None = None
+    call_id: int | None = None  # the transcript, for an earnings call's Q&A
+
+    @property
+    def subject(self) -> str:
+        """What the alert is about, for logs: the accession number, or the call."""
+        return self.accession_no if self.call_id is None else f"call {self.call_id}"
 
 
 class Sender(Protocol):
@@ -90,8 +100,7 @@ class DiscordSender:
                             "value": f"{alert.company_name} ({alert.ticker})",
                             "inline": True,
                         },
-                        {"name": "Form", "value": alert.form_type, "inline": True},
-                        {"name": "Filed", "value": alert.filed_at.isoformat(), "inline": True},
+                        *_discord_what(alert),
                         *_discord_call_field(alert.investor_call),
                     ],
                     "footer": {"text": _with_reason(DISCLAIMER, alert.reason)},
@@ -99,6 +108,22 @@ class DiscordSender:
             ],
         }
         _post(self._http, target, payload, "Discord")
+
+
+def _discord_what(alert: Alert) -> list[dict[str, Any]]:
+    if alert.call_id is not None:
+        return [{"name": "Earnings call", "value": alert.filed_at.isoformat(), "inline": True}]
+    return [
+        {"name": "Form", "value": alert.form_type, "inline": True},
+        {"name": "Filed", "value": alert.filed_at.isoformat(), "inline": True},
+    ]
+
+
+def _what(alert: Alert) -> str:
+    """The alert's subject in words: "Form 8-K · filed 2026-10-13", or the earnings call's day."""
+    if alert.call_id is not None:
+        return f"earnings call of {alert.filed_at.isoformat()}"
+    return f"Form {alert.form_type} · filed {alert.filed_at.isoformat()}"
 
 
 def _with_reason(text: str, reason: str | None) -> str:
@@ -124,8 +149,8 @@ class SlackSender:
         if not target_is_valid(Channel.SLACK, target):
             raise PermanentDeliveryError("not a Slack webhook URL")
         context = (
-            f"{alert.company_name} ({alert.ticker}) · Form {alert.form_type} · "
-            f"filed {alert.filed_at.isoformat()} · {_with_reason(DISCLAIMER, alert.reason)}"
+            f"{alert.company_name} ({alert.ticker}) · {_what(alert)} · "
+            f"{_with_reason(DISCLAIMER, alert.reason)}"
         )
         payload = {
             # The notification's text, also read as markup: escaped like the blocks.
@@ -161,10 +186,18 @@ def _email_message(target: str, alert: Alert, sender: str) -> EmailMessage:
     message["Subject"] = " ".join(f"[{alert.ticker}] {alert.headline}".split())
     points = "\n".join(f"- {p}" for p in alert.key_points)
     call = f"{alert.investor_call.describe()}\n\n" if alert.investor_call else ""
+    if alert.call_id is not None:
+        about = (
+            f"{alert.company_name} ({alert.ticker}), earnings call of "
+            f"{alert.filed_at.isoformat()}\nFull transcript, on the company's site: {alert.url}"
+        )
+    else:
+        about = (
+            f"{alert.company_name} ({alert.ticker}), Form {alert.form_type}, "
+            f"filed {alert.filed_at.isoformat()}\nOriginal filing: {alert.url}"
+        )
     message.set_content(
-        f"{alert.headline}\n\n{alert.summary}\n\n{points}\n\n{call}"
-        f"{alert.company_name} ({alert.ticker}), Form {alert.form_type}, "
-        f"filed {alert.filed_at.isoformat()}\nOriginal filing: {alert.url}\n\n"
+        f"{alert.headline}\n\n{alert.summary}\n\n{points}\n\n{call}{about}\n\n"
         + (f"{alert.reason}\n" if alert.reason else "")
         + f"{DISCLAIMER}\n"
     )
@@ -226,6 +259,6 @@ class LogEmailSender:
         logger.info(
             "email (not sent: EMAIL_BACKEND=log) to %s about %s: %s",
             mask_email(target),
-            alert.accession_no,
+            alert.subject,
             alert.headline,
         )

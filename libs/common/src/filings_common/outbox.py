@@ -36,7 +36,7 @@ from sqlalchemy.orm import Session, sessionmaker
 
 from filings_common import metrics, telemetry
 from filings_common.db import OutboxEvent
-from filings_common.events import Event, Topic
+from filings_common.events import CallSummarized, Event, Topic
 from filings_common.health import Heartbeat
 
 logger = logging.getLogger(__name__)
@@ -62,7 +62,7 @@ class Publisher(Protocol):
         ...
 
 
-def enqueue(session: Session, topic: str, event: Event) -> OutboxEvent:
+def enqueue(session: Session, topic: str, event: Event | CallSummarized) -> OutboxEvent:
     """Add an event to the outbox as part of the session's current transaction, with the active
     span's trace context."""
     row = OutboxEvent(

@@ -22,7 +22,11 @@ from filings_notifier.channels import (
     SlackSender,
     SmtpEmailSender,
 )
-from filings_notifier.handler import NotificationHandler
+from filings_notifier.handler import (
+    CallNotificationHandler,
+    NotificationHandler,
+    TopicHandler,
+)
 
 PROCESS_NAME = "filings-notifier"
 CONSUMER_GROUP = "notifier"
@@ -77,10 +81,16 @@ def main() -> int:
     engine = create_engine(DatabaseSettings().database_url.get_secret_value())
     dead_letters = KafkaPublisher(kafka.bootstrap_servers)
     try:
+        sessions = session_factory(engine)
         run_consumer(
             make_consumer(kafka.bootstrap_servers, CONSUMER_GROUP),
-            Topic.FILINGS_READY,
-            NotificationHandler(session_factory(engine), senders),
+            [Topic.FILINGS_READY, Topic.CALLS_SUMMARIZED],
+            TopicHandler(
+                {
+                    Topic.FILINGS_READY: NotificationHandler(sessions, senders),
+                    Topic.CALLS_SUMMARIZED: CallNotificationHandler(sessions, senders),
+                }
+            ),
             dead_letters,
             stop,
             consumer_group=CONSUMER_GROUP,

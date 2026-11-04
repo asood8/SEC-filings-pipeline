@@ -317,6 +317,35 @@ describe('AlertsPage', () => {
     )
   })
 
+  it('links a last alert about an earnings call to its Q&A page', async () => {
+    subscriptions = [
+      {
+        ...APPLE_ALERT,
+        last_delivery: {
+          status: 'sent',
+          accession_no: null,
+          call_id: 12,
+          at: '2026-11-04T04:00:00Z',
+          error: null,
+        },
+      },
+    ]
+    mockApi({
+      '/me': () => USER,
+      'GET /subscriptions': () => subscriptions,
+      '/companies': () => WATCHLIST,
+    })
+    renderRoute('/alerts')
+    const sent = await screen.findByText(/Last alert sent/)
+    expect(within(sent).getByRole('link')).toHaveAttribute(
+      'href',
+      '/calls/qa/12',
+    )
+    expect(within(sent).getByRole('link')).toHaveTextContent(
+      'the AAPL earnings call Q&A alerted',
+    )
+  })
+
   it("shows failed deliveries and edits an alert's forms", async () => {
     let patched: unknown
     subscriptions = [

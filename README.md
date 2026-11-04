@@ -34,7 +34,7 @@ On a live run against EDGAR, for a watchlist of 35 large US companies:
 - **Earnings-call Q&A** is summarized from the transcripts 7 companies publish on their own
   sites (the only ones of the 35 whose terms allow automated downloads; ADR-0022): each
   analyst's question and management's answer, then the call's takeaways, with a link to the
-  transcript. A nightly job fetches politely (robots.txt, a second between requests) and never
+  transcript, and an alert to the company's subscribers. A nightly job fetches politely (robots.txt, a second between requests) and never
   republishes the transcript. On 6 hand-labeled exchanges the local model states 69% of the key
   facts, with no false claim and no number the transcript lacks.
 - **Insider trades** are queryable line by line (646 transactions in 256 Form 4s), and each

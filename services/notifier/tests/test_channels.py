@@ -9,6 +9,7 @@ from typing import Any, ClassVar
 import httpx2
 import pytest
 
+from filings_common.alert_filters import CALL_QA
 from filings_common.parsed import InvestorCall
 from filings_notifier.channels import (
     Alert,
@@ -239,3 +240,48 @@ def test_a_line_break_in_a_headline_cant_break_the_email(monkeypatch: pytest.Mon
     [message] = FakeSmtp.sent
     assert message["Subject"] == "[AAPL] Apple names a new CFO Bcc: someone@example.com"
     assert message["Bcc"] is None
+
+
+CALL_SOURCE = "https://www.microsoft.com/en-us/investor/events/fy-2027/earnings-fy-2027-q1"
+CALL_ALERT = Alert(
+    accession_no="",
+    company_name="Microsoft",
+    ticker="MSFT",
+    form_type=CALL_QA,
+    filed_at=date(2026, 10, 28),
+    headline="Earnings call Q&A: Microsoft on AI capacity",
+    summary="Analysts asked about capacity and capital.",
+    key_points=["Capacity constrained through the year"],
+    url=CALL_SOURCE,
+    call_id=7,
+)
+
+
+# --- Earnings-call Q&A alerts (ADR-0022) ----------------------------------------------------------
+
+
+def test_discord_shows_the_call_day_and_links_the_transcript() -> None:
+    transport, requests = recorder(httpx2.Response(204))
+    DiscordSender(transport=transport).send(DISCORD, CALL_ALERT)
+    embed = json.loads(requests[0].content)["embeds"][0]
+    assert (embed["title"], embed["url"]) == (CALL_ALERT.headline, CALL_SOURCE)
+    assert {"name": "Earnings call", "value": "2026-10-28", "inline": True} in embed["fields"]
+    assert not any(field["name"] in ("Form", "Filed") for field in embed["fields"])
+
+
+def test_slack_and_email_name_the_call_not_a_form(monkeypatch: pytest.MonkeyPatch) -> None:
+    transport, requests = recorder(httpx2.Response(200, text="ok"))
+    SlackSender(transport=transport).send(SLACK, CALL_ALERT)
+    context = json.loads(requests[0].content)["blocks"][1]["elements"][0]["text"]
+    assert context.startswith("Microsoft (MSFT) · earnings call of 2026-10-28 · Automated")
+    monkeypatch.setattr(smtplib, "SMTP", FakeSmtp)
+    FakeSmtp.sent, FakeSmtp.refuse = [], False
+    SmtpEmailSender(host="smtp", port=587, username="u", password="p", sender="a@example.com").send(
+        "ops@example.com", CALL_ALERT
+    )
+    email = FakeSmtp.sent[0]
+    assert email["Subject"] == "[MSFT] Earnings call Q&A: Microsoft on AI capacity"
+    body = email.get_content()
+    assert "Microsoft (MSFT), earnings call of 2026-10-28\n" in body
+    assert f"Full transcript, on the company's site: {CALL_SOURCE}" in body
+    assert "Form " not in body

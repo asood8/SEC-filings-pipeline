@@ -19,6 +19,10 @@ from typing import Literal, get_args
 
 from filings_common.amendments import base_form
 
+# The form type that stands for earnings-call Q&A summaries in a subscription's form types
+# (ADR-0022): a subscription with no form types gets them too, as it gets every form.
+CALL_QA = "earnings-call"
+
 Form4Trades = Literal["all", "open_market", "purchases"]
 FORM4_TRADES: tuple[str, ...] = get_args(Form4Trades)
 

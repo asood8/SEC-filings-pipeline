@@ -107,7 +107,8 @@ Seven real transcripts (Microsoft, Alphabet, JPMorgan, Bank of America, J&J, Pep
    when a company's earnings 8-K is three weeks old without a transcript (a source broke).
 
 Built in three PRs: fetching and storing; summaries and their benchmark; the API and the
-website.
+website. Alerts came after (ADR-0012, "Earnings-call Q&A alerts"): a call's first summary alerts
+the company's subscriptions to every form type or to call Q&A.
 
 ### First real run (added 2026-11-04)
 

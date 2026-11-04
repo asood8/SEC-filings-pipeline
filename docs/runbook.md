@@ -247,8 +247,10 @@ The alert clears the night after the transcript is stored, or once the 8-K is pa
 | `filings.discovered.dlq` | parser | `filings-replay discovered --accession <no>` |
 | `filings.parsed.dlq` | summarizer | `filings-replay parsed --accession <no>` |
 | `filings.ready.dlq` | notifier | Re-publish the dead letters themselves (step 4) |
+| `calls.summarized.dlq` | notifier (earnings-call Q&A alerts) | Re-publish them to `calls.summarized`, as for `filings.ready` (step 4) |
 
-1. **See what is there.** Each message's key is the filing's accession number. Note each
+1. **See what is there.** Each message's key is the filing's accession number (`call-<id>` for
+   an earnings call's Q&A). Note each
    partition's HIGH-WATERMARK for step 6.
 
    ```

@@ -5,6 +5,9 @@ after `filings-discovery fetch-transcripts`.
 Newest calls first, until the time budget runs out; whatever is left waits for the next night. A
 call whose summary fails (every provider failed) is left for the next night too. Re-running
 writes nothing twice: the same provider, model and prompt version replace their row.
+
+A call's first summary is announced on `calls.summarized` (through the outbox, in the same
+transaction) so the notifier alerts about it; later summaries of the call are not.
 """
 
 import argparse
@@ -31,8 +34,10 @@ from filings_common.config import (
     RedisSettings,
 )
 from filings_common.db import CallSummary, CallTranscript, Company, create_engine, session_factory
+from filings_common.events import CallSummarized, Topic
 from filings_common.mongo import TranscriptStore
 from filings_common.names import company_name
+from filings_common.outbox import enqueue
 from filings_common.telemetry import setup_telemetry
 from filings_summarizer.calls import (
     CALL_PROMPT_VERSION,
@@ -62,6 +67,7 @@ class CallsReport:
 @dataclass(frozen=True)
 class _Pending:
     transcript_id: int
+    cik: int
     source_url: str
     context: CallContext
 
@@ -75,6 +81,7 @@ def pending(session: Session, prompt_version: int = CALL_PROMPT_VERSION) -> list
     rows = session.execute(
         sa.select(
             CallTranscript.id,
+            CallTranscript.cik,
             CallTranscript.source_url,
             CallTranscript.call_date,
             Company.ticker,
@@ -85,8 +92,8 @@ def pending(session: Session, prompt_version: int = CALL_PROMPT_VERSION) -> list
         .order_by(CallTranscript.call_date.desc(), CallTranscript.id)
     ).all()
     return [
-        _Pending(id_, url, CallContext(company_name(name), ticker, day))
-        for id_, url, day, ticker, name in rows
+        _Pending(id_, cik, url, CallContext(company_name(name), ticker, day))
+        for id_, cik, url, day, ticker, name in rows
     ]
 
 
@@ -124,13 +131,16 @@ def summarize_calls(
         if result is None:
             continue
         with sessions.begin() as session:
+            first = not session.scalar(
+                sa.select(sa.exists().where(CallSummary.transcript_id == call.transcript_id))
+            )
             values: dict[str, Any] = {
                 "takeaways": result.takeaways.model_dump(),
                 "exchanges": result.exchanges,
                 "ungrounded_numbers": result.ungrounded_numbers,
                 "ungrounded_names": result.ungrounded_names,
             }
-            session.execute(
+            summary_id = session.execute(
                 pg_insert(CallSummary)
                 .values(
                     transcript_id=call.transcript_id,
@@ -143,7 +153,16 @@ def summarize_calls(
                     index_elements=["transcript_id", "provider", "model", "prompt_version"],
                     set_=values | {"created_at": sa.func.now()},
                 )
-            )
+                .returning(CallSummary.id)
+            ).scalar_one()
+            if first:  # announced once, for alerts; a later summary of the call isn't
+                enqueue(
+                    session,
+                    Topic.CALLS_SUMMARIZED,
+                    CallSummarized(
+                        transcript_id=call.transcript_id, summary_id=summary_id, cik=call.cik
+                    ),
+                )
         logger.info("%s: %d exchanges summarized", label, len(result.exchanges))
         report.summarized.append(label)
     return report

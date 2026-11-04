@@ -253,15 +253,21 @@ function LastDelivery({ subscription }: { subscription: Subscription }) {
   const last = subscription.last_delivery
   if (!last) return <p className={styles.status}>No alerts yet.</p>
   const when = formatDateTime(last.at)
-  const filing = (
-    <Link to={`/filings/${last.accession_no}`}>
-      {when}{' '}
-      <span className="visually-hidden">
-        (the {subscription.company ? `${subscription.company.ticker} ` : ''}
-        filing alerted)
-      </span>
-    </Link>
-  )
+  const ticker = subscription.company ? `${subscription.company.ticker} ` : ''
+  const filing =
+    last.call_id != null ? (
+      <Link to={`/calls/qa/${last.call_id}`}>
+        {when}{' '}
+        <span className="visually-hidden">
+          (the {ticker}earnings call Q&amp;A alerted)
+        </span>
+      </Link>
+    ) : (
+      <Link to={`/filings/${last.accession_no}`}>
+        {when}{' '}
+        <span className="visually-hidden">(the {ticker}filing alerted)</span>
+      </Link>
+    )
   if (last.status === 'sent') {
     return <p className={styles.status}>Last alert sent {filing}.</p>
   }

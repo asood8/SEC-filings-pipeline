@@ -19,6 +19,7 @@ from filings_api.queries import SessionDep
 from filings_api.routes import subscriptions
 from filings_api.routes.subscriptions import MAX_SUBSCRIPTIONS, _lock_user
 from filings_common.db import (
+    CallTranscript,
     Company,
     Filing,
     FilingStatus,
@@ -563,6 +564,36 @@ def test_subscriptions_show_their_last_delivery(sign_in: SignIn, seeded: Engine,
 
     patched = alice.patch(f"/subscriptions/{apple['id']}", json={"form_types": ["8-K"]}).json()
     assert patched["last_delivery"] == last
+
+
+def test_a_last_delivery_about_an_earnings_call_names_the_call(
+    sign_in: SignIn, seeded: Engine
+) -> None:
+    alice = sign_in("alice")
+    apple = subscribe(alice).json()
+    with session_factory(seeded).begin() as session:
+        transcript = CallTranscript(
+            cik=320193,
+            call_date=date(2026, 10, 30),
+            source_url="https://ir.example/aapl.pdf",
+            text_sha256="x",
+            words=9000,
+            exchanges=8,
+        )
+        session.add(transcript)
+        session.flush()
+        session.add(
+            Notification(
+                subscription_id=apple["id"],
+                transcript_id=transcript.id,
+                status=NotificationStatus.SENT,
+                attempts=1,
+                sent_at=sa.func.now(),
+            )
+        )
+        call_id = transcript.id
+    last = alice.get("/subscriptions").json()[0]["last_delivery"]
+    assert (last["status"], last["accession_no"], last["call_id"]) == ("sent", None, call_id)
 
 
 def keyword_alert(client: TestClient, **fields: Any) -> httpx2.Response:

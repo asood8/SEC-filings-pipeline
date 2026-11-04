@@ -593,9 +593,14 @@ export interface components {
             status: "pending" | "sent" | "failed";
             /**
              * Accession No
-             * @description The filing the alert was about.
+             * @description The filing the alert was about; null for an earnings call's Q&A.
              */
-            accession_no: string;
+            accession_no: string | null;
+            /**
+             * Call Id
+             * @description The earnings call whose Q&A the alert was about (GET /call-summaries/{id}).
+             */
+            call_id?: number | null;
             /**
              * At
              * Format: date-time

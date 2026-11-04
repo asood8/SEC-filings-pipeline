@@ -2,7 +2,10 @@
 
 - A subscription matches if it follows the filing's company, or, for a Form 4, the issuer whose
   stock was traded (following Lennar catches Berkshire's Form 4 about buying Lennar), and if its
-  form types include the filing's (empty means all).
+  form types include the filing's (empty means all). An amendment counts as its form: Form 4
+  alerts include Form 4/As, 8-K alerts 8-K/As (ADR-0021).
+- A Form 4/A that restates its original's trades unchanged (a power of attorney attached, say)
+  alerts nobody; it is still stored and shown.
 - Alerts are about new filings: a subscription only matches filings discovered after it was
   created. Otherwise replaying the topic would send a new subscription every past filing.
 - Each alert is a `notifications` row, unique per (subscription, filing). It is delivered inside
@@ -42,6 +45,7 @@ from filings_common.alert_filters import (
     wants_8k,
     wants_form4,
 )
+from filings_common.amendments import base_form, changes_nothing
 from filings_common.consumer import PermanentError, Received
 from filings_common.db import (
     Channel,
@@ -149,6 +153,9 @@ class NotificationHandler:
     def _matching_subscriptions(
         self, session: Session, alert: Alert, cik: int, discovered_at: datetime
     ) -> list[int]:
+        if alert.form_type == "4/A" and changes_nothing(session, alert.accession_no):
+            logger.info("%s changes no reported trade; nobody is alerted", alert.accession_no)
+            return []
         ciks = {cik}
         form4 = session.get(Form4Filing, alert.accession_no)
         if form4 is not None:
@@ -172,9 +179,12 @@ class NotificationHandler:
                     ),
                 ),
                 Subscription.created_at <= discovered_at,
-                # No form types means all of them; otherwise the filing's must be listed.
+                # No form types means all of them; otherwise the filing's (or, for an
+                # amendment, the form it amends) must be listed.
                 (sa.func.cardinality(Subscription.form_types) == 0)
-                | Subscription.form_types.contains([alert.form_type]),
+                | Subscription.form_types.overlap(
+                    sorted({alert.form_type, base_form(alert.form_type)})
+                ),
             )
             .order_by(Subscription.id)
         )

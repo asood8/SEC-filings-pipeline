@@ -148,8 +148,36 @@ def test_unreadable_label_files_are_rejected(tmp_path: Path) -> None:
 
 def test_the_label_file_covers_every_collected_8k() -> None:
     labeled = load_labels(LABELS)
-    assert len(labeled) == 22
+    assert len(labeled) == 22 + 7  # and the 8-K/As of ADR-0021
     assert all(len(f.facts) >= 3 for f in labeled.values())
+
+
+def test_slips_on_8k_amendments_are_caught() -> None:
+    # llama3.2:3b on 2026-11-04 (ADR-0021): Chevron's sale to John Hess told in reverse, and
+    # Berkshire's amendment, which only adds Greg Abel's salary, called a correction.
+    labeled = load_labels(LABELS)
+    chevron = score_summary(
+        summary(
+            "Amended: Chevron Corp: Hess Corp. Executives Sell Interests in ToyCo and HLOGO",
+            "Chevron Corp. executives, including John B. Hess, have sold their interests in ToyCo"
+            " and HLOGO to Hess Corp. for $40,000 and $863,000, respectively.",
+        ),
+        labeled["0000093410-25-000130"],
+    )
+    assert chevron.forbidden == [
+        "Mr. Hess (or Chevron's executives) sold the interests, rather than buying them"
+    ]
+    assert chevron.missing == []
+    berkshire = score_summary(
+        summary(
+            "Amended: Berkshire Hathaway Inc: Greg Abel's New Role and Salary",
+            "The amendment corrects and clarifies certain details. Mr. Abel became President and"
+            " Chief Executive Officer on January 1, 2026, and his salary increased to $25 million.",
+        ),
+        labeled["0001193125-26-004727"],
+    )
+    assert berkshire.forbidden == ["the amendment corrects or clarifies the earlier filing"]
+    assert berkshire.missing == []
 
 
 def test_known_slips_are_caught() -> None:

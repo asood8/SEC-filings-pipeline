@@ -546,8 +546,9 @@ don't fit the schema), fact recall and summaries with forbidden claims (scored a
 doesn't. With `--out`, it saves every summary with what it missed and any forbidden claim, for
 reading side by side; read the misses before trusting a difference of a filing or two.
 
-The labels cover the 22 8-Ks in the local database (accession numbers), so the quality columns
-only mean something there: production collects other 8-Ks, and on the VM they read `n/a`. Compare
+The labels cover the 22 8-Ks in the local database (accession numbers) and 7 8-K/As (ADR-0021;
+scored once they are collected), so the quality columns only mean something there: production
+collects other 8-Ks, and on the VM they read `n/a`. Compare
 quality locally, with the same model file if it is a different quantization (Ollama can load a
 GGUF file through a Modelfile, `ollama create`), and speed on the VM.
 

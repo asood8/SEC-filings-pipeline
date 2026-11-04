@@ -45,7 +45,9 @@ On a live run against EDGAR, for a watchlist of 35 large US companies:
   corrected trade counts once, as corrected, line by line: an amendment can restate everything,
   only the lines it fixes, or a trade the original left out (ADR-0021). Checked on the 20
   amendments the watchlist filed in the year to November 2026: every Form 4/A whose original
-  SEC still lists gets the corrected figures, and 6 of the 7 8-K/As name their 8-K's date.
+  SEC still lists gets the corrected figures, and 6 of the 7 8-K/As name their 8-K's date. An
+  amendment's summary says what it amends and, for a Form 4/A, why, in the filer's words; it
+  alerts whoever follows its form, unless it changes no reported trade.
 - **Search** finds filings by keyword (Postgres full-text search) and by meaning (pgvector
   embeddings from a local model), combined into one ranking: "trading plan cancelled" finds
   Oracle's 8-K about Larry Ellison's plan, and "debt offering" finds Amazon's note offering.

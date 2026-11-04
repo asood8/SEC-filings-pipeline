@@ -736,6 +736,65 @@ def test_preview_applies_the_alert_filters(
 
 
 @pytest.mark.usefixtures("ready")
+def test_preview_counts_amendments_as_their_form(sign_in: SignIn, ids: Any, seeded: Engine) -> None:
+    # Two Form 4/As of Berkshire's Form 4 about Apple: one corrects the price, one restates the
+    # trade unchanged (the notifier alerts nobody about that one).
+    corrected, unchanged = "0001193125-26-000301", "0001193125-26-000302"
+    with session_factory(seeded).begin() as session:
+        for accession_no, price in ((corrected, 251.0), (unchanged, 250.0)):
+            session.add(
+                Filing(
+                    accession_no=accession_no,
+                    cik=1067983,
+                    form_type="4/A",
+                    filed_at=date(2026, 10, 3),
+                    primary_doc_url=f"https://www.sec.gov/Archives/{accession_no}.htm",
+                    raw_object_key=f"filings/x/{accession_no}/doc",
+                    status=FilingStatus.READY,
+                    amends_accession_no=BERKSHIRE_FORM4,
+                )
+            )
+            session.flush()
+            session.add(
+                Form4Filing(
+                    accession_no=accession_no,
+                    period_of_report=date(2026, 9, 30),
+                    issuer_cik=320193,
+                    issuer_name="Apple Inc.",
+                    issuer_ticker="AAPL",
+                    reporting_owners=["BERKSHIRE HATHAWAY INC"],
+                    transaction_codes=["P"],
+                    is_10b5_1=False,
+                )
+            )
+            session.flush()
+            session.add(
+                Form4Transaction(
+                    accession_no=accession_no,
+                    line=1,
+                    is_derivative=False,
+                    security_title="Common Stock",
+                    transaction_date=date(2026, 9, 30),
+                    code="P",
+                    shares=1000,
+                    price_per_share=price,
+                    acquired_disposed="A",
+                    direct_or_indirect="D",
+                )
+            )
+        # The parser marks the original's line replaced by the last amendment to restate it.
+        session.execute(
+            sa.update(Form4Transaction)
+            .where(Form4Transaction.accession_no == BERKSHIRE_FORM4)
+            .values(superseded_by=unchanged)
+        )
+
+    body = preview(sign_in("alice"), tickers="AAPL", form_types="4")
+    assert accessions(body) == [corrected, BERKSHIRE_FORM4, ids.form4]
+    assert accessions(preview(sign_in("alice"), tickers="AAPL", form_types="8-K")) == [ids.apple_8k]
+
+
+@pytest.mark.usefixtures("ready")
 def test_preview_of_a_keyword_alert_on_every_company(sign_in: SignIn, ids: Any) -> None:
     body = preview(sign_in("alice"), query="revenue")
     assert accessions(body) == [ids.msft_8k]

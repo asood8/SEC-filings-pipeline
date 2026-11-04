@@ -36,6 +36,7 @@ from filings_api.schemas import (
     SubscriptionUpdate,
 )
 from filings_common.alert_filters import OPEN_MARKET_CODES, TradeLine, wants_8k, wants_form4
+from filings_common.amendments import changes_nothing, with_amendments
 from filings_common.db import (
     Channel,
     Company,
@@ -462,8 +463,8 @@ def preview_alert(
     )
     if companies:  # a company's alerts include Form 4s others file about it, as the issuer
         query = query.where(Filing.cik.in_(companies) | Form4Filing.issuer_cik.in_(companies))
-    if params.form_types:
-        query = query.where(Filing.form_type.in_(params.form_types))
+    if params.form_types:  # amendments count as their form, as in the notifier
+        query = query.where(Filing.form_type.in_(with_amendments(params.form_types)))
     if params.query is not None:
         words = _checked_query(session, params.query)
         query = query.where(
@@ -478,6 +479,8 @@ def preview_alert(
     lines = _trade_lines(session, [r.form4 for r in rows if r.form4]) if form4_filtered else {}
 
     def wanted(row: Any) -> bool:
+        if row[0].form_type == "4/A" and changes_nothing(session, row.form4):
+            return False  # the notifier alerts nobody about it
         if row.form4 is not None:
             return not form4_filtered or wants_form4(
                 params.form4_trades, params.form4_min_value, lines[row.form4]

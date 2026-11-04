@@ -122,6 +122,13 @@ with the subscription in words (`alert_filters.alert_reason`), for this filing's
 context line, and email above the disclaimer. It is computed per subscription at delivery, so
 the shared alert content is unchanged and exactly-once delivery is untouched.
 
+### Amendments (added 2026-11-04)
+
+A Form 4/A or 8-K/A alerts the subscriptions its form would: a subscription to Form 4s gets Form
+4/As, with its Form 4 filters applied to the amendment's lines, and the reason names the form's
+filters. A Form 4/A that restates its original's trades unchanged alerts nobody. The preview
+matches the same way. Details in ADR-0021.
+
 ## Alternatives considered
 
 - **Dedupe in Redis.** It's lost on eviction or restart, and can't show what was delivered. The

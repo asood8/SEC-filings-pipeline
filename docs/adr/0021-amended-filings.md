@@ -60,8 +60,36 @@ about a fund's units with a line that matches none of the original's (other code
 the totals don't count). Its remarks cite the original's accession number; the rules above
 don't read it, since every other amendment is found without one.
 
-Summaries and alerts for amendments, and how the API and site show them, follow in the next
-changes, with the same data.
+4. **Summarize amendments as what they are.** A Form 4/A gets the Form 4 template, headed
+   "Amended:", and starts with the Form 4 it amends, whether any reported trade changed, and the
+   filer's explanation in the filer's words (the sentence of the remarks or footnotes that says
+   it amends, or else one naming a mistake in an earlier report). An 8-K/A goes to the LLM with a
+   header naming the 8-K it amends, its explanatory note, and one more instruction: say what the
+   amendment adds or changes. Its headline is headed "Amended:" too. An 8-K's prompt is
+   unchanged, so the benchmark's results for 8-Ks still hold.
+5. **Alert amendments like their form.** Form 4 alerts include Form 4/As and 8-K alerts include
+   8-K/As, with the same filters, applied to the amendment's own lines and items. A Form 4/A that
+   restates its original's trades unchanged (Nike's, attaching a power of attorney) alerts
+   nobody, but is still summarized, searchable, and shown.
+
+How the API and site show amendments follows in the next change.
+
+### The 8-K/A prompt, measured (2026-11-04)
+
+llama3.2:3b on the laptop, with the production prompt, on the watchlist's 7 8-K/As (labeled in
+`config/summary_eval.json` by reading their notes and items): every labeled fact stated (100%
+recall), but 4 of 7 summaries make a claim the filing contradicts. Berkshire's amendment, which
+only adds Greg Abel's salary, is called a correction. Chevron's sale of the Hess toy-truck
+business *to* John Hess is told in reverse. Netflix's headline announces the merger, which the
+original announced (the summary itself says correctly that the amendment adds a missing
+exhibit). Walmart's says Furner's pay was reported before. Apple's, Walmart's other one, and
+McDonald's are right. For 8-Ks the same model makes such a claim in 5 of 22.
+
+A second wording ("summarize what this amendment reports; call it a correction only if the
+filing says so") fixed Berkshire's and Walmart's but made three new ones (McDonald's earlier
+report "incorrectly stated" a date, Walmart's two-year non-compete became "two months", and
+Apple's planned awards "received"), 5 of 7, so the first wording stays. Like the 8-K slips, these
+are the small model's; the headline's "Amended:" and the filing's link go with every one.
 
 ## Alternatives considered
 
@@ -90,3 +118,5 @@ changes, with the same data.
   `filings-rebuild-key-fields --form-type 4`, and `filings.report_date` when discovery next sees
   them (within its lookback window).
 - Other forms' amendments (10-K/A and so on) aren't collected, because their forms aren't.
+- An amendment found unlinked can't be told apart from a change of figures, so it is alerted
+  (rather than missed), with the date it gives for its original.

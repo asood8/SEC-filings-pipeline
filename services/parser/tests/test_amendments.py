@@ -17,6 +17,7 @@ from pymongo.database import Database
 from sqlalchemy.engine import Engine
 from sqlalchemy.orm import Session, sessionmaker
 
+from filings_common.amendments import amendment_reason, changes_nothing, line_key
 from filings_common.db import (
     Company,
     Filing,
@@ -26,7 +27,7 @@ from filings_common.db import (
 )
 from filings_common.mongo import ParsedFilingStore
 from filings_parser import form4, form8k
-from filings_parser.amendments import Line, line_key, superseded_lines
+from filings_parser.amendments import Line, superseded_lines
 from filings_parser.form4 import parse_form4
 from filings_parser.rebuild import rebuild_key_fields
 
@@ -504,3 +505,50 @@ def test_an_8k_amendment_without_a_date_links_by_report_date(
         sessions, "0001193125-25-000020", date(2025, 5, 5), ["5.02"], report_date=date(2025, 5, 3)
     )
     assert links(sessions) == {BERKSHIRE_FIX: (None, "0001193125-25-000020")}
+
+
+# --- What every stage reads (filings_common.amendments) ----------------------------------------
+
+
+@pytest.mark.parametrize(
+    ("accession_no", "starts"),
+    [
+        (PSU_FIX, "This amendment is being filed to correct the number of shares acquired"),
+        (GIFT_FIX, "Amends the Form 4 filed on September 29, 2025 to correct"),
+        (
+            OMITTED_SALE,
+            "This Amendment to the Form 4 filed on 12/01/2025 is being filed to include",
+        ),
+        (TAX_FIX, "This amendment to the Form 4 is being filed to report an adjustment"),
+        (PRICE_FIX, "The original Form 4 is being amended by this Form 4/A to report the weighted"),
+        (POWER_OF_ATTORNEY, "This Amendment on Form 4/A is being filed solely to attach"),
+        # In a footnote, after other sentences: only the one naming the mistake.
+        (ADDS_TRADES, "The equity swap positions were inadvertently omitted"),
+        (OLD_GIFT_FIX, "This filing corrects a reported gift transfer of 11,313 shares"),
+    ],
+)
+def test_the_filers_explanation_of_each_real_amendment(accession_no: str, starts: str) -> None:
+    reason = amendment_reason(parse_form4((FORM4 / f"{accession_no}.xml").read_bytes()))
+    assert reason is not None
+    assert reason.startswith(starts)
+
+
+@pytest.mark.integration
+def test_a_paperwork_amendment_changes_nothing_and_a_correction_does(
+    sessions: sessionmaker[Session],
+) -> None:
+    for accession_no in (
+        POWER_OF_ATTORNEY_ORIGINAL,
+        POWER_OF_ATTORNEY,
+        PRICE_ORIGINAL,
+        PRICE_FIX,
+        ADDS_TRADES_ORIGINAL,
+        ADDS_TRADES,
+        OLD_GIFT_FIX,
+    ):
+        save_form4(sessions, accession_no)
+    with sessions() as session:
+        assert changes_nothing(session, POWER_OF_ATTORNEY)
+        assert not changes_nothing(session, PRICE_FIX)  # 42.265 -> 42.27
+        assert not changes_nothing(session, ADDS_TRADES)  # adds 6 lines
+        assert not changes_nothing(session, OLD_GIFT_FIX)  # unlinked: nothing to compare

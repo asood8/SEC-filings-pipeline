@@ -73,6 +73,8 @@ LABEL_REPLACE_TARGETS = re.compile(
 def _prometheus_unit(unit: str) -> str:
     if unit == "s":
         return "_seconds"
+    if unit == "By":
+        return "_bytes"
     assert re.fullmatch(r"\{\w+\}", unit), f"unit {unit!r}: add its Prometheus suffix here"
     return ""  # annotations such as {filing} don't become part of the name
 
@@ -92,7 +94,12 @@ def defined_metrics(_metric_reader: "InMemoryMetricReader") -> set[str]:
             value.add(0, probe)
         elif isinstance(value, Histogram):
             value.record(0, probe)
-    gauges = (metrics.CONSUMER_LAG_VALUES, metrics.DLQ_DEPTH_VALUES, metrics.R2_FREE_TIER_VALUES)
+    gauges = (
+        metrics.CONSUMER_LAG_VALUES,
+        metrics.DLQ_DEPTH_VALUES,
+        metrics.R2_FREE_TIER_VALUES,
+        metrics.BACKUP_SIZE_VALUES,
+    )
     for gauge in gauges:
         gauge.replace(owner, [(0, probe)])
     try:

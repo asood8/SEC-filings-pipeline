@@ -1959,7 +1959,7 @@
     },
     {
       "type": "row",
-      "title": "Free tier",
+      "title": "Free tier and backups",
       "collapsed": false,
       "panels": [],
       "id": 30,
@@ -2037,8 +2037,62 @@
       "id": 31,
       "gridPos": {
         "h": 4,
-        "w": 24,
+        "w": 12,
         "x": 0,
+        "y": 75
+      }
+    },
+    {
+      "type": "stat",
+      "title": "Postgres backup size",
+      "description": "Size of the dump each nightly backup uploaded to R2 (03:30 UTC), reported by filings-backup-report only after the upload succeeded. The \"Postgres backup missing\" alert fires after 28 hours without one, and \"Postgres backup shrank\" when the newest is under half the largest of the past 8 days.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "decbytes",
+          "decimals": 1,
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "blue"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "value",
+        "graphMode": "area",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "textMode": "value",
+        "wideLayout": true
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "editorMode": "code",
+          "expr": "max by (job) (max_over_time(filings_backup_size_bytes[1d]))",
+          "legendFormat": "newest backup",
+          "refId": "A"
+        }
+      ],
+      "id": 32,
+      "gridPos": {
+        "h": 4,
+        "w": 12,
+        "x": 12,
         "y": 75
       }
     }

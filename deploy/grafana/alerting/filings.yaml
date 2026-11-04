@@ -285,3 +285,87 @@ groups:
             The daily filings-r2-usage job hasn't reported for 50 hours, so the free-tier alert
             can't fire. Check the r2-usage CronJob's runs and logs (its token, Cloudflare's
             analytics API).
+
+      # The nightly backup (03:30 UTC) reports its dump's size only after the upload to R2
+      # succeeded (filings-backup-report), so a night without a report is a failed or skipped
+      # backup. Fires when a backup was reported in the last 8 days but none in the last 28 hours:
+      # a day plus room for a late or retried run. Never having run (the local viewer, a new
+      # cluster) doesn't fire it.
+      - uid: filings-backup-missing
+        title: Postgres backup missing
+        condition: C
+        data:
+          - refId: A
+            relativeTimeRange: { from: 600, to: 0 }
+            datasourceUid: prometheus
+            model:
+              refId: A
+              instant: true
+              range: false
+              expr: |
+                count by (job) (last_over_time(filings_backup_size_bytes[8d]))
+                unless
+                count by (job) (last_over_time(filings_backup_size_bytes[28h]))
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              refId: C
+              type: threshold
+              expression: A
+              conditions:
+                - evaluator: { type: gt, params: [0] }
+        noDataState: OK
+        execErrState: Error
+        for: 0s
+        dashboardUid: filings-pipeline
+        panelId: 32
+        labels:
+          severity: warning
+        annotations:
+          summary: No Postgres backup in over a day
+          description: >-
+            The nightly backup hasn't reported a dump uploaded to R2 for 28 hours. Older backups
+            are still there (kept 30 days). See the runbook, "Alert: Postgres backup missing".
+
+      # A backup that "works" but holds the wrong thing: the newest dump is under half the size of
+      # the largest in the past 8 days. The database only grows (filings are never deleted), so
+      # this means something like a database recreated empty after its volume was lost. Left
+      # alone, the nightly empty dumps would look healthy while the bucket's 30-day lifecycle rule
+      # deletes the last good one. Each run is its own series; runs are a day apart, so the
+      # 20-hour window holds only the newest (the alert then clears itself until the next run).
+      - uid: filings-backup-shrank
+        title: Postgres backup shrank
+        condition: C
+        data:
+          - refId: A
+            relativeTimeRange: { from: 600, to: 0 }
+            datasourceUid: prometheus
+            model:
+              refId: A
+              instant: true
+              range: false
+              expr: |
+                min by (job) (last_over_time(filings_backup_size_bytes[20h]))
+                / on (job)
+                max by (job) (max_over_time(filings_backup_size_bytes[8d]))
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              refId: C
+              type: threshold
+              expression: A
+              conditions:
+                - evaluator: { type: lt, params: [0.5] }
+        noDataState: OK
+        execErrState: Error
+        for: 0s
+        dashboardUid: filings-pipeline
+        panelId: 32
+        labels:
+          severity: critical
+        annotations:
+          summary: The newest Postgres backup is under half the usual size
+          description: >-
+            Last night's dump is less than half the size of the largest in the past week. Check
+            that the database still holds its data before the older, good backups expire. See the
+            runbook, "Alert: Postgres backup shrank".

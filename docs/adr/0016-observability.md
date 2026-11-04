@@ -328,7 +328,7 @@ are added up with `max_over_time`, that panels don't overlap, and that the files
 
 ### Alerts
 
-Four rules, in `deploy/grafana/alerting/filings.yaml`:
+Eight rules, in `deploy/grafana/alerting/filings.yaml`:
 
 | Rule | Fires when | After |
 |---|---|---|
@@ -336,9 +336,19 @@ Four rules, in `deploy/grafana/alerting/filings.yaml`:
 | Dead-letter topic not empty | a dead-letter topic holds a message | at once |
 | Consumer lag high | a group is more than 100 messages behind on a topic | 15 min |
 | Pipeline service not reporting | a long-running service exported metrics in the last day, but not in the last 10 minutes | at once |
+| R2 free tier half used | the daily `r2-usage` job measured over half of a monthly R2 allowance (storage, Class A, or Class B operations) | at once |
+| R2 usage not measured | that job reported in the last week, but not in the last 50 hours | at once |
+| Postgres backup missing | the nightly backup reported an upload to R2 in the last 8 days, but not in the last 28 hours | at once |
+| Postgres backup shrank | the newest backup is under half the size of the largest in the last 8 days | at once |
 
-The fourth (critical; the others are warnings) is not in the brief, but the other rules can't see
-a stopped consumer: its lag and dead-letter gauges simply disappear, and "no data" counts as fine.
+The fourth (critical) is not in the brief, but the other rules can't see a stopped consumer: its
+lag and dead-letter gauges simply disappear, and "no data" counts as fine. The R2 pair came
+with Phase 7 (R2 bills past its free tier and has no cap). The backup pair (2026-11-03): the job's
+last step, `filings-backup-report`, records the dump's size only after the upload succeeded, so
+a missing night is a failed backup. A shrinking dump (critical) catches a backup that succeeds
+but holds the wrong thing, such as a database recreated empty: otherwise the empty dumps look
+healthy while the bucket's 30-day lifecycle deletes the last good one. Both were checked against
+the local viewer's Prometheus with test reports. The others are warnings.
 US market holidays will fire the first rule; for a few days a year, that is cheaper than a holiday
 calendar. A replay of many 8-Ks through the local model can fire the lag rule, which is correct.
 

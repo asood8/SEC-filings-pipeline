@@ -212,6 +212,19 @@ R2_FREE_TIER_USED = meter.create_observable_gauge(
     ),
 )
 
+# --- Postgres backups (filings-backup-report, the last step of the nightly backup job) ----------
+
+BACKUP_SIZE_VALUES = LatestValues()
+BACKUP_SIZE = meter.create_observable_gauge(
+    "filings.backup.size",
+    callbacks=[BACKUP_SIZE_VALUES.observe],
+    unit="By",
+    description=(
+        "Size of the Postgres dump the nightly backup just uploaded to R2. Reported only after the "
+        "upload succeeded, so a missing night means a failed or skipped backup."
+    ),
+)
+
 
 # Attribute sets, for code that records with them.
 

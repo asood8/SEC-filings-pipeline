@@ -1,22 +1,28 @@
-"""Command line entry point: `filings-discovery load-companies | run`."""
+"""Command line entry point: `filings-discovery load-companies | run | fetch-exhibits |
+fetch-transcripts`."""
 
 import argparse
 import logging
 import signal
 from datetime import UTC, datetime, timedelta
 from types import FrameType
+from typing import Any
 
 import redis
 from opentelemetry import trace
+from pymongo import MongoClient
+from sqlalchemy.orm import Session, sessionmaker
 
 from filings_common.config import (
     DatabaseSettings,
     EdgarSettings,
+    MongoSettings,
     ObjectStoreSettings,
     RedisSettings,
 )
 from filings_common.db import create_engine, session_factory
 from filings_common.edgar import EdgarClient
+from filings_common.mongo import TranscriptStore
 from filings_common.storage import object_store_from_settings
 from filings_common.telemetry import setup_telemetry
 from filings_discovery.companies import (
@@ -27,6 +33,7 @@ from filings_discovery.companies import (
 )
 from filings_discovery.config import DiscoverySettings
 from filings_discovery.job import backfill_exhibits, discover
+from filings_discovery.transcripts import SiteClient, fetch_transcripts, load_sources
 from filings_discovery.watchlist import WatchlistError, load_watchlist
 
 logger = logging.getLogger("filings_discovery")
@@ -40,6 +47,10 @@ def main(argv: list[str] | None = None) -> int:
     commands.add_parser("run", help="find, store, and announce new watchlist filings")
     commands.add_parser(
         "fetch-exhibits", help="download EX-99 exhibits for known filings that have none"
+    )
+    commands.add_parser(
+        "fetch-transcripts",
+        help="store new earnings-call transcripts from the companies' own sites (no SEC calls)",
     )
     args = parser.parse_args(argv)
     telemetry = setup_telemetry("filings-discovery")
@@ -74,6 +85,11 @@ def _run(command: str) -> int:
 
     engine = create_engine(DatabaseSettings().database_url.get_secret_value())
     sessions = session_factory(engine)
+    if command == "fetch-transcripts":
+        try:
+            return _fetch_transcripts(settings, sessions)
+        finally:
+            engine.dispose()
     redis_client = redis.Redis.from_url(RedisSettings().redis_url)
     try:
         with EdgarClient.from_settings(EdgarSettings(), redis_client) as edgar:
@@ -118,3 +134,37 @@ def _run(command: str) -> int:
     finally:
         redis_client.close()
         engine.dispose()
+
+
+def _fetch_transcripts(settings: DiscoverySettings, sessions: sessionmaker[Session]) -> int:
+    try:
+        sources = load_sources(settings.transcript_sources_path)
+    except ValueError as exc:
+        logger.error("%s", exc)
+        return 2
+    mongo_settings = MongoSettings()
+    mongo: MongoClient[dict[str, Any]] = MongoClient(mongo_settings.mongodb_url.get_secret_value())
+    try:
+        with (
+            tracer.start_as_current_span("fetch transcripts"),
+            SiteClient(settings.transcript_user_agent) as client,
+        ):
+            report = fetch_transcripts(
+                sessions,
+                TranscriptStore(mongo[mongo_settings.mongodb_database]),
+                client,
+                sources,
+                today=datetime.now(UTC).date(),
+                lookback_days=settings.transcript_lookback_days,
+                overdue_days=settings.transcript_overdue_days,
+            )
+    finally:
+        mongo.close()
+    logger.info(
+        "checked %d transcript sources: %d new transcripts, %d failed, %d overdue",
+        len(sources),
+        len(report.stored),
+        len(report.failed),
+        len(report.overdue),
+    )
+    return 1 if report.failed else 0

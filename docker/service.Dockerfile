@@ -63,8 +63,8 @@ CMD ["uvicorn", "--factory", "filings_api.app:create_app", "--host", "0.0.0.0", 
 
 FROM runtime AS cmd-filings-discovery
 # Public configuration, not a secret. Mount a file over it (a ConfigMap) to change it without a
-# rebuild, or point DISCOVERY_WATCHLIST_PATH elsewhere.
-COPY config/watchlist.toml config/watchlist.toml
+# rebuild, or point DISCOVERY_WATCHLIST_PATH (DISCOVERY_TRANSCRIPT_SOURCES_PATH) elsewhere.
+COPY config/watchlist.toml config/transcript_sources.toml config/
 CMD ["filings-discovery", "run"]
 
 FROM runtime AS cmd-filings-parser

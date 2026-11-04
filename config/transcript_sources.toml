@@ -1,0 +1,54 @@
+# Where watchlist companies publish their own earnings-call transcripts (ADR-0022). Only companies
+# whose sites' terms don't bar automated downloads, and whose transcripts a plain page links to or
+# an address built from the call's date reaches. Checked 2026-11-04; the survey is in the ADR.
+#
+# A source gives either:
+#   listing + link: a page linking every transcript, and a regular expression for those links
+#     (matched against absolute URLs). Named groups order them, newest first: `date`
+#     (YYYY-MM-DD), or `year` and `quarter`. `keep` (default 2) of the newest are considered.
+#   urls: address templates, filled for each day an earnings 8-K was filed (and the day after):
+#     {date:%Y-%m-%d} and other strftime codes, and the quarter the call reports: {year}, {yy},
+#     {quarter}, {ordinal} ("3rd"), {fiscal_year}, {fiscal_quarter} (with
+#     fiscal_year_start_month).
+# An HTML page holding more than the transcript also gives `start` (and `end`): the transcript
+# is the text after the first match of `start`, before `end`. A page without `start` has no
+# transcript yet.
+
+[[source]]
+ticker = "MSFT"
+urls = ["https://www.microsoft.com/en-us/investor/events/fy-{fiscal_year}/earnings-fy-{fiscal_year}-q{fiscal_quarter}"]
+fiscal_year_start_month = 7
+start = '(?m)^Transcript$'
+end = '(?m)^END$'
+
+[[source]]
+ticker = "GOOGL"
+urls = ["https://s206.q4cdn.com/479360582/files/doc_events/{date:%Y}/{date:%b}/{date:%d}/{year}_Q{quarter}_Earnings_Transcript.pdf"]
+
+[[source]]
+ticker = "JPM"
+# The file name has changed over the years; each quarter tries all three.
+urls = [
+    "https://www.jpmorganchase.com/content/dam/jpmc/jpmorgan-chase-and-co/investor-relations/documents/quarterly-earnings/{year}/{ordinal}-quarter/{quarter}q{yy}-earnings-transcript.pdf",
+    "https://www.jpmorganchase.com/content/dam/jpmc/jpmorgan-chase-and-co/investor-relations/documents/quarterly-earnings/{year}/{ordinal}-quarter/{quarter}Q{yy}-earnings-transcript.pdf",
+    "https://www.jpmorganchase.com/content/dam/jpmc/jpmorgan-chase-and-co/investor-relations/documents/quarterly-earnings/{year}/{ordinal}-quarter/jpm-{quarter}q{yy}-earnings-call-transcript.pdf",
+]
+
+[[source]]
+ticker = "BAC"
+listing = "https://investor.bankofamerica.com/quarterly-earnings"
+link = 'webcast_transcript/(?P<date>\d{4}-\d{2}-\d{2})\+BAC\+[1-4]Q\+Earnings\+Call[^/]*\.pdf$'
+
+[[source]]
+ticker = "JNJ"
+urls = ["https://s203.q4cdn.com/636242992/files/content_files/JNJ-USQ_Transcript_{date:%Y-%m-%d}.pdf"]
+
+[[source]]
+ticker = "PEP"
+listing = "https://www.pepsico.com/en/investors/earnings"
+link = '/investors/q(?P<quarter>[1-4])-(?P<year>\d{4})-pep[-_]transcript\.pdf$'
+
+[[source]]
+ticker = "NKE"
+listing = "https://investors.nike.com/financial-information/financial-results"
+link = 'webcast_transcript/NIKE[-+]Inc\.?[-+]Q(?P<quarter>[1-4])FY(?P<year>\d{2})[-+]OFFICIAL[-+]Transcript[^/]*\.pdf$'

@@ -72,7 +72,7 @@ and turns them back into ordinary Secrets.
 | Secret | Keys | Used by |
 |---|---|---|
 | `postgres` | `POSTGRES_USER`, `POSTGRES_PASSWORD` (URL-safe: `openssl rand -hex 32`) | postgres, every service, migrate, backups |
-| `mongodb` | `MONGODB_URL` (Atlas `mongodb+srv://...`) | parser, summarizer |
+| `mongodb` | `MONGODB_URL` (Atlas `mongodb+srv://...`) | parser, summarizer, call-transcripts |
 | `r2-raw-filings` | `OBJECT_STORE_S3_ENDPOINT_URL`, `OBJECT_STORE_S3_ACCESS_KEY_ID`, `OBJECT_STORE_S3_SECRET_ACCESS_KEY` | discovery, parser |
 | `r2-backups` | `R2_ENDPOINT_URL`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY` (a token for the backups bucket only) | postgres-backup |
 | `sec-edgar` | `SEC_CONTACT_EMAIL` (personal, so not in the public config) | discovery, load-companies |

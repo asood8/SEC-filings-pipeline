@@ -369,3 +369,42 @@ groups:
             Last night's dump is less than half the size of the largest in the past week. Check
             that the database still holds its data before the older, good backups expire. See the
             runbook, "Alert: Postgres backup shrank".
+
+      # The nightly transcript job (call-transcripts, ADR-0022) counts the companies whose latest
+      # earnings 8-K is three weeks old with no transcript of that call stored. Companies post one
+      # within days, so a count above zero means a source broke: the site moved its transcripts
+      # or changed their format (or a company stopped posting them). The last 26 hours hold the
+      # newest nightly count only.
+      - uid: filings-transcripts-overdue
+        title: Earnings-call transcript overdue
+        condition: C
+        data:
+          - refId: A
+            relativeTimeRange: { from: 600, to: 0 }
+            datasourceUid: prometheus
+            model:
+              refId: A
+              instant: true
+              range: false
+              expr: |
+                max(last_over_time(filings_transcripts_overdue[26h]))
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              refId: C
+              type: threshold
+              expression: A
+              conditions:
+                - evaluator: { type: gt, params: [0] }
+        noDataState: OK
+        execErrState: Error
+        for: 0s
+        dashboardUid: filings-pipeline
+        panelId: 33
+        labels:
+          severity: warning
+        annotations:
+          summary: A company's earnings-call transcript is three weeks overdue
+          description: >-
+            The call-transcripts job found no transcript for a recent earnings call. The job's
+            log names the companies. See the runbook, "Alert: Earnings-call transcript overdue".

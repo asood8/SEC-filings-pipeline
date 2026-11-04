@@ -328,7 +328,7 @@ are added up with `max_over_time`, that panels don't overlap, and that the files
 
 ### Alerts
 
-Eight rules, in `deploy/grafana/alerting/filings.yaml`:
+Nine rules, in `deploy/grafana/alerting/filings.yaml`:
 
 | Rule | Fires when | After |
 |---|---|---|
@@ -340,6 +340,7 @@ Eight rules, in `deploy/grafana/alerting/filings.yaml`:
 | R2 usage not measured | that job reported in the last week, but not in the last 50 hours | at once |
 | Postgres backup missing | the nightly backup reported an upload to R2 in the last 8 days, but not in the last 28 hours | at once |
 | Postgres backup shrank | the newest backup is under half the size of the largest in the last 8 days | at once |
+| Earnings-call transcript overdue | the nightly `call-transcripts` job found a company whose earnings 8-K is three weeks old with no transcript of the call (ADR-0022) | at once |
 
 The fourth (critical) is not in the brief, but the other rules can't see a stopped consumer: its
 lag and dead-letter gauges simply disappear, and "no data" counts as fine. The R2 pair came
@@ -348,7 +349,9 @@ last step, `filings-backup-report`, records the dump's size only after the uploa
 a missing night is a failed backup. A shrinking dump (critical) catches a backup that succeeds
 but holds the wrong thing, such as a database recreated empty: otherwise the empty dumps look
 healthy while the bucket's 30-day lifecycle deletes the last good one. Both were checked against
-the local viewer's Prometheus with test reports. The others are warnings.
+the local viewer's Prometheus with test reports. The transcript rule (2026-11-04) catches a
+company's transcript source that broke: the site moved its transcripts or changed their format.
+The others are warnings.
 US market holidays will fire the first rule; for a few days a year, that is cheaper than a holiday
 calendar. A replay of many 8-Ks through the local model can fire the lag rule, which is correct.
 

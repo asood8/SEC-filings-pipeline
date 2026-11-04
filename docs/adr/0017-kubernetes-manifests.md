@@ -57,6 +57,7 @@ first install, and upgrades.
 | notifier | Deployment | `filings-notifier` | 1 (overlay) | More would be safe: the one-alert guarantee is a database row; heartbeat probe |
 | discovery | CronJob, every 10 min | `filings-discovery` | 1 at a time | `concurrencyPolicy: Forbid`, no retries (the next run is 10 minutes away) |
 | load-companies | CronJob, daily | `filings-discovery load-companies` | 1 | Run once by hand after the first install |
+| call-transcripts | CronJob, nightly | `filings-discovery fetch-transcripts` | 1 | Earnings-call transcripts from companies' own sites (ADR-0022); no SEC calls |
 | migrate | Job, Argo CD hook | `filings-discovery`, `run_migrations()` | 1 | Before the services on every sync (below) |
 | postgres-backup | CronJob, nightly | Postgres image (`pg_dump`) + `rclone/rclone:1.75.1` | 1 | Custom-format dump to the R2 backups bucket |
 | cloudflared | Deployment | `cloudflare/cloudflared:2026.10.0` | 1 (overlay) | Cloudflare Tunnel to the api Service; no ingress controller |
@@ -357,7 +358,7 @@ it a no-op. `BeforeHookCreation` keeps the last run and its logs until the next 
 
   | Destination | Allowed from |
   |---|---|
-  | postgres :5432 | the services, discovery, load-companies, migrate, postgres-backup |
+  | postgres :5432 | the services, discovery, load-companies, call-transcripts, migrate, postgres-backup |
   | redpanda :9092 | outbox-relay, parser, summarizer, notifier |
   | valkey :6379 | api, discovery, load-companies, summarizer |
   | llm :8080 | summarizer |

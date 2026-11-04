@@ -1,0 +1,72 @@
+# Earnings-call transcripts from the companies' own sites (ADR-0022): each night, the sources in
+# config/transcript_sources.toml are checked for the transcripts of recent earnings calls, and new
+# ones go to MongoDB (text) and Postgres (a row). No SEC requests: call dates come from the 8-Ks
+# discovery already stored. Sites get an honest User-Agent, robots.txt is honored, and requests to
+# one site are a second apart, so a run takes a minute or two.
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: call-transcripts
+spec:
+  # US companies post a transcript hours to days after a call; a nightly look is soon enough.
+  schedule: "40 3 * * *"
+  timeZone: Etc/UTC
+  concurrencyPolicy: Forbid
+  startingDeadlineSeconds: 3600
+  successfulJobsHistoryLimit: 1
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      # No retries: a site that failed tonight is tried again tomorrow, and re-runs are idempotent.
+      backoffLimit: 0
+      activeDeadlineSeconds: 1800
+      template:
+        metadata:
+          labels:
+            app.kubernetes.io/name: call-transcripts
+            app.kubernetes.io/component: pipeline
+        spec:
+          restartPolicy: Never
+          automountServiceAccountToken: false
+          enableServiceLinks: false
+          terminationGracePeriodSeconds: 45
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 10001
+            runAsGroup: 10001
+            seccompProfile:
+              type: RuntimeDefault
+          containers:
+            - name: fetch
+              image: filings-discovery
+              command: ["filings-discovery", "fetch-transcripts"]
+              envFrom:
+                - configMapRef:
+                    name: filings-config
+                - secretRef:
+                    name: postgres
+                - secretRef:
+                    name: mongodb
+              env:
+                - name: DATABASE_URL
+                  value: postgresql+psycopg://$(POSTGRES_USER):$(POSTGRES_PASSWORD)@postgres:5432/$(POSTGRES_DB)
+              resources:
+                requests:
+                  cpu: 50m
+                  memory: 96Mi
+                limits:
+                  cpu: 500m
+                  # Measured: 108 MiB at most reading the largest real transcript (a 1.3 MB PDF);
+                  # documents are capped at 4 MB.
+                  memory: 160Mi
+              securityContext:
+                allowPrivilegeEscalation: false
+                readOnlyRootFilesystem: true
+                capabilities:
+                  drop: ["ALL"]
+              volumeMounts:
+                - name: tmp
+                  mountPath: /tmp
+          volumes:
+            - name: tmp
+              emptyDir: {}

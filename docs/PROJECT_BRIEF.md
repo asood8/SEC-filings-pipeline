@@ -231,14 +231,7 @@ CLAUDE.md
 - Project name and domain (the domain is needed before the first `terraform apply`)
 - Production accounts, before the first `terraform apply` ([infra/terraform/README.md](../infra/terraform/README.md#decisions-first-brief-12)): the Oracle home region and where the Terraform state lives. Decided 2026-10-21: R2 with a payment method on file, Pages built from GitHub, the Atlas region near the Oracle one.
 - Later form types (10-Q/10-K section changes, 13F)
-- Earnings-call Q&A (suggested 2026-10-21). The Q&A sessions aren't in EDGAR: 8-Ks only announce
-  the call, and the pipeline now records its day, time, and webcast link
-  ([ADR-0007](adr/0007-8k-items-summaries-and-replay.md#investor-calls-added-2026-10-21)). The full
-  version would transcribe and summarize the call itself and add it to the filing: fetch the
-  webcast audio from each company's investor site (different webcast providers, sometimes behind a
-  sign-up form, replays that expire), transcribe it with a local speech-to-text model such as
-  whisper.cpp (a new component: needs an ADR and approval; on the A1 it shares 2 cores with the
-  LLM, and earnings season brings about 35 calls in a few weeks), summarize it in parts (a call
-  runs about 10,000 words, beyond the 8k-token context), and check each site's terms on
-  downloading and republishing recordings. Start with a proposal and a laptop pilot on one or two
-  companies, measuring transcription time and accuracy.
+- ~~Earnings-call Q&A~~ Decided 2026-11-04: summaries of the Q&A from the transcripts companies
+  publish on their own sites, for the 7 watchlist companies whose terms allow automated
+  downloads; no speech-to-text (none of them needs it) and nothing republished
+  ([ADR-0022](adr/0022-earnings-call-qa.md))

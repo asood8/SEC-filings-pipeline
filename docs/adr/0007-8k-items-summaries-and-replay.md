@@ -102,9 +102,8 @@ added to alerts ("Q&A session: Oct 21, 2026, 5:30 pm ET, https://ir.tesla.com").
   website's Calls page shows the list and links the feed. Both take `ticker` (added the same
   day) for one company's calls: each company page shows its next announced call and links that
   company's feed.
-- *The call's content* (a transcript, a summary of the Q&A) is deferred: it would mean fetching
-  each company's webcast audio, a speech-to-text model, summaries in parts (a transcript is far
-  longer than the LLM's context), and checking the sites' terms. See the brief's open decisions.
+- *The call's content* (a summary of the Q&A) came later, from the transcripts companies publish
+  themselves, for those whose sites' terms allow it (ADR-0022).
 
 ## Alternatives considered
 

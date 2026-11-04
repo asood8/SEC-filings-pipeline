@@ -33,3 +33,4 @@ row below.
 | [0019](0019-image-ci-and-deploy.md) | Building images in CI and deploying on push | Accepted |
 | [0020](0020-start-small-grow-later.md) | Starting on a smaller VM and growing it in place | Accepted |
 | [0021](0021-amended-filings.md) | Amended filings (Form 4/A, 8-K/A) | Accepted |
+| [0022](0022-earnings-call-qa.md) | Earnings-call Q&A summaries from companies' own transcripts | Accepted |

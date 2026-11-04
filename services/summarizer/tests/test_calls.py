@@ -17,11 +17,13 @@ from filings_common.mongo import TranscriptStore
 from filings_common.summaries import FilingSummary
 from filings_summarizer.call_benchmark import load_cases, run
 from filings_summarizer.calls import (
+    CALL_PROMPT_VERSION,
     EXCHANGE_SYSTEM,
     TAKEAWAYS_SYSTEM,
     CallContext,
     ExchangeSummary,
     summarize_call,
+    takeaways_from_json,
     takeaways_prompt,
 )
 from filings_summarizer.calls_job import pending, summarize_calls
@@ -201,8 +203,8 @@ def test_the_job_summarizes_each_call_once_newest_first(
     report = summarize_calls(sessions, TranscriptStore(mongo_db), *chains(Stub()))
     assert report.summarized == ["EXM 2026-10-13", "EXM 2026-07-14"]
     assert rows(clean_db) == [
-        (1, "ollama", 1, "Example Corp: deposits and buybacks"),
-        (2, "ollama", 1, "Example Corp: deposits and buybacks"),
+        (1, "ollama", CALL_PROMPT_VERSION, "Example Corp: deposits and buybacks"),
+        (2, "ollama", CALL_PROMPT_VERSION, "Example Corp: deposits and buybacks"),
     ]
     with sessions() as session:
         assert pending(session) == []
@@ -371,3 +373,40 @@ def test_takeaways_repeating_a_figure_an_exchange_made_up_are_flagged() -> None:
     assert result is not None
     assert result.exchanges[1]["ungrounded_numbers"] == ["3"]
     assert result.ungrounded_numbers == ["3"]  # "3%" is in the transcript, not in that exchange
+
+
+def test_takeaways_are_fitted_to_the_summary_shape_not_refused() -> None:
+    long = "JPMorgan Chase: analysts ask about deposits, credit, capital and the consumer " * 4
+    takeaways = takeaways_from_json(
+        json.dumps(
+            {
+                "headline": long,
+                "summary": "Analysts asked about deposits.",
+                "key_points": ["", *[f"Point {n}" for n in range(1, 11)], "  "],
+            }
+        )
+    )
+    assert len(takeaways.headline) <= 200
+    assert takeaways.headline.endswith("...")
+    assert long.startswith(takeaways.headline.removesuffix("..."))
+    assert takeaways.key_points == [f"Point {n}" for n in range(1, 9)]
+    with pytest.raises(ValueError, match="Unterminated"):
+        takeaways_from_json('{"headline": "Cut off at the cap')  # still a failure
+
+
+def test_the_company_name_from_the_prompt_is_not_an_unknown_name() -> None:
+    # The transcript writes the name as one word; the model takes it from the prompt's header.
+    context = CallContext("JPMorgan Chase & Co.", "JPM", date(2026, 10, 13))
+    transcript = TRANSCRIPT.replace("Example Corp", "JPMorganChase")
+
+    class Named(Stub):
+        def generate_json(self, system: str, prompt: str, schema: dict[str, Any]) -> str:
+            if system == TAKEAWAYS_SYSTEM:
+                return json.dumps(
+                    {"headline": "JPMorgan Chase: deposits", "summary": "Fine.", "key_points": []}
+                )
+            return super().generate_json(system, prompt, schema)
+
+    result = summarize_call(*chains(Named()), context, transcript)
+    assert result is not None
+    assert result.ungrounded_names == []

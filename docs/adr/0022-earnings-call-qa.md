@@ -109,6 +109,33 @@ Seven real transcripts (Microsoft, Alphabet, JPMorgan, Bank of America, J&J, Pep
 Built in three PRs: fetching and storing; summaries and their benchmark; the API and the
 website.
 
+### First real run (added 2026-11-04)
+
+On the laptop, against the real sites and the local model only (no Gemini):
+
+- **Fetching**: all 7 sources worked and stored 10 transcripts (the four date-based ones by their
+  October calls' dates); a rerun stored nothing. It found PepsiCo's links on a CloudFront host
+  whose robots.txt redirects (now followed), and flagged PepsiCo as overdue: its Q3 transcript
+  was still not posted 27 days after the call.
+- **Summaries**: 9 of 10 calls, 88 exchanges, in 84 minutes (about 40 s an exchange), at most
+  114 MB of memory. 3 exchanges failed and are listed as failed. JPMorgan's call (12
+  exchanges) failed as a whole: its takeaways didn't fit the summary shape, and once fitted,
+  the model wrote key point after key point until the 700-token cap cut the answer off. So the
+  response schemas now bound what the model writes (each field's length, 5 key points), which
+  both providers enforce while decoding; the takeaways' cap is 1,000 tokens, and what comes back
+  is still fitted (a headline cut at 200 characters, blank key points dropped) rather than
+  refused (prompt version 2).
+- **Before that**, 4 of Microsoft's 7 exchanges had failed over to Gemini. The log didn't say
+  why (it now names the failure's type); the likely cause is the model copying long multi-part
+  questions nearly word for word, past the 600-character limit. Long text is now cut at a word
+  instead, and the same call then went through locally, 7 of 7.
+- **What the checks caught**: one exchange summary made up a closing sentence for Satya Nadella
+  ("we're looking at a 10% increase in margins over the next few years"). Its own grounding check
+  flagged "10", but the takeaways repeated the claim and passed, because "10" appears elsewhere
+  in the call. A figure or name flagged in an exchange is now flagged in the takeaways too.
+- **What they can't catch**: the takeaways credited Amy Hood's answer on financing to Satya
+  Nadella. The exchange summaries often don't say who answered, and the takeaways guess.
+
 ## Alternatives considered
 
 - **Webcast audio and whisper.cpp.** Needed for no usable company (above).

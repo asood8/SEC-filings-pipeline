@@ -8,6 +8,7 @@ and on the takeaways against the whole transcript.
 Changing a prompt in any way that changes answers means bumping CALL_PROMPT_VERSION.
 """
 
+import json
 import re
 from dataclasses import dataclass, field
 from datetime import date
@@ -17,7 +18,7 @@ from pydantic import AfterValidator, BaseModel, Field
 
 from filings_common.summaries import FilingSummary, OneLine
 from filings_common.transcripts import Exchange, split
-from filings_summarizer.form8k_prompt import SUMMARY_SCHEMA, truncate
+from filings_summarizer.form8k_prompt import truncate
 from filings_summarizer.grounding import (
     figure_value,
     states_value,
@@ -26,14 +27,17 @@ from filings_summarizer.grounding import (
 )
 from filings_summarizer.llm import FailoverChain, LlmError
 
-CALL_PROMPT_VERSION = 1
+# 2: the response schemas bound every field's length and the takeaways' key points (5).
+CALL_PROMPT_VERSION = 2
 
 # Answers are capped: a small model can otherwise run on for thousands of tokens (measured in
 # the pilot: one answer reached 4,300 tokens before the request timed out). The cap fits the
 # longest summary the schema accepts (a 600-character question, a 1,500-character answer: about
 # 550 tokens of JSON). At 400, the model's near-verbatim answer to a long reply was cut off.
 EXCHANGE_MAX_TOKENS = 700
-TAKEAWAYS_MAX_TOKENS = 700
+# The takeaways' schema allows about 3,000 characters; for a 12-exchange call the model wrote
+# key point after key point until a 700-token cap cut the answer off.
+TAKEAWAYS_MAX_TOKENS = 1_000
 MAX_EXCHANGE_CHARS = 12_000  # the longest real exchange is about 9,000 (1,300 words)
 MAX_TAKEAWAYS_PROMPT_CHARS = 16_000
 
@@ -46,11 +50,13 @@ Return JSON with:
 - question: one sentence on what the analyst asked;
 - answer: 1 to 3 sentences on what management said, with any figures they gave."""
 
+# The lengths bind while the answer is written (both providers decode to the schema), so a long
+# answer ends instead of running into the token cap.
 EXCHANGE_SCHEMA: dict[str, Any] = {
     "type": "object",
     "properties": {
-        "question": {"type": "string", "description": "One sentence."},
-        "answer": {"type": "string", "description": "1 to 3 sentences."},
+        "question": {"type": "string", "description": "One sentence.", "maxLength": 600},
+        "answer": {"type": "string", "description": "1 to 3 sentences.", "maxLength": 1_500},
     },
     "required": ["question", "answer"],
     "additionalProperties": False,
@@ -82,6 +88,50 @@ def _clip(limit: int) -> AfterValidator:
         return text[: limit - 3].rsplit(" ", 1)[0].rstrip(",;:") + "..."
 
     return AfterValidator(clip)
+
+
+MAX_HEADLINE_CHARS = 200  # FilingSummary.headline
+MAX_KEY_POINTS = 8  # FilingSummary.key_points
+
+
+def takeaways_from_json(text: str) -> FilingSummary:
+    """The model's takeaways, fitted to FilingSummary rather than refused: a headline past 200
+    characters is cut at a word, blank key points are dropped, and only the first 8 are kept. A
+    call's takeaways are written from its exchanges' summaries, so refusing them would fail
+    the whole call, night after night. An answer that isn't JSON (cut off at the token cap)
+    still fails."""
+    data = json.loads(text)
+    if not isinstance(data, dict):
+        raise ValueError("the takeaways are not a JSON object")
+    headline = " ".join(str(data.get("headline") or "").split())
+    if len(headline) > MAX_HEADLINE_CHARS:
+        headline = headline[: MAX_HEADLINE_CHARS - 3].rsplit(" ", 1)[0].rstrip(",;:") + "..."
+    points = data.get("key_points") or []
+    if not isinstance(points, list):
+        points = [points]
+    key_points = [line for line in (" ".join(str(p).split()) for p in points) if line]
+    return FilingSummary(
+        headline=headline,
+        summary=str(data.get("summary") or ""),
+        key_points=key_points[:MAX_KEY_POINTS],
+    )
+
+
+TAKEAWAYS_SCHEMA: dict[str, Any] = {
+    "type": "object",
+    "properties": {
+        "headline": {"type": "string", "description": "At most 120 characters.", "maxLength": 200},
+        "summary": {"type": "string", "description": "2 to 4 sentences.", "maxLength": 1_200},
+        "key_points": {
+            "type": "array",
+            "items": {"type": "string", "maxLength": 300},
+            "maxItems": 5,
+            "description": "3 to 5 short points.",
+        },
+    },
+    "required": ["headline", "summary", "key_points"],
+    "additionalProperties": False,
+}
 
 
 class ExchangeSummary(BaseModel):
@@ -140,10 +190,10 @@ def summarize_call(
         return None
     exchanges: list[dict[str, Any]] = []
     for exchange in transcript.exchanges:
+        # Checked against the whole prompt, as for 8-Ks: its header gives the company's name.
+        prompt = exchange_prompt(context, exchange)
         try:
-            answer = exchange_chain.generate_json(
-                EXCHANGE_SYSTEM, exchange_prompt(context, exchange), EXCHANGE_SCHEMA
-            )
+            answer = exchange_chain.generate_json(EXCHANGE_SYSTEM, prompt, EXCHANGE_SCHEMA)
         except LlmError:
             # One exchange no provider could summarize doesn't hold up the call: it is listed
             # as failed, and the takeaways come from the others.
@@ -159,20 +209,21 @@ def summarize_call(
                 "answer": summary.answer,
                 "provider": answer.provider,
                 "model": answer.model,
-                "ungrounded_numbers": ungrounded_numbers(said, exchange.text),
-                "ungrounded_names": ungrounded_names("", said, [], exchange.text),
+                "ungrounded_numbers": ungrounded_numbers(said, prompt),
+                "ungrounded_names": ungrounded_names("", said, [], prompt),
             }
         )
     summarized = [x for x in exchanges if not x.get("failed")]
     if len(summarized) * 2 < len(exchanges):
         raise LlmError(f"{len(exchanges) - len(summarized)} of {len(exchanges)} exchanges failed")
     answer = takeaways_chain.generate_json(
-        TAKEAWAYS_SYSTEM, takeaways_prompt(context, summarized), SUMMARY_SCHEMA
+        TAKEAWAYS_SYSTEM, takeaways_prompt(context, summarized), TAKEAWAYS_SCHEMA
     )
-    takeaways = FilingSummary.model_validate_json(answer.text)
+    takeaways = takeaways_from_json(answer.text)
     said = " ".join([takeaways.headline, takeaways.summary, *takeaways.key_points])
-    numbers = ungrounded_numbers(said, text)
-    names = ungrounded_names(takeaways.headline, takeaways.summary, takeaways.key_points, text)
+    source = _header(context) + text
+    numbers = ungrounded_numbers(said, source)
+    names = ungrounded_names(takeaways.headline, takeaways.summary, takeaways.key_points, source)
     return CallResult(
         takeaways=takeaways,
         provider=answer.provider,

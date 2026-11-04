@@ -33,7 +33,6 @@ from filings_common.config import (
 from filings_common.db import CallSummary, CallTranscript, Company, create_engine, session_factory
 from filings_common.mongo import TranscriptStore
 from filings_common.names import company_name
-from filings_common.summaries import FilingSummary
 from filings_common.telemetry import setup_telemetry
 from filings_summarizer.calls import (
     CALL_PROMPT_VERSION,
@@ -42,6 +41,7 @@ from filings_summarizer.calls import (
     CallContext,
     ExchangeSummary,
     summarize_call,
+    takeaways_from_json,
 )
 from filings_summarizer.llm import FailoverChain, LlmError
 from filings_summarizer.summarizers import build_providers
@@ -186,7 +186,7 @@ def _run(budget_seconds: float) -> int:
     exchange_chain = FailoverChain(exchange_providers, validate=ExchangeSummary.model_validate_json)
     takeaways_chain = FailoverChain(
         build_providers(llm, gemini, redis_client, max_output_tokens=TAKEAWAYS_MAX_TOKENS),
-        validate=FilingSummary.model_validate_json,
+        validate=takeaways_from_json,
     )
     engine = create_engine(DatabaseSettings().database_url.get_secret_value())
     mongo_settings = MongoSettings()

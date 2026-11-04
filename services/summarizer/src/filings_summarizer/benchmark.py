@@ -322,11 +322,20 @@ def write_results(
     partial.replace(path)
 
 
-def _providers(parser: argparse.ArgumentParser, args: argparse.Namespace) -> list[LlmProvider]:
+def _providers(
+    parser: argparse.ArgumentParser,
+    args: argparse.Namespace,
+    *,
+    max_output_tokens: int | None = None,
+) -> list[LlmProvider]:
     llm = LlmSettings()
     providers: list[LlmProvider] = [
         OpenAICompatibleProvider(
-            name=llm.provider_name, base_url=llm.base_url, model=model, timeout=llm.timeout_seconds
+            name=llm.provider_name,
+            base_url=llm.base_url,
+            model=model,
+            timeout=llm.timeout_seconds,
+            max_output_tokens=max_output_tokens,
         )
         for model in args.model
     ]
@@ -345,6 +354,7 @@ def _providers(parser: argparse.ArgumentParser, args: argparse.Namespace) -> lis
                 model=gemini.model,
                 timeout=gemini.timeout_seconds,
                 limiter=limiter,
+                max_output_tokens=max_output_tokens,
             )
         )
     if not providers:

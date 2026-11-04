@@ -83,8 +83,10 @@ class Signature(BaseModel):
 
 
 class Form4(BaseModel):
-    document_type: str
+    document_type: str  # "4", or "4/A" for an amendment
     period_of_report: date
+    # Amendments only: the filing date of the Form 4 this amends, as the filer gives it.
+    date_of_original_submission: date | None = None
     issuer: Issuer
     reporting_owners: list[ReportingOwner]
     # The filer's checkbox for trades made under a Rule 10b5-1 trading plan; None if not answered.
@@ -154,6 +156,11 @@ class Exhibit(BaseModel):
 class Form8K(BaseModel):
     items: list[Item]
     exhibits: list[Exhibit] = []
+    # 8-K/As only (filings_parser.form8k.parse_amendment): the explanatory note before the
+    # items, where many say what the amendment changes, and the filing date of the 8-K it
+    # amends, as its text gives it.
+    explanatory_note: str | None = None
+    amends_filed_at: date | None = None
 
 
 EASTERN = ZoneInfo("America/New_York")

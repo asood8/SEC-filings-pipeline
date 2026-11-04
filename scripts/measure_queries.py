@@ -160,6 +160,7 @@ class FakeEdgar:
                     "filingDate": [r[2].isoformat() for r in rows],
                     "acceptanceDateTime": [r[3].isoformat() for r in rows],
                     "primaryDocument": ["doc.htm" for _ in rows],
+                    "reportDate": ["" for _ in rows],
                 }
             }
         }

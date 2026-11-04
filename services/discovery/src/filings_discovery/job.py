@@ -11,7 +11,7 @@ Each recorded filing counts in `filings.discovered`, by form type.
 """
 
 import logging
-from collections.abc import Collection
+from collections.abc import Collection, Sequence
 from dataclasses import dataclass, field
 from datetime import date
 
@@ -123,13 +123,17 @@ def discover_company(
     if not candidates:
         return 0
     with sessions() as session:
-        known = set(
-            session.scalars(
-                sa.select(Filing.accession_no).where(
+        known: dict[str, date | None] = dict(
+            session.execute(
+                sa.select(Filing.accession_no, Filing.report_date).where(
                     Filing.accession_no.in_([ref.accession_no for ref in candidates])
                 )
-            )
+            ).all()
         )
+    _record_report_dates(
+        sessions,
+        [ref for ref in candidates if ref.accession_no in known and not known[ref.accession_no]],
+    )
     new = 0
     # Oldest first, so events go out roughly in filing order.
     for ref in sorted(candidates, key=lambda r: (r.filed_at, r.accession_no)):
@@ -140,6 +144,21 @@ def discover_company(
             new += 1
     logger.info("CIK %d: %d candidate filings, %d new", cik, len(candidates), new)
     return new
+
+
+def _record_report_dates(sessions: sessionmaker[Session], refs: Sequence[FilingRef]) -> None:
+    """Fill in the report date of known filings stored without one (discovered before it was
+    recorded): linking an 8-K/A to its 8-K can need it."""
+    dated = [ref for ref in refs if ref.report_date is not None]
+    if not dated:
+        return
+    with sessions.begin() as session:
+        for ref in dated:
+            session.execute(
+                sa.update(Filing)
+                .where(Filing.accession_no == ref.accession_no, Filing.report_date.is_(None))
+                .values(report_date=ref.report_date)
+            )
 
 
 def _record_industry(sessions: sessionmaker[Session], cik: int, value: str | None) -> None:
@@ -200,6 +219,7 @@ def _fetch_and_record(
                 form_type=ref.form_type,
                 filed_at=ref.filed_at,
                 accepted_at=ref.accepted_at,
+                report_date=ref.report_date,
                 primary_doc_url=url,
                 raw_object_key=key,
             )

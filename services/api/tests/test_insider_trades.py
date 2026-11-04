@@ -108,12 +108,13 @@ def add_form4(
     filed_ago: int,
     is_10b5_1: bool | None = None,
     found_under: int = MSFT,
+    form_type: str = "4",
 ) -> None:
     session.add(
         Filing(
             accession_no=accession_no,
             cik=found_under,
-            form_type="4",
+            form_type=form_type,
             filed_at=TODAY - timedelta(days=filed_ago),
             primary_doc_url=f"https://www.sec.gov/Archives/{accession_no}.xml",
             raw_object_key=f"filings/{found_under}/{accession_no}/form4.xml",
@@ -371,6 +372,36 @@ def test_rows_add_up_to_each_companys_insider_activity(client: TestClient) -> No
                     "value": sum(t["value"] for t in mine),
                     "unpriced_shares": sum(t["unpriced_shares"] for t in mine),
                 } == activity[totals], (days, side, ticker)
+
+
+@pytest.mark.usefixtures("insider_trades")
+def test_a_corrected_trade_counts_once_as_corrected(client: TestClient, seeded: Engine) -> None:
+    # A Form 4/A restating OLDER's purchase with 400 shares, not 40, and adding one it left
+    # out. (The parser links it and marks the restated line: filings_parser.amendments.)
+    amendment = "0000789019-26-000307"
+    with session_factory(seeded).begin() as session:
+        add_form4(
+            session,
+            amendment,
+            issuer=MSFT,
+            owners=[ALTHOFF],
+            trades=[trade(1, "P", 400, 500.0, ago=4), trade(2, "P", 5, 500.0, ago=4)],
+            filed_ago=2,
+            form_type="4/A",
+        )
+        session.flush()
+        session.execute(
+            sa.update(Form4Transaction)
+            .where(Form4Transaction.accession_no == OLDER)
+            .values(superseded_by=amendment)
+        )
+
+    rows = summary(client, days=7)
+    assert (amendment, 405.0, 202_500.0) in rows
+    assert OLDER not in [accession_no for accession_no, _, _ in rows]  # nothing left to count
+    activity = client.get("/companies/MSFT/insider-activity", params={"days": 7}).json()
+    [althoff] = [o for o in activity["owners"] if o["reporting_owners"] == shown(ALTHOFF)]
+    assert (althoff["bought"]["shares"], althoff["filings"]) == (405.0, 1)
 
 
 def test_no_trades(client: TestClient) -> None:

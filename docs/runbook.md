@@ -30,6 +30,7 @@ applying, reaching the cluster, Terraform state).
 - [SEC 429s and fair access](#sec-429s-and-fair-access)
 - [Swapping the local LLM model](#swapping-the-local-llm-model)
 - [Changing search ranking or the embedding model](#changing-search-ranking-or-the-embedding-model)
+- [Amended filings: checking a link](#amended-filings-checking-a-link)
 - [Oracle idle reclamation and capacity errors](#oracle-idle-reclamation-and-capacity-errors)
 - [Backups and restores](#backups-and-restores)
 - [Capacity planning](#capacity-planning)
@@ -618,6 +619,30 @@ uv run filings-search-eval --per-query --json data/eval-after.json
   other filings), relabel first; the label file's `description` says how the labels were made.
 - **Vector size:** an embedding model with another vector size needs a migration first
   (ADR-0011).
+
+## Amended filings: checking a link
+
+A Form 4/A or 8-K/A is linked to the filing it amends when the parser saves it, or when that
+filing arrives later (ADR-0021). To see what an amendment was linked to, and which lines of the
+original it replaced:
+
+```
+SELECT accession_no, form_type, filed_at, amends_filed_at, amends_accession_no
+FROM filings WHERE form_type LIKE '%/A' ORDER BY filed_at DESC LIMIT 20;
+SELECT accession_no, line, code, shares, price_per_share, superseded_by
+FROM form4_transactions WHERE superseded_by = '<amendment accession>';
+```
+
+- **`amends_accession_no` is NULL but `amends_filed_at` is set:** no collected filing matched, or
+  two could not be told apart. Check the company's filings on that date. If the original is older
+  than discovery's lookback (30 days), it was never collected; one discovery run with
+  `DISCOVERY_LOOKBACK_DAYS=365` collects the year's missing filings (thousands of SEC requests
+  and, for 8-Ks, LLM summaries: expect hours), after which the parser links the amendment.
+- **Relinking after a fix to the rules:** `filings-rebuild-key-fields --accession <amendment>`
+  (in the parser's pod) links it again and recomputes the lines from MongoDB.
+- **After the migration that added amendments** (777e3b230648), run
+  `filings-rebuild-key-fields --form-type 4` once: matching lines needs
+  `form4_transactions.nature_of_ownership`, which older rows lack.
 
 ## Oracle idle reclamation and capacity errors
 

@@ -33,7 +33,16 @@ PARSERS: Mapping[str, FormParser] = {
     "4": FormParser(
         version=form4.PARSER_VERSION, parse=form4.parse, save_key_fields=form4.save_key_fields
     ),
+    # Amendments: the same XML, which also gives the original's date.
+    "4/A": FormParser(
+        version=form4.PARSER_VERSION, parse=form4.parse, save_key_fields=form4.save_key_fields
+    ),
     "8-K": FormParser(
         version=form8k.PARSER_VERSION, parse=form8k.parse, save_key_fields=form8k.save_key_fields
+    ),
+    "8-K/A": FormParser(
+        version=form8k.PARSER_VERSION,
+        parse=form8k.parse_amendment,
+        save_key_fields=form8k.save_key_fields,
     ),
 }

@@ -11,6 +11,7 @@ class DiscoverySettings(BaseSettings):
     # Only filings this recent are fetched, which bounds the first run for a new company.
     lookback_days: int = Field(default=30, ge=1)
     # EDGAR form codes to collect (env: JSON list, e.g. DISCOVERY_FORM_TYPES='["4","8-K"]').
-    form_types: frozenset[str] = frozenset({"4", "8-K"})
+    # "/A" is an amendment, collected like any filing and linked to the one it amends.
+    form_types: frozenset[str] = frozenset({"4", "4/A", "8-K", "8-K/A"})
     # Forms whose EX-99 exhibits (press releases) are downloaded too.
-    exhibit_form_types: frozenset[str] = frozenset({"8-K"})
+    exhibit_form_types: frozenset[str] = frozenset({"8-K", "8-K/A"})

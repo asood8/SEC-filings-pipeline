@@ -12,14 +12,16 @@ SubmissionsFactory = Callable[..., dict[str, Any]]
 
 def test_reads_column_wise_recent_filings(make_submissions: SubmissionsFactory) -> None:
     doc = make_submissions(
-        ("0000320193-26-000101", "8-K", "2026-09-30", "aapl-20260930.htm"),
-        ("0001140361-26-000202", "4", "2026-09-29", "xslF345X05/form4.xml"),
+        ("0000320193-26-000101", "8-K", "2026-09-30", "aapl-20260930.htm", "2026-09-29"),
+        ("0001140361-26-000202", "4/A", "2026-09-29", "xslF345X05/form4.xml"),
     )
     first, second = recent_filings(doc)
     assert first.accession_no == "0000320193-26-000101"
     assert first.form_type == "8-K"
     assert first.filed_at == date(2026, 9, 30)
     assert first.accepted_at == datetime(2026, 9, 30, 16, 5, 12, tzinfo=UTC)
+    assert first.report_date == date(2026, 9, 29)
+    assert (second.form_type, second.report_date) == ("4/A", None)  # EDGAR left it empty
     assert second.primary_document == "xslF345X05/form4.xml"
 
 

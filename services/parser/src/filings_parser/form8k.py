@@ -8,10 +8,14 @@ the first item is the cover page and is dropped, as is everything from the signa
 Some filing agents add a table of contents: item headings with page numbers, then "Signatures".
 Page numbers are dropped, so a table of contents reads as a run of headings with no text, and the
 parser takes the first run that has any.
+
+An 8-K/A is parsed the same way, and keeps two things more: the explanatory note some open with
+(on the cover page, before the items), and the filing date of the 8-K it amends, from its text.
 """
 
 import re
 from collections.abc import Iterator, Sequence
+from datetime import date
 from html.parser import HTMLParser
 from typing import Any
 
@@ -21,6 +25,7 @@ from sqlalchemy.orm import Session
 
 from filings_common.db import Filing, Form8KFiling
 from filings_common.parsed import EASTERN, ITEM_TITLES, Exhibit, Form8K, Item
+from filings_parser import amendments
 from filings_parser.calls import find_call
 from filings_parser.documents import RawExhibit
 
@@ -28,12 +33,24 @@ from filings_parser.documents import RawExhibit
 PARSER_VERSION = 2
 # Exhibit text kept per exhibit. Summaries use far less; this bounds MongoDB storage.
 MAX_EXHIBIT_TEXT = 100_000
+MAX_NOTE_TEXT = 5_000
 
 _ITEM_HEADING = re.compile(r"^item\s*(\d{1,2})\.(\d{2})\b[\s.:\-\u2013\u2014]*(.*)$", re.IGNORECASE)
 _SIGNATURES = re.compile(r"^signatures?\b", re.IGNORECASE)
 # Lines that are only layout: page numbers ("3", "- 3 -") and "Table of Contents" back-links.
 _LAYOUT_LINE = re.compile(
     r"^(?:[-\u2013\u2014\s]*\d{1,3}[-\u2013\u2014\s]*|table of contents)$", re.I
+)
+_EXPLANATORY_NOTE = re.compile(r"^explanatory note\b[\s.:\-\u2013\u2014]*(.*)$", re.IGNORECASE)
+_MONTHS = ("jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec")
+# "...the Current Report on Form 8-K filed with the SEC on November 14, 2025", "...Form 8-K that
+# the Company filed on February 10, 2026": a Form 8-K (not 8-K/A), then "filed" or "furnished",
+# then "on <date>", close together.
+_AMENDED_8K = re.compile(
+    r"\bform\s+8-k\b(?!\s*/\s*a)"
+    r".{0,200}?\b(?:filed|furnished)\b.{0,120}?\bon\s+"
+    rf"({'|'.join(_MONTHS)})[a-z]*\.?\s+(\d{{1,2}}),?\s+(\d{{4}})",
+    re.IGNORECASE | re.DOTALL,
 )
 
 _BLOCK_TAGS = frozenset(
@@ -161,9 +178,16 @@ def _item_runs(lines: list[str]) -> Iterator[_Run]:
         yield items, headings
 
 
-def parse_form8k(raw: bytes) -> Form8K:
+def _content_lines(raw: bytes) -> list[str]:
     lines = html_to_lines(raw.decode("utf-8", errors="replace"))
-    content = [line for line in lines if not _LAYOUT_LINE.match(line)]
+    return [line for line in lines if not _LAYOUT_LINE.match(line)]
+
+
+def parse_form8k(raw: bytes) -> Form8K:
+    return _items(_content_lines(raw))
+
+
+def _items(content: list[str]) -> Form8K:
     for items, headings in _item_runs(content):
         if any(items.values()):  # skips a table of contents (headings without text)
             return Form8K(
@@ -196,17 +220,60 @@ def exhibit_text(exhibit: RawExhibit) -> str:
     return "\n".join(lines)[:MAX_EXHIBIT_TEXT]
 
 
-def parse(raw: bytes, exhibits: Sequence[RawExhibit] = ()) -> dict[str, Any]:
-    """The JSON-ready payload stored in MongoDB: the items, plus the text of each exhibit."""
-    form = parse_form8k(raw)
+def explanatory_note(content: list[str]) -> str | None:
+    """The text under an "Explanatory Note" heading, up to the first item."""
+    note: list[str] | None = None
+    for line in content:
+        if note is None:
+            if heading := _EXPLANATORY_NOTE.match(line):
+                note = [heading[1]] if heading[1] else []
+            continue
+        if _ITEM_HEADING.match(line) or _SIGNATURES.match(line):
+            break
+        note.append(line)
+    text = "\n".join(note or [])[:MAX_NOTE_TEXT]
+    return text or None
+
+
+def amended_filing_date(form: Form8K) -> date | None:
+    """The filing date of the 8-K an 8-K/A amends, from the first place its note or items
+    give one; None when they don't."""
+    texts = [form.explanatory_note or "", *(item.text for item in form.items)]
+    for text in texts:
+        for found in _AMENDED_8K.finditer(text):
+            month, day, year = found.groups()
+            try:
+                return date(int(year), _MONTHS.index(month[:3].lower()) + 1, int(day))
+            except ValueError:  # "February 30": not a date, keep looking
+                continue
+    return None
+
+
+def _with_exhibits(form: Form8K, exhibits: Sequence[RawExhibit]) -> Form8K:
     form.exhibits = [
         Exhibit(type=e.type, description=e.description, text=exhibit_text(e)) for e in exhibits
     ]
+    return form
+
+
+def parse(raw: bytes, exhibits: Sequence[RawExhibit] = ()) -> dict[str, Any]:
+    """The JSON-ready payload stored in MongoDB: the items, plus the text of each exhibit."""
+    return _with_exhibits(parse_form8k(raw), exhibits).model_dump(mode="json")
+
+
+def parse_amendment(raw: bytes, exhibits: Sequence[RawExhibit] = ()) -> dict[str, Any]:
+    """An 8-K/A's payload: an 8-K's, plus its explanatory note and the date of the 8-K it
+    amends."""
+    content = _content_lines(raw)
+    form = _with_exhibits(_items(content), exhibits)
+    form.explanatory_note = explanatory_note(content)
+    form.amends_filed_at = amended_filing_date(form)
     return form.model_dump(mode="json")
 
 
 def save_key_fields(session: Session, accession_no: str, payload: dict[str, Any]) -> None:
-    """Upsert the 8-K's item numbers and the call it announces into Postgres (`form8k_filings`).
+    """Upsert the 8-K's item numbers and the call it announces into Postgres (`form8k_filings`),
+    then link an 8-K/A to its 8-K, or an 8-K to amendments already saved (amendments module).
     "Today" in the filing is the day SEC accepted it, in Eastern time (its filing date is the
     next business day when accepted after 5:30 p.m.)."""
     form = Form8K.model_validate(payload)
@@ -214,6 +281,7 @@ def save_key_fields(session: Session, accession_no: str, payload: dict[str, Any]
     filing = session.get(Filing, accession_no)
     call = None
     if filing is not None:
+        amendments.lock_company(session, "8-K", filing.cik)
         accepted = filing.accepted_at
         call = find_call(form, accepted.astimezone(EASTERN).date() if accepted else filing.filed_at)
     values = {
@@ -228,3 +296,4 @@ def save_key_fields(session: Session, accession_no: str, payload: dict[str, Any]
             set_={**values, "updated_at": sa.func.now()},
         )
     )
+    amendments.form8k_saved(session, accession_no, form.amends_filed_at)

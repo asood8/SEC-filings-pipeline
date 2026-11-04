@@ -12,6 +12,9 @@ class FilingRef:
     filed_at: date
     accepted_at: datetime | None
     primary_document: str
+    # A Form 4's period of report, an 8-K's date of the earliest event it reports; None when
+    # EDGAR leaves it empty.
+    report_date: date | None = None
 
 
 def recent_filings(submissions: dict[str, Any]) -> list[FilingRef]:
@@ -26,6 +29,7 @@ def recent_filings(submissions: dict[str, Any]) -> list[FilingRef]:
         recent["filingDate"],
         recent["acceptanceDateTime"],
         recent["primaryDocument"],
+        recent["reportDate"],
         strict=True,
     )
     return [
@@ -35,8 +39,9 @@ def recent_filings(submissions: dict[str, Any]) -> list[FilingRef]:
             filed_at=date.fromisoformat(filed),
             accepted_at=datetime.fromisoformat(accepted) if accepted else None,
             primary_document=primary,
+            report_date=date.fromisoformat(reported) if reported else None,
         )
-        for accession_no, form, filed, accepted, primary in columns
+        for accession_no, form, filed, accepted, primary, reported in columns
         if primary
     ]
 

@@ -37,14 +37,20 @@ INSIDER_TRADE_CODES = {"bought": "P", "sold": "S"}
 
 
 def trade_lines() -> list[sa.ColumnElement[bool]]:
-    """Open-market stock trades: exactly the condition of the partial index
-    ix_form4_transactions_trades, `code IN ('P', 'S') AND is_derivative IS false`. The codes are
-    sent as literals, not bound parameters, so the index stays usable in a prepared statement's
-    generic plan too (psycopg prepares a query after five runs on a connection)."""
+    """Open-market stock trades, as currently reported (a line a Form 4/A restated counts as
+    the amendment's line instead): exactly the condition of the partial index
+    ix_form4_transactions_trades, `code IN ('P', 'S') AND is_derivative IS false AND
+    superseded_by IS NULL`. The codes are sent as literals, not bound parameters, so the index
+    stays usable in a prepared statement's generic plan too (psycopg prepares a query after
+    five runs on a connection)."""
     codes: sa.BindParameter[list[str]] = sa.bindparam(
         "trade_codes", sorted(INSIDER_TRADE_CODES.values()), expanding=True, literal_execute=True
     )
-    return [Form4Transaction.code.in_(codes), Form4Transaction.is_derivative.is_(False)]
+    return [
+        Form4Transaction.code.in_(codes),
+        Form4Transaction.is_derivative.is_(False),
+        Form4Transaction.superseded_by.is_(None),
+    ]
 
 
 def _company_out(company: Company) -> CompanyOut:
@@ -139,7 +145,8 @@ def get_insider_activity(
     """Open-market or private purchases (Form 4 code P) and sales (S) of the company's stock in
     the last `days` days, by transaction date, per reporting owner: filings by the same owners
     (by CIK) share a row, and joint filers share one. Grants, option exercises, tax withholding,
-    gifts, and derivative trades are left out.
+    gifts, and derivative trades are left out. A trade a Form 4/A corrected counts as
+    corrected, once; a Form 4/A counts as a filing of its own.
 
     Form 4s found under another company count too: what matters is whose stock was traded.
     """

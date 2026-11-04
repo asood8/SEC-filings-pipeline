@@ -18,6 +18,7 @@ from filings_common.edgar import EdgarClient
 from filings_common.events import FilingDiscovered, Topic
 from filings_common.storage import LocalObjectStore
 from filings_discovery.companies import parse_company_tickers_exchange, sync_companies
+from filings_discovery.config import DiscoverySettings
 from filings_discovery.job import backfill_exhibits, discover
 
 # Type of the make_submissions fixture (conftest.py).
@@ -255,3 +256,62 @@ def test_each_new_filing_gets_its_own_trace_linked_to_the_poll(
         ]
         assert record.parent is not None
         assert record.parent.span_id == filing.context.span_id
+
+
+def test_amendments_are_collected_and_report_dates_recorded(
+    clean_db: Engine,
+    make_submissions: SubmissionsFactory,
+    company_tickers: dict[str, Any],
+    tmp_path: Path,
+) -> None:
+    seed_companies(clean_db, company_tickers)
+    sessions = session_factory(clean_db)
+    known = "0000320193-26-000101"
+    with sessions.begin() as session:  # discovered before report dates were stored
+        session.add(
+            Filing(
+                accession_no=known,
+                cik=APPLE,
+                form_type="8-K",
+                filed_at=date(2026, 9, 30),
+                primary_doc_url=f"{ARCHIVE}/320193/000032019326000101/aapl-20260930.htm",
+                raw_object_key="filings/320193/0000320193-26-000101/aapl-20260930.htm",
+            )
+        )
+    amendment = "0001140361-26-000203"
+    submissions = make_submissions(
+        (known, "8-K", "2026-09-30", "aapl-20260930.htm", "2026-09-29"),
+        (amendment, "4/A", "2026-10-02", "xslF345X05/form4a.xml", "2026-09-28"),
+    )
+    sec = FakeSec(
+        {
+            "https://data.sec.gov/submissions/CIK0000320193.json": httpx2.Response(
+                200, json=submissions
+            ),
+            f"{ARCHIVE}/320193/000114036126000203/form4a.xml": httpx2.Response(
+                200, content=b"<ownershipDocument/>", headers={"Content-Type": "text/xml"}
+            ),
+        }
+    )
+    settings = DiscoverySettings(_env_file=None)  # the default forms include amendments
+    with sec.client() as edgar:
+        result = discover(
+            sessions,
+            edgar,
+            LocalObjectStore(tmp_path),
+            form_types=settings.form_types,
+            since=date(2026, 9, 1),
+            exhibit_form_types=settings.exhibit_form_types,
+        )
+
+    assert result.new_filings == 1
+    with sessions() as session:
+        rows = session.execute(
+            sa.select(Filing.accession_no, Filing.form_type, Filing.report_date).order_by(
+                Filing.accession_no
+            )
+        ).all()
+    assert [tuple(row) for row in rows] == [
+        (known, "8-K", date(2026, 9, 29)),  # filled in from the poll
+        (amendment, "4/A", date(2026, 9, 28)),
+    ]

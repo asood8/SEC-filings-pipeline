@@ -80,7 +80,9 @@ def list_insider_trades(
 ) -> InsiderTrades:
     """Open-market or private purchases (`side=buy`, Form 4 code P) or sales (`side=sell`, code
     S) of any company's stock in the last `days` days, by transaction date, one row per Form 4.
-    Grants, option exercises, tax withholding, gifts, and derivative trades are left out.
+    Grants, option exercises, tax withholding, gifts, and derivative trades are left out. A
+    Form 4/A is a row of its own, with the lines it reports; the lines of the Form 4 it
+    corrected no longer count there.
 
     The rules are those of `/companies/{ticker}/insider-activity`: one company's rows add up to
     its totals there (when they all fit in `limit`).

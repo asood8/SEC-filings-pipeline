@@ -12,6 +12,7 @@ import {
   formatDateTime,
   formatEasternTime,
   formLabel,
+  isAmendment,
 } from '../lib/format'
 import { ITEMS_8K, TRANSACTION_CODES } from '../lib/glossary'
 import { NotFoundPage } from './NotFoundPage'
@@ -55,6 +56,7 @@ export function FilingPage() {
         </ExternalLink>
       </p>
 
+      <Amendments filing={filing} />
       <Summary filing={filing} />
       {filing.investor_call && <InvestorCall call={filing.investor_call} />}
       {filing.form4 && <Form4Section filing={filing} form4={filing.form4} />}
@@ -117,6 +119,54 @@ export function FilingPage() {
 /** The headline, or "8-K filing" until the filing is summarized. */
 function filingTitle(filing: FilingDetail): string {
   return filing.headline ?? `${formLabel(filing.form_type)} filing`
+}
+
+/** What an amendment amends, and what amended this filing (ADR-0021). */
+function Amendments({ filing }: { filing: FilingDetail }) {
+  const original = filing.amends
+  const base = formLabel(filing.form_type.replace(/\/A$/, ''))
+  const amended = filing.amended_by
+  if (!isAmendment(filing.form_type) && amended.length === 0) return null
+  return (
+    <>
+      {isAmendment(filing.form_type) && (
+        <p className="notice">
+          This is an amendment. It amends{' '}
+          {original ? (
+            <Link to={`/filings/${original.accession_no}`}>
+              the {formLabel(original.form_type)} filed on{' '}
+              {formatDate(filing.amends_filed_at ?? original.filed_at)}
+            </Link>
+          ) : filing.amends_filed_at ? (
+            <>
+              the {base} filed on {formatDate(filing.amends_filed_at)}, which
+              isn&apos;t among the filings collected here
+            </>
+          ) : (
+            <>an earlier {base}</>
+          )}
+          .
+        </p>
+      )}
+      {amended.length > 0 && (
+        <p className="notice">
+          Amended later by{' '}
+          {amended.map((amendment, i) => (
+            <span key={amendment.accession_no}>
+              {i > 0 && (i === amended.length - 1 ? ' and ' : ', ')}
+              <Link to={`/filings/${amendment.accession_no}`}>
+                the {formLabel(amendment.form_type)} filed on{' '}
+                {formatDate(amendment.filed_at)}
+              </Link>
+            </span>
+          ))}
+          .
+          {filing.form4 &&
+            ' Lines an amendment restates are marked below; insider totals count its lines instead.'}
+        </p>
+      )}
+    </>
+  )
 }
 
 function InvestorCall({

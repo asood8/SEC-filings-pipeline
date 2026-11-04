@@ -33,6 +33,12 @@ def base_form(form_type: str) -> str:
     return form_type.removesuffix(AMENDMENT_SUFFIX)
 
 
+def matching_forms(form_type: str) -> list[str]:
+    """What a filter on one form selects: a form and its amendments ("4": 4 and 4/A), or only
+    the amendments ("4/A")."""
+    return [form_type] if is_amendment(form_type) else with_amendments([form_type])
+
+
 def with_amendments(form_types: Iterable[str]) -> list[str]:
     """The forms and their amendments: choosing Form 4s includes Form 4/As."""
     forms = {base_form(f) for f in form_types}

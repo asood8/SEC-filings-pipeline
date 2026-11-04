@@ -337,6 +337,15 @@ form filter) and from each company page. Choices:
   find. The calendar's ETag leaves out its `DTSTAMP` lines: they say when the feed was written,
   which changes on every request without the calls changing.
 
+### Amendments (added 2026-11-04)
+
+Amendments (4/A, 8-K/A) are filings of their own (ADR-0021). A `form_type` filter selects a form
+with its amendments (`4` is Form 4s and 4/As; `4/A` only the amendments), in `/filings`, search,
+and the Atom feed, as alerts do. Every filing carries `amends_accession_no` and `amends_filed_at`;
+a filing's page adds the filing it amends (`amends`) and its amendments (`amended_by`), and each
+Form 4 line says whether an amendment restated it (`superseded_by`). The website shows both
+sides as notices with links, and marks restated lines in words, not only by color.
+
 ## Alternatives considered
 
 - **A dedicated search engine (OpenSearch, Meilisearch).** Another always-on service on a 12 GB VM,

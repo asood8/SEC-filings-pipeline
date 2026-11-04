@@ -39,6 +39,18 @@ class FilingOut(BaseModel):
     status: FilingStatus
     headline: str | None = Field(description="The current summary's headline, once summarized.")
     sec_url: str = Field(description="The filing's primary document on sec.gov.")
+    amends_accession_no: str | None = Field(
+        description=(
+            "An amendment's (4/A, 8-K/A) original Form 4 or 8-K, when it is among the collected "
+            "filings and could be told apart from others. Null for other forms."
+        )
+    )
+    amends_filed_at: date | None = Field(
+        description=(
+            "The filing date of the filing an amendment amends, as the amendment states it; null "
+            "when it states none, and for other forms."
+        )
+    )
 
 
 class SummaryOut(BaseModel):
@@ -90,6 +102,15 @@ class Form4TransactionOut(BaseModel):
     shares_owned_after: float | None
     direct_or_indirect: Literal["D", "I"] | None = Field(
         description="D: owned directly; I: indirectly, for example through a trust or a fund."
+    )
+    nature_of_ownership: str | None = Field(
+        description='How an indirect holding is held, as filed: "By Spouse", "By Trust".'
+    )
+    superseded_by: str | None = Field(
+        description=(
+            "The Form 4/A that restates this line, correcting it or repeating it: insider totals "
+            "count the amendment's line instead. Null while this line is current."
+        )
     )
 
 
@@ -186,6 +207,13 @@ class FilingDetail(FilingOut):
     nearby: list[FilingOut] = Field(
         description="The same company's other filings within 14 days either side, newest first "
         "(the 10 nearest)."
+    )
+    amends: FilingOut | None = Field(
+        description="For an amendment, the filing it amends (`amends_accession_no`), if found."
+    )
+    amended_by: list[FilingOut] = Field(
+        description="Amendments of this filing, oldest first. A Form 4's lines they restate are "
+        "marked `superseded_by`."
     )
 
 

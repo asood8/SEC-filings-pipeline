@@ -1,3 +1,4 @@
+import { Link } from 'react-router'
 import type { Form4Transaction } from '../api/client'
 import {
   formatDate,
@@ -11,13 +12,15 @@ import styles from './DataTable.module.css'
 
 const NONE = '—'
 
-/** A Form 4's transaction lines: stock first, then derivatives, as filed. */
+/** A Form 4's transaction lines: stock first, then derivatives, as filed. Lines a later
+ * Form 4/A restates say so and link it. */
 export function Form4Transactions({
   transactions,
 }: {
   transactions: Form4Transaction[]
 }) {
   const footnotePrices = transactions.some((t) => t.price_per_share === null)
+  const restated = transactions.some((t) => t.superseded_by !== null)
   return (
     <>
       <DataTable caption="Transactions reported in this filing">
@@ -61,6 +64,12 @@ export function Form4Transactions({
           original on sec.gov has it.
         </p>
       )}
+      {restated && (
+        <p className={styles.note}>
+          Restated lines: an amendment filed later reports them again, corrected
+          or unchanged. Insider totals count the amendment&apos;s lines instead.
+        </p>
+      )}
     </>
   )
 }
@@ -71,9 +80,18 @@ function Row({ transaction: t }: { transaction: Form4Transaction }) {
       ? t.shares * t.price_per_share
       : null
   return (
-    <tr role="row">
+    <tr
+      role="row"
+      className={t.superseded_by !== null ? styles.superseded : undefined}
+    >
       <th scope="row" role="rowheader">
         {transactionType(t.code)}
+        {t.superseded_by !== null && (
+          <span className={styles.detail}>
+            Restated by{' '}
+            <Link to={`/filings/${t.superseded_by}`}>the amendment</Link>
+          </span>
+        )}
       </th>
       <td role="cell" data-label="Date">
         {t.transaction_date ? (

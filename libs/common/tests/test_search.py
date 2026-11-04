@@ -301,6 +301,31 @@ def test_filters_by_form_and_company(indexed: Engine) -> None:
         }
 
 
+def test_a_form_filter_includes_its_amendments(clean_db: Engine) -> None:
+    amendment = "0000000002-26-000009"
+    add_filings(
+        clean_db,
+        [(1, "ACME", "Acme Corp"), (2, "GLOB", "Globex Inc")],
+        [
+            *FILINGS,
+            (
+                amendment,
+                2,
+                "4/A",
+                date(2026, 9, 9),
+                "Amended: Bob Smith bought 500 GLOB shares",
+                "This amends the Form 4 filed on Sep 3, 2026. Bob Smith bought 500 Globex shares.",
+            ),
+        ],
+    )
+    rebuild_index(session_factory(clean_db), WordHashEmbedder())
+    with session_factory(clean_db)() as session:
+        found = accessions(keyword_search(session, "Acme OR Globex", form_type="4"))
+        assert set(found) == {amendment, FILINGS[2][0]}  # the Form 4/A and the Form 4
+        assert accessions(keyword_search(session, "Acme OR Globex", form_type="4/A")) == [amendment]
+        assert accessions(keyword_search(session, "amended", form_type="8-K")) == []
+
+
 def test_a_ticker_that_is_a_word_stops_matching_the_word(worded: Engine) -> None:
     with session_factory(worded)() as session:
         # The ticker isn't indexed as a word, so the word's forms don't find Costco...

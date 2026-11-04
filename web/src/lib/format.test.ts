@@ -43,5 +43,8 @@ describe('format', () => {
   it('names Form 4 filings', () => {
     expect(formLabel('4')).toBe('Form 4')
     expect(formLabel('8-K')).toBe('8-K')
+    expect(formLabel('4/A')).toBe('Form 4/A')
+    expect(formLabel('8-K/A')).toBe('8-K/A')
+    expect(formLabel('40-F')).toBe('40-F')
   })
 })

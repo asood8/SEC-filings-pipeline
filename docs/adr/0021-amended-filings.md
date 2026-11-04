@@ -72,7 +72,10 @@ don't read it, since every other amendment is found without one.
    restates its original's trades unchanged (Nike's, attaching a power of attorney) alerts
    nobody, but is still summarized, searchable, and shown.
 
-How the API and site show amendments follows in the next change.
+6. **Show both sides.** A `form_type` filter in the feed, search, and the Atom feed includes
+   the form's amendments. An amendment's page says what it amends, with a link (or that the
+   original isn't collected); the original's page lists its amendments, and the Form 4 lines an
+   amendment restated are marked "Restated by the amendment" with a link (ADR-0011).
 
 ### The 8-K/A prompt, measured (2026-11-04)
 

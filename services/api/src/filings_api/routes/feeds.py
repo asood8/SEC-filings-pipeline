@@ -12,6 +12,7 @@ from fastapi import APIRouter, HTTPException, Query, Request, Response
 from filings_api import atom
 from filings_api.conditional import conditional_response
 from filings_api.queries import CikFilter, ItemFilter, SessionDep, filing_select, reports_item
+from filings_common.amendments import base_form, matching_forms
 from filings_common.db import Company, Filing, Summary
 from filings_common.names import company_name
 from filings_common.parsed import EASTERN
@@ -23,7 +24,8 @@ FEED_SIZE = 50
 
 
 def _form_label(form_type: str) -> str:
-    return "Form 4" if form_type == "4" else form_type
+    """ "Form 4", "Form 4/A"; 8-Ks are known by their number alone."""
+    return f"Form {form_type}" if base_form(form_type) == "4" else form_type
 
 
 def _html(summary: FilingSummary, sec_url: str) -> str:
@@ -57,7 +59,8 @@ def filings_feed(
 ) -> Response:
     """The 50 latest filings that have a summary, newest first, each with its summary, key
     points, and a link to the filing on sec.gov. Paste the URL into a feed reader; `cik`,
-    `form_type`, and `item` narrow it to one company, one form, or 8-Ks reporting one item."""
+    `form_type`, and `item` narrow it to one company, one form (with its amendments: 4/As are
+    Form 4s), or 8-Ks reporting one item."""
     parts = []
     if cik is not None:
         ticker = session.scalar(sa.select(Company.ticker).where(Company.cik == cik))
@@ -87,7 +90,7 @@ def filings_feed(
     if cik is not None:
         query = query.where(Filing.cik == cik)
     if form_type is not None:
-        query = query.where(Filing.form_type == form_type)
+        query = query.where(Filing.form_type.in_(matching_forms(form_type)))
     if item is not None:
         query = query.where(reports_item(item))
 

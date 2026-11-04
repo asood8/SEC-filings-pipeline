@@ -17,6 +17,8 @@ from collections.abc import Collection, Iterable, Sequence
 from dataclasses import dataclass
 from typing import Literal, get_args
 
+from filings_common.amendments import base_form
+
 Form4Trades = Literal["all", "open_market", "purchases"]
 FORM4_TRADES: tuple[str, ...] = get_args(Form4Trades)
 
@@ -76,6 +78,7 @@ def alert_reason(
     company)". Only the filters for this filing's form are named. None for a plain alert on the
     company that filed, which the alert already names."""
     filters = []
+    form_type = base_form(form_type)  # an amendment's filters are its form's
     if form_type == "4":
         trades = {"open_market": "open-market trades only", "purchases": "purchases only"}
         parts = [trades[form4_trades]] if form4_trades in trades else []

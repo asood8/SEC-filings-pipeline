@@ -5,6 +5,7 @@ and prompt (or template) version, all stored with the summary.
 - Form 4: a deterministic template.
 - 8-K: an LLM, through a failover chain (local model first, then Gemini); the provider that
   actually answered is the one recorded.
+- Amendments (4/A, 8-K/A): the same, told what they amend; their headlines start "Amended:".
 
 Forms without a summarizer are acknowledged and stay `parsed`.
 """
@@ -34,6 +35,7 @@ from filings_summarizer.llm import (
 logger = logging.getLogger(__name__)
 
 GEMINI_RATE_LIMIT_KEY = "ratelimit:gemini"
+HEADLINE_MAX = 200  # FilingSummary.headline
 
 
 @dataclass(frozen=True)
@@ -57,7 +59,7 @@ class Form4TemplateSummarizer:
     def summarize(self, payload: dict[str, Any], context: FilingContext) -> SummaryResult:
         try:
             form = Form4.model_validate(payload)
-            summary = form4_template.summarize_form4(form)
+            summary = form4_template.summarize_form4(form, context.amends)
         except (ValidationError, ValueError) as exc:
             # The template is deterministic: the same payload fails the same way every time.
             raise PermanentError(f"cannot summarize Form 4 payload: {exc}") from exc
@@ -87,7 +89,7 @@ class Form8KLlmSummarizer:
         # Checked against exactly what the model saw, header and trimming included.
         summary_text = " ".join([summary.headline, summary.summary, *summary.key_points])
         return SummaryResult(
-            summary=summary,
+            summary=amended(summary) if context.amends is not None else summary,
             provider=answer.provider,
             model=answer.model,
             prompt_version=form8k_prompt.PROMPT_VERSION,
@@ -98,10 +100,21 @@ class Form8KLlmSummarizer:
         )
 
 
+def amended(summary: FilingSummary) -> FilingSummary:
+    """An amendment's summary, headed "Amended:" like a Form 4/A's (unless the model wrote it)."""
+    if summary.headline.lower().startswith("amended"):
+        return summary
+    headline = f"Amended: {summary.headline}"
+    if len(headline) > HEADLINE_MAX:
+        headline = headline[: HEADLINE_MAX - 3].rstrip() + "..."
+    return summary.model_copy(update={"headline": headline})
+
+
 def build_summarizers(
     llm: LlmSettings, gemini: GeminiSettings, redis_client: redis.Redis
 ) -> dict[str, Summarizer]:
-    summarizers: dict[str, Summarizer] = {"4": Form4TemplateSummarizer()}
+    template = Form4TemplateSummarizer()
+    summarizers: dict[str, Summarizer] = {"4": template, "4/A": template}
     providers: list[LlmProvider] = []
     if llm.model:
         providers.append(
@@ -126,7 +139,7 @@ def build_summarizers(
         )
     if providers:
         chain = FailoverChain(providers, validate=FilingSummary.model_validate_json)
-        summarizers["8-K"] = Form8KLlmSummarizer(chain)
+        summarizers["8-K"] = summarizers["8-K/A"] = Form8KLlmSummarizer(chain)
         logger.info("8-K summaries via %s", " -> ".join(f"{p.name}:{p.model}" for p in providers))
     else:
         logger.warning("no LLM provider configured (LLM_MODEL, GEMINI_API_KEY); 8-Ks stay parsed")

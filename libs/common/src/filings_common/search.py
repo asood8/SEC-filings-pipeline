@@ -45,11 +45,13 @@ HYBRID_CANDIDATES = 50
 # Form 4 documents come from one template and are over 90% of the filings, so they fill the
 # semantic top 50 of almost any query, and each one that also matches a keyword collects both
 # contributions, ahead of the 8-K being looked for. Chosen with filings-search-eval (ADR-0011).
-SEMANTIC_FORM_WEIGHTS: Mapping[str, float] = {"4": 0.5}
+SEMANTIC_FORM_WEIGHTS: Mapping[str, float] = {"4": 0.5, "4/A": 0.5}
 # Words people search with that summaries don't necessarily contain.
 FORM_LABELS = {
     "4": "Form 4 insider trading report",
+    "4/A": "Form 4/A amended insider trading report, an amendment",
     "8-K": "Form 8-K current report",
+    "8-K/A": "Form 8-K/A amended current report, an amendment",
 }
 # Abbreviations and what they stand for. A document that has one form and not the other gets the
 # other as keywords: "CFO" finds "Chief Financial Officer", and "chief financial officer" finds

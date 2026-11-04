@@ -19,6 +19,7 @@ from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.orm import Session, sessionmaker
 
 from filings_common import metrics, telemetry
+from filings_common.amendments import base_form, changes_nothing, is_amendment
 from filings_common.consumer import PermanentError, Received
 from filings_common.db import Company, Filing, FilingStatus, Summary
 from filings_common.embeddings import Embedder, EmbeddingError
@@ -27,7 +28,7 @@ from filings_common.mongo import ParsedFilingStore
 from filings_common.names import company_name
 from filings_common.outbox import enqueue
 from filings_common.search import SearchDocument, build_document, upsert_document, upsert_embedding
-from filings_summarizer.form8k_prompt import FilingContext
+from filings_summarizer.form8k_prompt import Amended, FilingContext
 from filings_summarizer.summarizers import Summarizer
 
 logger = logging.getLogger(__name__)
@@ -72,16 +73,17 @@ class SummaryHandler:
                 .join(Company, Company.cik == Filing.cik)
                 .where(Filing.accession_no == event.accession_no)
             ).one_or_none()
-        if row is None:
-            raise PermanentError(f"no filing row for {event.accession_no}")
-        filing, company = row
-        context = FilingContext(
-            accession_no=filing.accession_no,
-            form_type=filing.form_type,
-            company_name=company_name(company.name),
-            ticker=company.ticker,
-            filed_at=filing.filed_at,
-        )
+            if row is None:
+                raise PermanentError(f"no filing row for {event.accession_no}")
+            filing, company = row
+            context = FilingContext(
+                accession_no=filing.accession_no,
+                form_type=filing.form_type,
+                company_name=company_name(company.name),
+                ticker=company.ticker,
+                filed_at=filing.filed_at,
+                amends=amended_context(session, filing),
+            )
         # No transaction is open during the (possibly slow) LLM call. Its errors can quote the
         # model's answer, so the span records them by type only.
         with telemetry.redacted_span(tracer, "summarize") as span:
@@ -190,3 +192,20 @@ class SummaryHandler:
         except EmbeddingError as exc:
             logger.warning("not embedding %s now: %s", accession_no, exc)
             return None
+
+
+def amended_context(session: Session, filing: Filing) -> Amended | None:
+    """What an amendment's summary says about the filing it amends (ADR-0021); None for a
+    filing that isn't an amendment."""
+    if not is_amendment(filing.form_type):
+        return None
+    original_filed_at = filing.amends_filed_at
+    if original_filed_at is None and filing.amends_accession_no is not None:
+        original_filed_at = session.scalar(
+            sa.select(Filing.filed_at).where(Filing.accession_no == filing.amends_accession_no)
+        )
+    return Amended(
+        original_filed_at=original_filed_at,
+        changes_nothing=base_form(filing.form_type) == "4"
+        and changes_nothing(session, filing.accession_no),
+    )

@@ -25,6 +25,7 @@ from filings_common.events import FilingParsed, FilingReady, Topic
 from filings_common.mongo import ParsedFilingStore
 from filings_common.search import SearchDocument, rebuild_index, text_sha256
 from filings_common.summaries import FilingSummary
+from filings_parser import form4
 from filings_parser.form4 import parse
 from filings_summarizer.form4_template import TEMPLATE_VERSION
 from filings_summarizer.form8k_prompt import FilingContext
@@ -32,6 +33,11 @@ from filings_summarizer.handler import SummaryHandler
 from filings_summarizer.summarizers import Form4TemplateSummarizer, SummaryResult
 
 SUMMARIZERS = {"4": Form4TemplateSummarizer()}
+
+
+def build_summarizers_for_forms() -> dict[str, Form4TemplateSummarizer]:
+    return {"4": Form4TemplateSummarizer(), "4/A": Form4TemplateSummarizer()}
+
 
 pytestmark = pytest.mark.integration
 
@@ -224,3 +230,54 @@ def test_embedding_failure_does_not_block_the_summary(
     _, events, status = rows(engine)
     assert status is FilingStatus.READY
     assert len(events) == 1
+
+
+def test_an_amendment_is_summarized_with_what_it_amends(
+    setup: tuple[Engine, ParsedFilingStore],
+) -> None:
+    # Nike's Form 4 and the 4/A that only attached a power of attorney (real fixtures), saved
+    # as the parser saves them, which links the two.
+    engine, store = setup
+    amendments = FIXTURE.parent / "amendments"
+    original, amendment = "0000320187-26-000055", "0000320187-26-000129"
+    sessions = session_factory(engine)
+    for accession_no, form_type, filed_at in (
+        (original, "4", date(2026, 5, 15)),
+        (amendment, "4/A", date(2026, 9, 3)),
+    ):
+        payload = parse((amendments / f"{accession_no}.xml").read_bytes())
+        with sessions.begin() as session:
+            session.add(
+                Filing(
+                    accession_no=accession_no,
+                    cik=1018724,
+                    form_type=form_type,
+                    filed_at=filed_at,
+                    primary_doc_url=f"https://www.sec.gov/{accession_no}.xml",
+                    raw_object_key=f"filings/{accession_no}.xml",
+                    status=FilingStatus.PARSED,
+                )
+            )
+            session.flush()
+            form4.save_key_fields(session, accession_no, payload)
+        store.upsert(
+            accession_no=accession_no,
+            cik=1018724,
+            form_type=form_type,
+            parser_version=1,
+            parsed=payload,
+        )
+
+    SummaryHandler(sessions, store, build_summarizers_for_forms())(parsed_event("4/A", amendment))
+    with sessions() as session:
+        summary = FilingSummary.model_validate(
+            session.scalars(
+                sa.select(Summary.summary).where(Summary.accession_no == amendment)
+            ).one()
+        )
+        status = session.get_one(Filing, amendment).status
+    assert summary.headline.startswith("Amended: Mark G Parker gave 22,230 NKE shares as a gift")
+    assert summary.summary.startswith(
+        "This amends the Form 4 filed on May 15, 2026. It reports the same trades, unchanged."
+    )
+    assert status is FilingStatus.READY

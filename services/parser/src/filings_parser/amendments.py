@@ -47,41 +47,11 @@ from typing import Any
 import sqlalchemy as sa
 from sqlalchemy.orm import Session
 
+from filings_common.amendments import LineKey, is_amendment, line_key
 from filings_common.db import Filing, Form4Filing, Form4Transaction, Form8KFiling
 from filings_common.parsed import EASTERN
 
-# What identifies a transaction line across a filing and its amendment.
-LineKey = tuple[date | None, str | None, str | None, str, bool, str | None, str]
 EXHIBITS_ITEM = "9.01"
-
-
-def is_amendment(form_type: str) -> bool:
-    return form_type.endswith("/A")
-
-
-def line_key(
-    transaction_date: date | None,
-    code: str | None,
-    acquired_disposed: str | None,
-    security_title: str,
-    derivative: bool,
-    direct_or_indirect: str | None,
-    nature_of_ownership: str | None,
-) -> LineKey:
-    """Text compared without case or spacing: filers retype "Common Stock" as "COMMON STOCK"."""
-    return (
-        transaction_date,
-        code,
-        acquired_disposed,
-        _normalized(security_title),
-        derivative,
-        direct_or_indirect,
-        _normalized(nature_of_ownership),
-    )
-
-
-def _normalized(text: str | None) -> str:
-    return " ".join((text or "").split()).lower()
 
 
 @dataclass(frozen=True)

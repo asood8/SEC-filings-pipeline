@@ -3,18 +3,23 @@
 Transactions are grouped by kind (SEC transaction code, direction, and for derivatives the
 security), and each group becomes one plain-English sentence. Prices given only in footnotes stay
 unknown; the template never guesses.
+
+A Form 4/A reads the same, as "Amended: ...", and says first which Form 4 it amends, whether it
+changed any reported trade, and why, in the filer's words (ADR-0021).
 """
 
 from collections.abc import Sequence
 from dataclasses import dataclass, field
 from datetime import date
 
+from filings_common.amendments import amendment_reason
 from filings_common.names import company_name, display_name, relationship_label
 from filings_common.parsed import Form4, ReportingOwner, Transaction
 from filings_common.summaries import FilingSummary
+from filings_summarizer.form8k_prompt import Amended
 
 # 2: owners' roles read as on the website and in the API (relationship_label: "CFO", not
-# "Chief Financial Officer").
+# "Chief Financial Officer"). Form 4/As (an addition) left it at 2: a Form 4 reads the same.
 TEMPLATE_VERSION = 2
 PROVIDER = "template"
 MODEL = "form4-template"
@@ -191,7 +196,21 @@ def _holdings_after(form: Form4, ticker: str) -> str | None:
     return f"Afterwards, the reported holding was {held} {ticker} shares{how}"
 
 
-def summarize_form4(form: Form4) -> FilingSummary:
+def _amendment_sentences(amends: Amended, form: Form4) -> tuple[list[str], list[str]]:
+    """What a Form 4/A summary says first: sentences, and key points."""
+    original = amends.original_filed_at
+    which = f"the Form 4 filed on {_date(original)}" if original else "an earlier Form 4"
+    sentences = [f"This amends {which}."]
+    points = [f"Amends {which}"]
+    if amends.changes_nothing:
+        sentences.append("It reports the same trades, unchanged.")
+        points.append("No reported trade changed")
+    if (reason := amendment_reason(form)) is not None:
+        sentences.append(f"The filer's explanation: “{reason}”")
+    return sentences, points
+
+
+def summarize_form4(form: Form4, amends: Amended | None = None) -> FilingSummary:
     issuer = company_name(form.issuer.name)
     ticker = (form.issuer.trading_symbol or "").split(",")[0].strip() or issuer
     groups = _groups(form.transactions)
@@ -232,6 +251,12 @@ def summarize_form4(form: Form4) -> FilingSummary:
         key_points.append("Some prices are given only in the filing's footnotes")
     if len(form.reporting_owners) > 1:
         key_points.append(f"Filed jointly by {len(form.reporting_owners)} reporting owners")
+
+    if amends is not None:
+        headline = f"Amended: {headline}"
+        first, points = _amendment_sentences(amends, form)
+        sentences = first + sentences
+        key_points = points + key_points
 
     headline = _squash(headline)
     return FilingSummary(

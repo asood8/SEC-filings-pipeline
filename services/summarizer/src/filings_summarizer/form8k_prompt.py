@@ -30,6 +30,12 @@ Return JSON with:
 - summary: 2 to 4 plain-English sentences;
 - key_points: 2 to 5 short, concrete facts (names, dates, amounts)."""
 
+# In an 8-K/A's prompt, after the header.
+AMENDMENT_TASK = (
+    "This filing amends an earlier 8-K, which is not included. In the summary, say what this "
+    "amendment adds or changes."
+)
+
 SUMMARY_SCHEMA: dict[str, Any] = {
     "type": "object",
     "properties": {
@@ -47,12 +53,23 @@ SUMMARY_SCHEMA: dict[str, Any] = {
 
 
 @dataclass(frozen=True)
+class Amended:
+    """What a summary of an amendment (4/A, 8-K/A) says about it (ADR-0021)."""
+
+    # The amended filing's date: as the amendment gives it, else the linked filing's.
+    original_filed_at: date | None
+    # A Form 4/A that restates its original's lines unchanged (amendments.changes_nothing).
+    changes_nothing: bool = False
+
+
+@dataclass(frozen=True)
 class FilingContext:
     accession_no: str
     form_type: str
     company_name: str
     ticker: str | None
     filed_at: date
+    amends: Amended | None = None  # set for amendments only
 
 
 def truncate(text: str, limit: int) -> str:
@@ -66,10 +83,25 @@ def truncate(text: str, limit: int) -> str:
 
 
 def build_prompt(form: Form8K, context: FilingContext) -> str:
+    """The filing as the model sees it. An 8-K/A gets a header saying what it amends and asking
+    what it adds or changes, and its explanatory note; an 8-K's prompt is the same as before
+    amendments were collected, so PROMPT_VERSION and the benchmark's results still hold."""
     company = (
         f"{context.company_name} ({context.ticker})" if context.ticker else context.company_name
     )
-    sections = [f"Company: {company}\nForm 8-K filed {context.filed_at.isoformat()}"]
+    if context.amends is None:
+        sections = [f"Company: {company}\nForm 8-K filed {context.filed_at.isoformat()}"]
+    else:
+        original = context.amends.original_filed_at
+        amended = f"the Form 8-K filed {original.isoformat()}" if original else "an earlier 8-K"
+        sections = [
+            f"Company: {company}\nForm 8-K/A filed {context.filed_at.isoformat()}, an amendment "
+            f"to {amended}\n{AMENDMENT_TASK}"
+        ]
+        if form.explanatory_note:
+            sections.append(
+                f"## Explanatory note\n{truncate(form.explanatory_note, MAX_ITEM_CHARS)}"
+            )
     sections += [
         f"## Item {item.number}: {item.title}\n{truncate(item.text, MAX_ITEM_CHARS)}"
         for item in form.items

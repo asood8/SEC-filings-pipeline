@@ -32,6 +32,7 @@ import sqlalchemy as sa
 from pydantic import ValidationError
 from pymongo import MongoClient
 
+from filings_common.amendments import with_amendments
 from filings_common.config import (
     DatabaseSettings,
     GeminiSettings,
@@ -48,6 +49,7 @@ from filings_common.summaries import FilingSummary
 from filings_summarizer import form8k_prompt
 from filings_summarizer.form8k_prompt import FilingContext
 from filings_summarizer.grounding import ungrounded_numbers
+from filings_summarizer.handler import amended_context
 from filings_summarizer.llm import (
     GeminiProvider,
     LlmError,
@@ -63,7 +65,7 @@ from filings_summarizer.quality import (
     quality_stats,
     score_summary,
 )
-from filings_summarizer.summarizers import GEMINI_RATE_LIMIT_KEY
+from filings_summarizer.summarizers import GEMINI_RATE_LIMIT_KEY, amended
 
 logger = logging.getLogger("filings_summarizer.benchmark")
 
@@ -143,6 +145,8 @@ def summarize_once(
         )
     elapsed = time.perf_counter() - started
     summary_text = " ".join([summary.headline, summary.summary, *summary.key_points])
+    if case.context.amends is not None:  # as the summarizer stores it, after the grounding check
+        summary = amended(summary)
     return Attempt(
         case.context.accession_no,
         elapsed,
@@ -225,25 +229,28 @@ def _share(value: float | None) -> str:
 
 
 def load_cases(limit: int | None, accessions: Sequence[str] = ()) -> list[Case]:
-    """The collected 8-Ks (or just `accessions`), oldest first: parsed payloads from MongoDB,
-    context from Postgres."""
+    """The collected 8-Ks and 8-K/As (or just `accessions`), oldest first: parsed payloads from
+    MongoDB, context from Postgres (an 8-K/A's says what it amends, as the summarizer's does)."""
     engine = create_engine(DatabaseSettings().database_url.get_secret_value())
     with session_factory(engine)() as session:
         query = (
             sa.select(Filing, Company)
             .join(Company, Company.cik == Filing.cik)
-            .where(Filing.form_type == "8-K")
+            .where(Filing.form_type.in_(with_amendments(["8-K"])))
             .order_by(Filing.filed_at, Filing.accession_no)
         )
         if accessions:
             query = query.where(Filing.accession_no.in_(accessions))
-        rows = session.execute(query).all()
+        rows = [
+            (filing, company, amended_context(session, filing))
+            for filing, company in session.execute(query).all()
+        ]
     engine.dispose()
     mongo_settings = MongoSettings()
     mongo: MongoClient[dict[str, Any]] = MongoClient(mongo_settings.mongodb_url.get_secret_value())
     store = ParsedFilingStore(mongo[mongo_settings.mongodb_database])
     cases = []
-    for filing, company in rows:
+    for filing, company, amends in rows:
         document = store.get(filing.accession_no)
         if document is None:
             continue
@@ -256,6 +263,7 @@ def load_cases(limit: int | None, accessions: Sequence[str] = ()) -> list[Case]:
                     company_name=company_name(company.name),  # as the summarizer has it
                     ticker=company.ticker,
                     filed_at=filing.filed_at,
+                    amends=amends,
                 ),
             )
         )

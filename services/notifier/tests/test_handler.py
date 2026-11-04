@@ -583,3 +583,164 @@ def test_keyword_alerts_match_the_filings_search_document(
         reasons[hooks["any buyback"]] == "Your alert: \u201cbuybacks\u201d (any watchlist company)"
     )
     assert reasons[hooks["apple buyback"]] == "Your alert: AAPL \u201cbuyback OR dividend\u201d"
+
+
+# --- Amendments (ADR-0021) ---------------------------------------------------------------------
+
+AMENDMENT = "0001193125-26-397100"  # a Form 4/A correcting FORM4
+
+
+def deliver(engine: Engine, accession_no: str, cik: int, form_type: str) -> dict[Channel, Any]:
+    with session_factory(engine)() as session:
+        summary_id = session.scalar(
+            sa.select(Summary.id).where(Summary.accession_no == accession_no)
+        )
+    assert summary_id is not None
+    event = FilingReady(
+        accession_no=accession_no, cik=cik, form_type=form_type, summary_id=summary_id
+    )
+    fakes = senders()
+    NotificationHandler(session_factory(engine), fakes)(
+        Received(Topic.FILINGS_READY, 0, 0, accession_no, event.model_dump_json().encode())
+    )
+    return fakes
+
+
+def add_form4_amendment(engine: Engine, *, price: float) -> None:
+    """FORM4's purchase of 1,000 shares at $80, restated by AMENDMENT at `price`."""
+
+    def purchase(accession_no: str, at: float, superseded_by: str | None = None) -> Any:
+        return Form4Transaction(
+            accession_no=accession_no,
+            line=1,
+            is_derivative=False,
+            security_title="Common Stock",
+            code="P",
+            shares=1_000,
+            price_per_share=at,
+            acquired_disposed="A",
+            shares_owned_after=1_000,
+            direct_or_indirect="D",
+            superseded_by=superseded_by,
+        )
+
+    with session_factory(engine).begin() as session:
+        session.add(
+            Filing(
+                accession_no=AMENDMENT,
+                cik=1067983,
+                form_type="4/A",
+                filed_at=date(2026, 9, 25),
+                primary_doc_url="https://www.sec.gov/xa.xml",
+                raw_object_key="filings/xa.xml",
+                status=FilingStatus.READY,
+                amends_filed_at=date(2026, 9, 19),
+                amends_accession_no=FORM4,
+            )
+        )
+        session.flush()
+        session.add_all(
+            [
+                Summary(
+                    accession_no=AMENDMENT,
+                    provider="template",
+                    model="form4-template",
+                    prompt_version=2,
+                    summary={
+                        "headline": "Amended: Berkshire bought LEN shares",
+                        "summary": "This amends the Form 4 filed on Sep 19, 2026.",
+                        "key_points": [],
+                    },
+                ),
+                Form4Filing(
+                    accession_no=AMENDMENT,
+                    period_of_report=date(2026, 9, 17),
+                    issuer_cik=920760,
+                    issuer_name="LENNAR CORP",
+                    issuer_ticker="LEN",
+                    reporting_owners=["BERKSHIRE HATHAWAY INC"],
+                    transaction_codes=["P"],
+                    is_10b5_1=False,
+                ),
+            ]
+        )
+        session.flush()
+        session.add_all(
+            [purchase(FORM4, 80.0, superseded_by=AMENDMENT), purchase(AMENDMENT, price)]
+        )
+
+
+def test_form4_alerts_include_amendments(clean_db: Engine, world: dict[str, int]) -> None:
+    add_form4_amendment(clean_db, price=85.0)  # the price corrected
+    fakes = deliver(clean_db, AMENDMENT, 1067983, "4/A")
+
+    assert fakes[Channel.SLACK].sent == [(SLACK, AMENDMENT)]  # Lennar's, for Form 4s
+    assert fakes[Channel.SLACK].alerts[0].headline.startswith("Amended: ")
+    assert fakes[Channel.SLACK].alerts[0].form_type == "4/A"
+    states = notifications(clean_db)
+    assert world["berkshire_8k_only"] not in states  # 8-Ks only: not a Form 4/A
+    assert states[world["berkshire_discord"]] == (NotificationStatus.SENT, 1)  # every form
+
+
+def test_an_amendment_that_changes_no_trade_alerts_nobody(
+    clean_db: Engine, world: dict[str, int]
+) -> None:
+    add_form4_amendment(clean_db, price=80.0)  # the same trade restated, unchanged
+    fakes = deliver(clean_db, AMENDMENT, 1067983, "4/A")
+
+    assert all(not fake.sent for fake in fakes.values())
+    with session_factory(clean_db)() as session:
+        assert session.get_one(Filing, AMENDMENT).status is FilingStatus.NOTIFIED
+
+
+def test_8k_alerts_and_item_filters_include_8k_amendments(
+    clean_db: Engine, world: dict[str, int]
+) -> None:
+    accession_no = "0001140361-26-035325"  # Apple's 8-K/A about its new CEO's pay (5.02)
+    officers = "https://discord.com/api/webhooks/7/officers"
+    with session_factory(clean_db).begin() as session:
+        user_id = session.scalar(sa.select(User.id).where(User.email == "ops@example.com"))
+        session.add(
+            Filing(
+                accession_no=accession_no,
+                cik=320193,
+                form_type="8-K/A",
+                filed_at=date(2026, 9, 1),
+                primary_doc_url="https://www.sec.gov/aapl-8ka.htm",
+                raw_object_key="filings/aapl-8ka.htm",
+                status=FilingStatus.READY,
+                amends_filed_at=date(2026, 4, 20),
+            )
+        )
+        session.flush()
+        session.add_all(
+            [
+                Summary(
+                    accession_no=accession_no,
+                    provider="ollama",
+                    model="llama3.2:3b",
+                    prompt_version=1,
+                    summary={
+                        "headline": "Amended: Apple sets pay",
+                        "summary": "...",
+                        "key_points": [],
+                    },
+                ),
+                Form8KFiling(accession_no=accession_no, items=["5.02"]),
+                Subscription(
+                    user_id=user_id,
+                    cik=320193,
+                    form_types=["8-K"],
+                    channel=Channel.DISCORD,
+                    target=officers,
+                    form8k_items=["5.02"],
+                    created_at=datetime(2026, 1, 1, tzinfo=UTC),
+                ),
+            ]
+        )
+    fakes = deliver(clean_db, accession_no, 320193, "8-K/A")
+
+    [alert] = fakes[Channel.DISCORD].alerts
+    assert fakes[Channel.DISCORD].sent == [(officers, accession_no)]
+    assert alert.reason == "Your alert: AAPL · 8-K: 5.02"  # the filters of the form it amends
+    assert fakes[Channel.EMAIL].sent == [("ops@example.com", accession_no)]  # every form

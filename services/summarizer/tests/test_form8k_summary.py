@@ -1,6 +1,7 @@
 """8-K prompt and LLM summarizer, using real 8-K fixtures and fake LLM providers."""
 
 import json
+from dataclasses import replace
 from datetime import date
 from pathlib import Path
 from typing import Any
@@ -12,13 +13,15 @@ from filings_common.config import GeminiSettings, LlmSettings
 from filings_common.consumer import PermanentError
 from filings_common.parsed import Exhibit, Form8K
 from filings_common.summaries import FilingSummary
-from filings_parser.form8k import parse_form8k
+from filings_parser.form8k import parse_amendment, parse_form8k
 from filings_summarizer.form8k_prompt import (
+    AMENDMENT_TASK,
     MAX_ITEM_CHARS,
     MAX_PROMPT_CHARS,
     PROMPT_VERSION,
     SUMMARY_SCHEMA,
     TRUNCATED,
+    Amended,
     FilingContext,
     build_prompt,
     truncate,
@@ -143,12 +146,69 @@ def test_build_summarizers_wires_configured_providers_in_order() -> None:
     none = build_summarizers(
         LlmSettings(_env_file=None, model=None), GeminiSettings(_env_file=None, api_key=""), client
     )
-    assert set(none) == {"4"}  # no LLM: 8-Ks stay parsed
+    assert set(none) == {"4", "4/A"}  # no LLM: 8-Ks and 8-K/As stay parsed
 
     both = build_summarizers(
         LlmSettings(_env_file=None, model="small"),
         GeminiSettings(_env_file=None, api_key="k"),
         client,
     )
+    assert both["8-K/A"] is both["8-K"]  # amendments go through the same chain
     chain = both["8-K"]._chain  # type: ignore[attr-defined]
     assert [p.name for p in chain._providers] == ["ollama", "gemini"]
+
+
+# --- 8-K/As (ADR-0021) -------------------------------------------------------------------------
+
+NETFLIX_FIX = FIXTURES / "amendments" / "0001193125-25-309911.htm"  # an 8-K/A with a note
+AMENDED_CONTEXT = FilingContext(
+    accession_no="0001193125-25-309911",
+    form_type="8-K/A",
+    company_name="Netflix",
+    ticker="NFLX",
+    filed_at=date(2025, 12, 11),
+    amends=Amended(original_filed_at=date(2025, 12, 5)),
+)
+
+
+def netflix_fix() -> Form8K:
+    return Form8K.model_validate(parse_amendment(NETFLIX_FIX.read_bytes()))
+
+
+def test_an_amendments_prompt_says_what_it_amends_and_asks_what_changed() -> None:
+    prompt = build_prompt(netflix_fix(), AMENDED_CONTEXT)
+    assert prompt.startswith(
+        "Company: Netflix (NFLX)\nForm 8-K/A filed 2025-12-11, an amendment to the Form 8-K filed"
+        f" 2025-12-05\n{AMENDMENT_TASK}\n\n## Explanatory note\nThis Amendment on Form 8-K/A"
+    )
+    assert "## Item 9.01" in prompt
+    unknown = replace(AMENDED_CONTEXT, amends=Amended(original_filed_at=None))
+    assert "an amendment to an earlier 8-K\n" in build_prompt(netflix_fix(), unknown)
+
+
+def test_an_8ks_prompt_is_unchanged_by_amendments() -> None:
+    prompt = build_prompt(adobe(), CONTEXT)
+    assert prompt.startswith("Company: Adobe Inc. (ADBE)\nForm 8-K filed 2026-09-10\n\n## Item")
+    assert AMENDMENT_TASK not in prompt
+    assert "Explanatory note" not in prompt
+
+
+@pytest.mark.parametrize(
+    ("headline", "expected"),
+    [
+        ("Netflix files its merger agreement", "Amended: Netflix files its merger agreement"),
+        ("Amended 8-K: Netflix files its merger agreement", None),  # the model said so already
+        ("N" * 200, "Amended: " + "N" * 188 + "..."),  # still within the 200 characters
+    ],
+)
+def test_an_amendments_headline_starts_amended(headline: str, expected: str | None) -> None:
+    answer = {"headline": headline, "summary": "Netflix filed the agreement.", "key_points": []}
+    summarizer = Form8KLlmSummarizer(
+        FailoverChain([StubProvider(answer)], validate=FilingSummary.model_validate_json)
+    )
+    result = summarizer.summarize(netflix_fix().model_dump(mode="json"), AMENDED_CONTEXT)
+    assert result.summary.headline == (expected or headline)
+    assert len(result.summary.headline) <= 200
+    # An 8-K's headline is left as the model wrote it.
+    plain = summarizer.summarize(adobe().model_dump(mode="json"), CONTEXT)
+    assert plain.summary.headline == headline

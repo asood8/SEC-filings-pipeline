@@ -1,5 +1,6 @@
 """Form 4 template summaries of the real EDGAR fixtures in tests/fixtures/form4/."""
 
+from datetime import date
 from pathlib import Path
 
 import pytest
@@ -7,6 +8,7 @@ import pytest
 from filings_common.summaries import FilingSummary
 from filings_parser.form4 import parse_form4
 from filings_summarizer.form4_template import summarize_form4
+from filings_summarizer.form8k_prompt import Amended
 
 FIXTURES = Path(__file__).parents[3] / "tests" / "fixtures" / "form4"
 
@@ -98,3 +100,52 @@ def test_every_fixture_gets_a_clean_summary(path: Path) -> None:
     assert "None" not in text
     assert "  " not in text
     assert s.key_points
+
+
+# --- Form 4/As (ADR-0021), from tests/fixtures/form4/amendments/ --------------------------------
+
+AMENDMENTS = FIXTURES / "amendments"
+
+
+def amended(accession_no: str, amends: Amended) -> FilingSummary:
+    form = parse_form4((AMENDMENTS / f"{accession_no}.xml").read_bytes())
+    return summarize_form4(form, amends)
+
+
+def test_an_amendment_says_what_it_amends_and_why() -> None:
+    # Alphabet: the shares acquired corrected from 47,574 to 94,715.
+    s = amended("0001193125-26-061630", Amended(original_filed_at=date(2026, 1, 15)))
+    assert (
+        s.headline == "Amended: John Kent Walker received 94,715 GOOGL shares as a grant or award"
+    )
+    assert s.summary.startswith(
+        "This amends the Form 4 filed on Jan 15, 2026. The filer's explanation: “This amendment"
+        " is being filed to correct the number of shares acquired, which was inadvertently"
+        " reported as 47,574 on the Form 4 filed on January 15, 2026. The actual number of shares"
+        " acquired was 94,715.” John Kent Walker"
+    )
+    assert s.key_points[0] == "Amends the Form 4 filed on Jan 15, 2026"
+
+
+def test_an_amendment_that_changes_no_trade_says_so() -> None:
+    # Nike: filed only to attach a power of attorney.
+    s = amended(
+        "0000320187-26-000129",
+        Amended(original_filed_at=date(2026, 5, 15), changes_nothing=True),
+    )
+    assert s.headline.startswith("Amended: ")
+    assert s.summary.startswith(
+        "This amends the Form 4 filed on May 15, 2026. It reports the same trades, unchanged."
+        " The filer's explanation: “This Amendment on Form 4/A is being filed solely to attach"
+        " the Power of Attorney"
+    )
+    assert s.key_points[:2] == [
+        "Amends the Form 4 filed on May 15, 2026",
+        "No reported trade changed",
+    ]
+
+
+def test_an_amendment_without_a_known_original_date() -> None:
+    s = amended("0001193125-26-188493", Amended(original_filed_at=None))
+    assert s.summary.startswith("This amends an earlier Form 4. The filer's explanation: “This")
+    assert s.key_points[0] == "Amends an earlier Form 4"

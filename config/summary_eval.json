@@ -1,5 +1,5 @@
 {
-  "description": "Labeled 8-K summaries for filings-benchmark's quality score (ADR-0008). Made on 2026-10-08 for the 22 8-Ks in the local database (filed 2026-09-08 to 2026-10-08), by reading the text the summarizer gives the model for each (items and EX-99 exhibits, as form8k_prompt.build_prompt trims them), not the summaries. For each filing, 'facts' are what a correct summary must state: the event, who did it, the main figures. A fact's 'patterns' are regular expressions (any one matching is enough) and its 'numbers' are figures (any one stated is enough, compared by value with the grounding check's normalization, so '$1 billion' states '1.0 billion' and '16 million' states '16,000,000'); a fact with both needs both. 'forbidden' lists claims the filing contradicts: the slips seen in real summaries (Nike 'all proposals passed', Oracle cancelling Ellison's plan, Tesla's '18-month term loan', PepsiCo's year-to-date growth given as the quarter's) and a few others a careless summary would make. Patterns match case-insensitively against the headline, the summary, and each key point separately, after curly quotes and dashes are made plain. Numbers the filing never states (computed totals) are left to the grounding check. All accession numbers and quotes are public SEC data.",
+  "description": "Labeled 8-K summaries for filings-benchmark's quality score (ADR-0008). Made on 2026-10-08 for the 22 8-Ks in the local database (filed 2026-09-08 to 2026-10-08), by reading the text the summarizer gives the model for each (items and EX-99 exhibits, as form8k_prompt.build_prompt trims them), not the summaries. For each filing, 'facts' are what a correct summary must state: the event, who did it, the main figures. A fact's 'patterns' are regular expressions (any one matching is enough) and its 'numbers' are figures (any one stated is enough, compared by value with the grounding check's normalization, so '$1 billion' states '1.0 billion' and '16 million' states '16,000,000'); a fact with both needs both. 'forbidden' lists claims the filing contradicts: the slips seen in real summaries (Nike 'all proposals passed', Oracle cancelling Ellison's plan, Tesla's '18-month term loan', PepsiCo's year-to-date growth given as the quarter's) and a few others a careless summary would make. Patterns match case-insensitively against the headline, the summary, and each key point separately, after curly quotes and dashes are made plain. Numbers the filing never states (computed totals) are left to the grounding check. All accession numbers and quotes are public SEC data. On 2026-11-04 seven 8-K/As were added (filed 2025-12 to 2026-09, collected since amendments were, ADR-0021), labeled the same way from their notes and items; their forbidden claims include the slips llama3.2:3b made on them (Chevron's sale told in reverse, Berkshire's and McDonald's 'corrections').",
   "filings": [
     {
       "accession_no": "0000731766-26-000205",
@@ -492,6 +492,129 @@
           "claim": "operating margin up 45% (45% is year-to-date operating profit growth; the quarter's margin rose 195 bps)",
           "patterns": ["\\b45 ?%[^.]{0,30}\\boperating margin", "\\boperating margin[^.]{0,30}\\b45 ?%"],
           "evidence": "Operating profit $4,260 $3,569 19% $11,496 $7,941 45% ... Operating margin 16.9% 14.9% 195 bps"
+        }
+      ]
+    },
+    {
+      "accession_no": "0001140361-26-035325",
+      "company": "Apple",
+      "note": "8-K/A to the 8-K filed April 20, 2026 (CEO transition), Item 5.02 only: John Ternus' pay as CEO and Tim Cook's as Executive Chair, effective September 1, 2026. Ternus: salary $3 million, prorated RSU award with a target value of $2.5 million, fiscal 2027 equity award of $55 million. Cook: salary $2 million from September 26, 2026, fiscal 2027 equity award of $45 million (to be granted, not yet received). Labeled 2026-11-04 from the item text.",
+      "facts": [
+        {"fact": "Ternus's salary of $3 million", "patterns": ["ternus"], "numbers": ["3 million"]},
+        {"fact": "Ternus's $55 million equity award", "numbers": ["55 million"]},
+        {"fact": "Cook's salary of $2 million", "patterns": ["\\bcook\\b"], "numbers": ["2 million"]},
+        {"fact": "Cook's $45 million equity award", "numbers": ["45 million"]},
+        {"fact": "it amends the earlier 8-K to give their pay", "patterns": ["amend", "compensation", "\\bpay\\b"]}
+      ],
+      "forbidden": [
+        {
+          "claim": "the fiscal 2027 awards were already received or granted",
+          "patterns": ["(received|was granted|were granted) (an |the )?(annual )?equity award"],
+          "evidence": "approved an annual equity award for Mr. Ternus with a target value of $55 million to be granted in fiscal 2027"
+        }
+      ]
+    },
+    {
+      "accession_no": "0001193125-26-004727",
+      "company": "Berkshire Hathaway",
+      "note": "8-K/A, Item 5.02 (c) only: as previously announced, Greg Abel became President and CEO on January 1, 2026; effective that date his annual cash salary increased to $25 million. It gives no date for the 8-K it amends and corrects nothing. Labeled 2026-11-04 from the item text.",
+      "facts": [
+        {"fact": "Greg Abel is CEO", "patterns": ["abel"]},
+        {"fact": "a $25 million salary", "numbers": ["25 million"]},
+        {"fact": "effective January 1, 2026", "patterns": ["(january|jan\\.?) 1\\b", "2026-01-01"]}
+      ],
+      "forbidden": [
+        {
+          "claim": "the amendment corrects or clarifies the earlier filing",
+          "patterns": ["\\bcorrect(s|ed|ing|ion)?\\b", "\\bclarif(y|ies|ied)\\b", "\\berror\\b", "incorrect"],
+          "evidence": "As previously announced, on January 1, 2026, Mr. Greg Abel became Berkshire's President and Chief Executive Officer. Effective that date, Mr. Abel's annual cash salary increased to $25 million."
+        }
+      ]
+    },
+    {
+      "accession_no": "0000093410-25-000130",
+      "company": "Chevron",
+      "note": "8-K/A to the 8-K filed July 29, 2025 (John B. Hess joining the board), Item 5.02: on December 17, 2025, Hess Corp. agreed to sell to Mr. Hess a 100% membership interest in ToyCo (the Hess toy truck business) for $40,000, effective April 1, 2026, and in HLOGO (the Hess name and trademarks) for $863,000, effective December 17, 2025; plus IT transition payments to a vendor. Labeled 2026-11-04 from the item text.",
+      "facts": [
+        {"fact": "ToyCo, the toy truck business, for $40,000", "patterns": ["toy"], "numbers": ["40,000"]},
+        {"fact": "HLOGO, the Hess name and trademarks, for $863,000", "patterns": ["hlogo", "trademark", "hess name"], "numbers": ["863,000"]},
+        {"fact": "bought by John B. Hess", "patterns": ["\\bhess\\b"]}
+      ],
+      "forbidden": [
+        {
+          "claim": "Mr. Hess (or Chevron's executives) sold the interests, rather than buying them",
+          "patterns": ["(john b\\. )?hess (has |have )?sold", "executives,? (including [^,]+,? )?(have |has )?sold", "sold (their|his) interests?"],
+          "evidence": "Hess Corp. and Mr. Hess executed an agreement for Hess Corp. to sell, assign, transfer and convey to Mr. Hess a 100% membership interest in ToyCo for $40,000"
+        }
+      ]
+    },
+    {
+      "accession_no": "0000063908-26-000042",
+      "company": "McDonald's",
+      "note": "8-K/A to the 8-K filed February 10, 2026 (James D. Farley, Jr. elected a director on February 4, 2026), Item 5.02: on March 30, 2026 the board appointed him to its Audit & Finance Committee and Corporate Responsibility Committee, effective immediately. It adds the committees; it corrects nothing. Labeled 2026-11-04 from the item text.",
+      "facts": [
+        {"fact": "James D. Farley, Jr.", "patterns": ["farley"]},
+        {"fact": "the Audit & Finance Committee", "patterns": ["audit"]},
+        {"fact": "the Corporate Responsibility Committee", "patterns": ["corporate responsibility"]},
+        {"fact": "on March 30, 2026", "patterns": ["(march|mar\\.?) 30\\b", "2026-03-30"]}
+      ],
+      "forbidden": [
+        {
+          "claim": "the earlier report was wrong",
+          "patterns": ["\\bincorrect", "\\bcorrect(s|ed|ion)\\b", "\\berror\\b", "\\bwrong\\b"],
+          "evidence": "This is an amendment to Item 5.02 of the Current Report on Form 8-K that McDonald's Corporation filed on February 10, 2026, which reported that on February 4, 2026, the Company's Board of Directors elected James D. Farley, Jr., as a Director"
+        }
+      ]
+    },
+    {
+      "accession_no": "0001193125-25-309911",
+      "company": "Netflix",
+      "note": "8-K/A to the 8-K filed December 5, 2025 (the merger agreement with Warner Bros. Discovery, Nightingale Sub and New Topco 25, dated December 4, 2025). Its explanatory note says it is filed only to include an exhibit to the Merger Agreement that was missing from Exhibit 2.1; the agreement filed with it supersedes that exhibit, and otherwise the original 8-K is unchanged. Item 9.01 lists the exhibit. Labeled 2026-11-04 from the note and the item text.",
+      "facts": [
+        {"fact": "the merger agreement with Warner Bros. Discovery", "patterns": ["warner bros", "\\bwbd\\b"]},
+        {"fact": "it adds a missing exhibit to the merger agreement", "patterns": ["exhibit"]},
+        {"fact": "the agreement of December 4, 2025", "patterns": ["(december|dec\\.?) 4\\b", "2025-12-04"]}
+      ],
+      "forbidden": [
+        {
+          "claim": "the merger agreement is new in this filing",
+          "patterns": ["(announces|announced|enters into|entered into) (a |the |its )?(new )?merger"],
+          "evidence": "amends the Current Report on Form 8-K filed by Netflix ... on December 5, 2025, in which Netflix reported its entry into an Agreement and Plan of Merger"
+        }
+      ]
+    },
+    {
+      "accession_no": "0000104169-26-000024",
+      "company": "Walmart",
+      "note": "8-K/A to the 8-K filed November 14, 2025 (John Furner appointed President and CEO, effective February 1, 2026), Item 5.02: his pay as CEO. Base salary $1,500,000; fiscal 2027 target cash incentive 240% of salary (at most 300%); fiscal 2027 equity award of about $17,000,000; a one-time performance-based RSU award of about $10,000,000. Labeled 2026-11-04 from the item text.",
+      "facts": [
+        {"fact": "John Furner", "patterns": ["furner"]},
+        {"fact": "a $1,500,000 salary", "numbers": ["1,500,000"]},
+        {"fact": "a $17,000,000 equity award", "numbers": ["17,000,000"]},
+        {"fact": "a one-time $10,000,000 award", "numbers": ["10,000,000"]}
+      ],
+      "forbidden": [
+        {
+          "claim": "the compensation was reported before",
+          "patterns": ["compensation[^.]{0,80}(were|was) previously reported"],
+          "evidence": "This Current Report on Form 8-K/A is being filed as an amendment to the Initial Form 8-K to provide information regarding Mr. Furner's compensation in connection with his new position."
+        }
+      ]
+    },
+    {
+      "accession_no": "0000104169-26-000028",
+      "company": "Walmart",
+      "note": "8-K/A to the 8-K filed January 16, 2026 (Kathryn McLay stepping down as CEO of Walmart International on January 31, 2026, leaving on April 30, 2026), Item 5.02: her separation agreement of January 28, 2026. Payments totaling $2,820,000 over two years; vesting of 24,051 restricted shares accelerated; other unvested awards forfeited; no competing for two years, no soliciting associates for six months. Labeled 2026-11-04 from the item text.",
+      "facts": [
+        {"fact": "Kathryn McLay's separation agreement", "patterns": ["mclay"]},
+        {"fact": "payments of $2,820,000", "numbers": ["2,820,000"]},
+        {"fact": "24,051 restricted shares vest early", "numbers": ["24,051"]}
+      ],
+      "forbidden": [
+        {
+          "claim": "the non-compete lasts two months",
+          "patterns": ["two and six months", "\\btwo months\\b", "\\b2 months\\b"],
+          "evidence": "prohibits Ms. McLay, for a period of two years following the Separation Date, from competing with the Company, and from soliciting certain of the Company's associates for employment for a period of six months"
         }
       ]
     }

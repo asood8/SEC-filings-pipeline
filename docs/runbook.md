@@ -944,10 +944,33 @@ Not fixed, for a decision when the watchlist grows:
   default `random_page_cost` of 4 the planner prefers a parallel scan of all 420,000
   `form4_filings` rows to 3,400 primary-key probes. With 1.1 (usual for SSDs) it probes: 30 days
   take 25–44 ms instead of about 50. Responses are cached for 60 s, and on the 35-company
-  watchlist that table stays 13 times smaller, so this is left as is.
+  watchlist that table stays 13 times smaller, so this is left as is (and 1.1 isn't set: next
+  section).
 - **Per-company work grows with the company's history**: insider activity (above), and keyword
   search for its ticker or with its filter, which reads all its matching documents (a company
   with 9,400 filings: 77–154 ms).
+
+**`random_page_cost`: production keeps Postgres's default of 4** (measured 2026-11-04). 1.1 is
+the usual advice for SSDs and fully cached data, which production has. Measured with
+`measure_queries.py --set random_page_cost=1.1` against the same database without it:
+
+- **At the watchlist's real size** (35 companies over 10 years: 26,857 filings), no meaningful
+  difference: every query stays under about 120 ms either way, and most move by less than the
+  noise between runs. One got faster (keyword `shares`, 47 → 38 ms) and one slower (hybrid
+  search for 8-Ks, 21 → 51 ms).
+- **At 13 times that** (the database above), a trade: semantic and hybrid search, the discovery
+  run, and session and subscription reads get about 40% faster (semantic search for 8-Ks
+  401 → 231 ms; discovery 4.9 → 2.8 s), but keyword search for a very common word gets 2.7 times
+  slower (`sold`: 1.3 → 3.5 s). That one is a plan flip on a near-tie: at 1.1 the planner sorts
+  all 171,000 matches by rank first (spilling to disk), then looks up each one's filing date
+  in the primary key, instead of a hash join and a top-20 sort in memory. The two plans' costs
+  were 1.5% apart.
+
+So nothing to gain at the size the system runs, and a regression at the size where it would
+matter. Revisit with a watchlist past about 100 companies, together with keyword search's join:
+its filters and its tie-break (form type, company, filing date) come from `filings`, so every
+match is joined before the top 20 are picked. Copying those three columns, which never change
+for a filing, into `filing_search` would let it pick the top 20 alone, with either setting.
 
 To measure again (a throwaway database; never the `filings` one):
 

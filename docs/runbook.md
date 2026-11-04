@@ -22,6 +22,7 @@ applying, reaching the cluster, Terraform state).
 - [Alert: R2 usage not measured](#alert-r2-usage-not-measured)
 - [Alert: Postgres backup missing](#alert-postgres-backup-missing)
 - [Alert: Postgres backup shrank](#alert-postgres-backup-shrank)
+- [Alert: Earnings-call transcript overdue](#alert-earnings-call-transcript-overdue)
 - [Dead letters: inspect, fix, replay, trim](#dead-letters-inspect-fix-replay-trim)
 - [Deploys and rollbacks](#deploys-and-rollbacks)
 - [Pausing Argo CD for hands-on work](#pausing-argo-cd-for-hands-on-work)
@@ -31,6 +32,7 @@ applying, reaching the cluster, Terraform state).
 - [Swapping the local LLM model](#swapping-the-local-llm-model)
 - [Changing search ranking or the embedding model](#changing-search-ranking-or-the-embedding-model)
 - [Amended filings: checking a link](#amended-filings-checking-a-link)
+- [Earnings-call transcripts: checking and fixing a source](#earnings-call-transcripts-checking-and-fixing-a-source)
 - [Oracle idle reclamation and capacity errors](#oracle-idle-reclamation-and-capacity-errors)
 - [Backups and restores](#backups-and-restores)
 - [Capacity planning](#capacity-planning)
@@ -223,6 +225,20 @@ kubectl -n filings exec postgres-0 -- sh -c 'psql -U "$POSTGRES_USER" -d "$POSTG
   pruned table). The alert clears itself within 20 hours.
 - **They don't:** stop anything that writes (scale the deployments to 0), keep a copy of the
   newest good dump outside the bucket, and restore from it (below).
+
+## Alert: Earnings-call transcript overdue
+
+Warning. A company with a transcript source (config/transcript_sources.toml, ADR-0022) filed an
+earnings 8-K three weeks ago and no transcript of that call is stored. Companies post one within
+days, so its source probably broke. Nothing else is affected: the 8-K and its summary are fine.
+
+```
+kubectl -n filings logs job/<the newest call-transcripts job> -c fetch   # "no transcript yet for ..."
+```
+
+Then follow [Earnings-call transcripts: checking and fixing a source](#earnings-call-transcripts-checking-and-fixing-a-source).
+The alert clears the night after the transcript is stored, or once the 8-K is past the lookback
+(120 days).
 
 ## Dead letters: inspect, fix, replay, trim
 
@@ -644,6 +660,37 @@ FROM form4_transactions WHERE superseded_by = '<amendment accession>';
 - **After the migration that added amendments** (777e3b230648), run
   `filings-rebuild-key-fields --form-type 4` once: matching lines needs
   `form4_transactions.nature_of_ownership`, which older rows lack.
+
+## Earnings-call transcripts: checking and fixing a source
+
+Each night the `call-transcripts` job reads the sources in config/transcript_sources.toml: a
+listing page and a link pattern, or address templates filled from each earnings 8-K's date
+(ADR-0022). What was stored:
+
+```
+SELECT c.ticker, t.call_date, t.words, t.exchanges, t.source_url
+FROM call_transcripts t JOIN companies c USING (cik) ORDER BY t.call_date DESC LIMIT 20;
+```
+
+To find why a company has none, open its investor site in a browser and compare with its source:
+
+- **The site moved its transcripts** (a new listing page, a new file name): fix the source's
+  `listing`, `link` or `urls`. A template's variables are listed at the top of the file; check a
+  template by filling it for a past call (`filings_discovery.transcripts.fill`) and comparing
+  with the real address. Ship it in the next discovery image.
+- **The job's log says "not a usable transcript":** the document was found but has under 1,000
+  words or no Q&A the splitter recognizes (filings_common.transcripts). A new way of introducing
+  questions needs a rule and a test there; then bump `SPLITTER_VERSION`.
+- **"robots.txt disallows" or HTTP 403:** the site now refuses automated requests. Remove the
+  source: the project only reads sites that allow it.
+- **The terms changed:** before adding a company or when a site's terms change, read its terms
+  of use. A site whose terms bar automated access or downloads is not a source (ADR-0022).
+
+Run the job by hand after a fix:
+
+```
+kubectl -n filings create job --from=cronjob/call-transcripts call-transcripts-manual
+```
 
 ## Oracle idle reclamation and capacity errors
 

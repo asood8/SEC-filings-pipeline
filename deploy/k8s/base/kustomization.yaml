@@ -23,6 +23,7 @@ resources:
   # The pipeline and the API
   - migrate.yaml
   - discovery.yaml
+  - call-transcripts.yaml
   - outbox-relay.yaml
   - parser.yaml
   - summarizer.yaml

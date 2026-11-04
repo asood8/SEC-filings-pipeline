@@ -212,6 +212,25 @@ R2_FREE_TIER_USED = meter.create_observable_gauge(
     ),
 )
 
+# --- Earnings-call transcripts (filings-discovery fetch-transcripts, a nightly job) --------------
+
+TRANSCRIPTS_STORED = meter.create_counter(
+    "filings.transcripts.stored",
+    unit="{transcript}",
+    description="Earnings-call transcripts fetched from a company's site and stored (ADR-0022).",
+)
+TRANSCRIPTS_OVERDUE_VALUES = LatestValues()
+TRANSCRIPTS_OVERDUE = meter.create_observable_gauge(
+    "filings.transcripts.overdue",
+    callbacks=[TRANSCRIPTS_OVERDUE_VALUES.observe],
+    unit="{company}",
+    description=(
+        "Companies with a transcript source whose latest earnings 8-K is old enough to have a "
+        "transcript and still has none: the site moved its transcripts or changed their format. "
+        "Measured once a night."
+    ),
+)
+
 # --- Postgres backups (filings-backup-report, the last step of the nightly backup job) ----------
 
 BACKUP_SIZE_VALUES = LatestValues()

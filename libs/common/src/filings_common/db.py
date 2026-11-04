@@ -278,6 +278,30 @@ class Form8KFiling(Base):
     )
 
 
+class CallTranscript(Base):
+    """An earnings-call transcript a company published on its own site (ADR-0022). The text is in
+    MongoDB (`call_transcripts`, keyed by the source URL) and is never served: only summaries of
+    it and the link are."""
+
+    __tablename__ = "call_transcripts"
+    # One transcript per company and call day: a listing's links can move, the call doesn't.
+    __table_args__ = (
+        sa.Index("ix_call_transcripts_cik_call_date", "cik", "call_date", unique=True),
+    )
+
+    id: Mapped[int] = mapped_column(sa.BigInteger, sa.Identity(always=True), primary_key=True)
+    cik: Mapped[int] = mapped_column(
+        sa.BigInteger, sa.ForeignKey("companies.cik", ondelete="CASCADE")
+    )
+    call_date: Mapped[date]
+    # Where the company publishes it: the natural key, so a re-run fetches nothing twice.
+    source_url: Mapped[str] = mapped_column(unique=True)
+    text_sha256: Mapped[str]
+    words: Mapped[int]
+    exchanges: Mapped[int]  # Q&A exchanges found when it was stored
+    fetched_at: Mapped[datetime] = mapped_column(server_default=sa.func.now())
+
+
 class Summary(Base):
     """One summary of a filing. History is kept; the most recent row is the current summary.
 

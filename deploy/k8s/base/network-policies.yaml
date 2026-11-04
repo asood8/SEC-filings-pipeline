@@ -33,6 +33,7 @@ spec:
                   - notifier
                   - discovery
                   - load-companies
+                  - call-transcripts
                   - migrate
                   - postgres-backup
       ports:

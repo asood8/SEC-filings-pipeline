@@ -2095,6 +2095,105 @@
         "x": 12,
         "y": 75
       }
+    },
+    {
+      "type": "stat",
+      "title": "Earnings-call transcripts",
+      "description": "The nightly call-transcripts job (ADR-0022): transcripts stored from the companies' own sites over the past 30 days, and the companies whose latest earnings 8-K is three weeks old with no transcript yet. Above zero, the \"Earnings-call transcript overdue\" alert fires: a source probably broke.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "decimals": 0,
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "blue"
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "overdue"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "thresholds"
+                }
+              },
+              {
+                "id": "thresholds",
+                "value": {
+                  "mode": "absolute",
+                  "steps": [
+                    {
+                      "color": "green",
+                      "value": null
+                    },
+                    {
+                      "color": "orange",
+                      "value": 1
+                    }
+                  ]
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "textMode": "value_and_name",
+        "wideLayout": true
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "editorMode": "code",
+          "expr": "sum(max_over_time(filings_transcripts_stored_total[30d]))",
+          "legendFormat": "stored, 30 days",
+          "refId": "A",
+          "instant": true,
+          "range": false
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "editorMode": "code",
+          "expr": "max(last_over_time(filings_transcripts_overdue[26h]))",
+          "legendFormat": "overdue",
+          "refId": "B",
+          "instant": true,
+          "range": false
+        }
+      ],
+      "id": 33,
+      "gridPos": {
+        "h": 4,
+        "w": 12,
+        "x": 0,
+        "y": 79
+      }
     }
   ]
 }

@@ -283,6 +283,7 @@ class FailoverChain:
                 },
             ) as span:
                 answered, opened = False, False
+                error: Exception | None = None
                 started = time.monotonic()
                 try:
                     text = provider.generate_json(system, prompt, schema)
@@ -290,11 +291,13 @@ class FailoverChain:
                     if self._validate is not None:
                         self._validate(text)
                 except RateLimitedError as exc:
+                    error = exc
                     opened = breaker.record_failure(retry_after=exc.retry_after)
                     failures.append(f"{provider.name}: {exc}")
                     outcome = "rate_limited"
                     telemetry.record_error(span, exc, redact=True)
                 except Exception as exc:  # any provider failure means: try the next provider
+                    error = exc
                     opened = breaker.record_failure()
                     failures.append(f"{provider.name}: {exc!r}"[:300])
                     outcome = "invalid" if answered else "error"
@@ -313,5 +316,11 @@ class FailoverChain:
                     if position > 0:
                         metrics.LLM_FAILOVERS.add(1, provider_attribute)
                     return Answer(text, provider.name, provider.model)
-            logger.warning("LLM provider %s failed; trying the next one", provider.name)
+            # The outcome and the error's type only: messages can hold the model's answer.
+            logger.warning(
+                "LLM provider %s failed (%s: %s); trying the next one",
+                provider.name,
+                outcome,
+                type(error).__name__,
+            )
         raise LlmUnavailableError("; ".join(failures))

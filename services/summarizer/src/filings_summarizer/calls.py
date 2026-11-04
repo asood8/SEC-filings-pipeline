@@ -10,9 +10,9 @@ Changing a prompt in any way that changes answers means bumping CALL_PROMPT_VERS
 
 from dataclasses import dataclass, field
 from datetime import date
-from typing import Any
+from typing import Annotated, Any
 
-from pydantic import BaseModel, Field
+from pydantic import AfterValidator, BaseModel, Field
 
 from filings_common.summaries import FilingSummary, OneLine
 from filings_common.transcripts import Exchange, split
@@ -61,9 +61,26 @@ questions;
 - key_points: 3 to 5 short, concrete points (who said what, figures given)."""
 
 
+MAX_QUESTION_CHARS = 600
+MAX_ANSWER_CHARS = 1_500
+
+
+def _clip(limit: int) -> AfterValidator:
+    """Text past `limit` is cut at a word and marked: the small model often copies a long
+    multi-part question or answer nearly word for word, which is long but not wrong, so it
+    shouldn't count as a failure (and send the exchange to the next provider)."""
+
+    def clip(text: str) -> str:
+        if len(text) <= limit:
+            return text
+        return text[: limit - 3].rsplit(" ", 1)[0].rstrip(",;:") + "..."
+
+    return AfterValidator(clip)
+
+
 class ExchangeSummary(BaseModel):
-    question: OneLine = Field(min_length=1, max_length=600)
-    answer: OneLine = Field(min_length=1, max_length=1_500)
+    question: Annotated[OneLine, Field(min_length=1), _clip(MAX_QUESTION_CHARS)]
+    answer: Annotated[OneLine, Field(min_length=1), _clip(MAX_ANSWER_CHARS)]
 
 
 @dataclass(frozen=True)

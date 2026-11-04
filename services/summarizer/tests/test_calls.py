@@ -335,3 +335,12 @@ def test_one_failed_exchange_is_listed_and_the_call_still_summarized() -> None:
 def test_a_call_where_most_exchanges_fail_is_left_for_the_next_run() -> None:
     with pytest.raises(LlmError, match="2 of 2 exchanges failed"):
         summarize_call(*chains(FailsFor("John Smith", "Mary Major")), CONTEXT, TRANSCRIPT)
+
+
+def test_a_long_question_or_answer_is_clipped_not_refused() -> None:
+    long = "Can you talk about deposits, " * 40
+    summary = ExchangeSummary.model_validate({"question": long, "answer": "Up 3%."})
+    assert len(summary.question) <= 600
+    assert summary.question.endswith("...")
+    assert long.startswith(summary.question.removesuffix("..."))  # cut at a word
+    assert summary.answer == "Up 3%."

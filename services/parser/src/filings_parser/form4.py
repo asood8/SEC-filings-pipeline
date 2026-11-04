@@ -27,8 +27,11 @@ from filings_common.parsed import (
     Signature,
     Transaction,
 )
+from filings_parser import amendments
 from filings_parser.documents import RawExhibit
 
+# Still 1 after amendments added `date_of_original_submission`: it is None for every Form 4, so
+# payloads stored before read the same.
 PARSER_VERSION = 1
 
 
@@ -144,6 +147,7 @@ def parse_form4(raw: bytes) -> Form4:
     if not owners:
         raise Form4ParseError("no reportingOwner")
     period = _required(_text(root, "periodOfReport"), "periodOfReport")
+    original = _text(root, "dateOfOriginalSubmission")
     signatures = [
         Signature(
             name=_required(_text(s, "signatureName"), "signatureName"),
@@ -154,6 +158,7 @@ def parse_form4(raw: bytes) -> Form4:
     return Form4(
         document_type=_required(_text(root, "documentType"), "documentType"),
         period_of_report=date.fromisoformat(period[:10]),
+        date_of_original_submission=date.fromisoformat(original[:10]) if original else None,
         issuer=Issuer(
             cik=int(_required(_text(root, "issuer/issuerCik"), "issuerCik")),
             name=_required(_text(root, "issuer/issuerName"), "issuerName"),
@@ -210,15 +215,19 @@ def transaction_rows(accession_no: str, form: Form4) -> list[dict[str, Any]]:
             "acquired_disposed": t.acquired_disposed,
             "shares_owned_after": t.shares_owned_after,
             "direct_or_indirect": t.direct_or_indirect,
+            "nature_of_ownership": t.nature_of_ownership,
         }
         for line, t in enumerate(form.transactions, start=1)
     ]
 
 
 def save_key_fields(session: Session, accession_no: str, payload: dict[str, Any]) -> None:
-    """Write the queryable parts of a Form 4 to Postgres: upsert its `form4_filings` row and
-    rewrite its `form4_transactions` lines. Running it again leaves exactly the same rows."""
+    """Write the queryable parts of a Form 4 or 4/A to Postgres: upsert its `form4_filings` row,
+    rewrite its `form4_transactions` lines, then link amendments and mark the lines they
+    restate (filings_parser.amendments). Running it again leaves exactly the same rows."""
     form = Form4.model_validate(payload)
+    # First, so an original and its amendment saved at once take turns (amendments module).
+    amendments.lock_company(session, "4", form.issuer.cik)
     values = {
         "period_of_report": form.period_of_report,
         "issuer_cik": form.issuer.cik,
@@ -247,3 +256,5 @@ def save_key_fields(session: Session, accession_no: str, payload: dict[str, Any]
     )
     if rows := transaction_rows(accession_no, form):
         session.execute(sa.insert(Form4Transaction), rows)
+    # Rewritten lines lost their marks, and the filing may be (or have) an amendment.
+    amendments.form4_saved(session, accession_no, form.date_of_original_submission)

@@ -14,5 +14,10 @@ byte-exact (see `.gitattributes`) and named by accession number. Each came from
   (one filed after its event), and two filing-agent layouts with a table of contents.
   `services/parser/tests/test_form8k.py` lists SEC's item numbers for each.
 - `form8k/exhibits/<accession>/`: EX-99 exhibits (press releases) of some `form8k/` filings.
+- `form4/amendments/`: Form 4/As filed by or about watchlist companies in the year to 2026-11
+  (corrected figures, restated and added lines, a power of attorney only, one amending a 2023
+  filing), with the Form 4s they amend and other Form 4s filed the same day.
+- `form8k/amendments/`: 8-K/As, six naming the 8-K they amend by its filing date and one that
+  doesn't. `services/parser/tests/test_amendments.py` says what each fixture covers.
 - `index_headers/`: an EDGAR `-index-headers.html` page, which lists each document of a filing
   (type, file name, description); discovery uses it to find EX-99 exhibits.

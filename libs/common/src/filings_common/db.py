@@ -99,16 +99,32 @@ class Filing(Base):
         sa.Index("ix_filings_cik_filed_at", "cik", "filed_at"),
         # The feed's order (GET /filings and its cursors): without it, each page sorts every filing.
         sa.Index("ix_filings_filed_at_accession_no", "filed_at", "accession_no"),
+        # A filing's amendments (filings_parser.amendments).
+        sa.Index("ix_filings_amends_accession_no", "amends_accession_no"),
     )
 
     # The natural key everywhere in the pipeline, e.g. 0000320193-24-000123.
     accession_no: Mapped[str] = mapped_column(primary_key=True)
     cik: Mapped[int] = mapped_column(sa.BigInteger, sa.ForeignKey("companies.cik"))
+    # EDGAR form code: 4, 4/A (an amended Form 4), 8-K, 8-K/A.
     form_type: Mapped[str]
     filed_at: Mapped[date]  # EDGAR filingDate
     accepted_at: Mapped[datetime | None]  # EDGAR acceptanceDateTime
+    # EDGAR reportDate: a Form 4's period of report, an 8-K's date of the earliest event it
+    # reports. NULL when EDGAR gives none, and on rows discovered before it was stored until
+    # discovery sees them again.
+    report_date: Mapped[date | None]
     primary_doc_url: Mapped[str]
     raw_object_key: Mapped[str]
+    # Amendments only (4/A, 8-K/A), written by the parser (filings_parser.amendments): the
+    # filing date of the filing this amends, as the amendment states it, and that filing once
+    # found. The link always points at the original Form 4 or 8-K, never at another amendment.
+    # NULL when the amendment gives no date, or the original isn't collected (it may predate
+    # the watchlist) or can't be told apart from another filing.
+    amends_filed_at: Mapped[date | None]
+    amends_accession_no: Mapped[str | None] = mapped_column(
+        sa.ForeignKey("filings.accession_no", ondelete="SET NULL")
+    )
     status: Mapped[FilingStatus] = mapped_column(
         sa.Enum(
             FilingStatus,
@@ -196,6 +212,10 @@ class Form4Transaction(Base):
     `line` numbers the payload's transactions from 1: the non-derivative table first, then the
     derivative table, each in document order. The parser rewrites a filing's lines together with
     its `form4_filings` row, so a replay leaves exactly the same rows.
+
+    A Form 4/A's lines are saved like any Form 4's. Each one that restates a line of the
+    amended filing marks that line `superseded_by` the amendment (filings_parser.amendments),
+    and totals count only lines not superseded.
     """
 
     __tablename__ = "form4_transactions"
@@ -208,7 +228,9 @@ class Form4Transaction(Base):
         sa.Index(
             "ix_form4_transactions_trades",
             "accession_no",
-            postgresql_where=sa.text("code IN ('P', 'S') AND is_derivative IS false"),
+            postgresql_where=sa.text(
+                "code IN ('P', 'S') AND is_derivative IS false AND superseded_by IS NULL"
+            ),
         ),
     )
 
@@ -229,6 +251,13 @@ class Form4Transaction(Base):
     acquired_disposed: Mapped[str | None]  # A or D
     shares_owned_after: Mapped[float | None] = mapped_column(sa.Double)
     direct_or_indirect: Mapped[str | None]  # D or I
+    # How an indirect holding is held, as filed ("By Spouse", "By Trust"). NULL for direct
+    # holdings, and on rows saved before it was stored until `filings-rebuild-key-fields`.
+    nature_of_ownership: Mapped[str | None]
+    # The Form 4/A whose line restates this one; NULL while this line is current.
+    superseded_by: Mapped[str | None] = mapped_column(
+        sa.ForeignKey("form4_filings.accession_no", ondelete="SET NULL")
+    )
 
 
 class Form8KFiling(Base):

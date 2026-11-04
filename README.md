@@ -41,6 +41,11 @@ On a live run against EDGAR, for a watchlist of 35 large US companies:
   months ahead; leaving them out keeps the 8 discretionary sales ($591 million). Each trade shows
   how much it changed the insider's direct holdings: Tim Cook's $63.8 million sale was 5.5% of
   his, two other Apple executives' were 25% and 30% of theirs.
+- **Amended filings** (Form 4/A, 8-K/A) are collected and linked to the filing they correct, and a
+  corrected trade counts once, as corrected, line by line: an amendment can restate everything,
+  only the lines it fixes, or a trade the original left out (ADR-0021). Checked on the 20
+  amendments the watchlist filed in the year to November 2026: every Form 4/A whose original
+  SEC still lists gets the corrected figures, and 6 of the 7 8-K/As name their 8-K's date.
 - **Search** finds filings by keyword (Postgres full-text search) and by meaning (pgvector
   embeddings from a local model), combined into one ranking: "trading plan cancelled" finds
   Oracle's 8-K about Larry Ellison's plan, and "debt offering" finds Amazon's note offering.

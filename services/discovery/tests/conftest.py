@@ -14,10 +14,11 @@ SubmissionsFactory = Callable[..., dict[str, Any]]
 
 @pytest.fixture
 def make_submissions() -> SubmissionsFactory:
-    """Build a submissions API response from (accession, form, filing date, primary doc) rows."""
+    """Build a submissions API response from (accession, form, filing date, primary doc) rows,
+    optionally with a fifth value, the report date (empty by default, as EDGAR leaves some)."""
 
     def build(
-        *filings: tuple[str, str, str, str],
+        *filings: tuple[str, str, str, str] | tuple[str, str, str, str, str],
         cik: int = 320193,
         sic_description: str = "Electronic Computers",
     ) -> dict[str, Any]:
@@ -32,6 +33,7 @@ def make_submissions() -> SubmissionsFactory:
                     "filingDate": [f[2] for f in filings],
                     "acceptanceDateTime": [f"{f[2]}T16:05:12.000Z" for f in filings],
                     "primaryDocument": [f[3] for f in filings],
+                    "reportDate": [f[4] if len(f) > 4 else "" for f in filings],
                 },
                 "files": [],
             },

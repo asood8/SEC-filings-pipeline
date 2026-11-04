@@ -69,7 +69,7 @@ Pipeline: `discovery → filings.discovered → parser → filings.parsed → su
 - **Ticker ↔ CIK map:** `https://www.sec.gov/files/company_tickers_exchange.json`
 - **Filing folder index:** `https://www.sec.gov/Archives/edgar/data/{cik}/{accession-without-dashes}/index.json`
 - **API docs:** https://www.sec.gov/edgar/sec-api-documentation
-- **Scope to start:** a watchlist of ~25–50 large companies (config file), Form 4 and 8-K only. Poll on a configurable schedule (e.g., every 10–15 minutes on weekdays, hourly otherwise).
+- **Scope to start:** a watchlist of ~25–50 large companies (config file), Form 4 and 8-K only, with their amendments (4/A, 8-K/A; ADR-0021). Poll on a configurable schedule (e.g., every 10–15 minutes on weekdays, hourly otherwise).
 
 ## 6. Data model (starting sketch; refine in Phase 1)
 

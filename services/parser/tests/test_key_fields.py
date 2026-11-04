@@ -116,7 +116,12 @@ def test_every_transaction_line_is_saved_in_payload_order(sessions: sessionmaker
 
     with sessions() as session:
         saved = lines(session)
-    common = {"accession_no": EXERCISE_AND_SALE, "transaction_date": date(2026, 9, 8)}
+    common = {
+        "accession_no": EXERCISE_AND_SALE,
+        "transaction_date": date(2026, 9, 8),
+        "nature_of_ownership": None,
+        "superseded_by": None,
+    }
     assert saved == [
         common
         | {

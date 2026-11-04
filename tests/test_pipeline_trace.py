@@ -156,6 +156,7 @@ def fake_sec() -> EdgarClient:
                 "filingDate": ["2026-10-02"],
                 "acceptanceDateTime": ["2026-10-02T16:05:12.000Z"],
                 "primaryDocument": ["xslF345X05/form4.xml"],
+                "reportDate": ["2026-10-01"],
             },
             "files": [],
         },

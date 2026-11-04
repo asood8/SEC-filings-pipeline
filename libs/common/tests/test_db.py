@@ -49,6 +49,33 @@ def test_migrations_match_the_search_vector_expression(db_engine: Engine) -> Non
     assert migrated == modeled
 
 
+def test_migrations_match_the_partial_index_conditions(db_engine: Engine) -> None:
+    """Autogenerate doesn't compare a partial index's WHERE either: Postgres renders the model's
+    condition on a copy of the table, and the two renderings must agree."""
+    condition_of = sa.text(
+        "SELECT pg_get_expr(indpred, indrelid) FROM pg_index"
+        " WHERE indexrelid = CAST(:index AS regclass)"
+    )
+    partial = [
+        (table, index)
+        for table in Base.metadata.tables.values()
+        for index in table.indexes
+        if index.dialect_options["postgresql"]["where"] is not None
+    ]
+    assert partial, "no partial indexes found"
+    with db_engine.connect() as conn:
+        for table, index in partial:
+            where = index.dialect_options["postgresql"]["where"]
+            copy, copied_index = f"model_{table.name}", f"model_{index.name}"
+            columns = ", ".join(f'"{c.name}"' for c in index.columns)
+            conn.exec_driver_sql(f"CREATE TEMPORARY TABLE {copy} (LIKE {table.name})")
+            conn.exec_driver_sql(f"CREATE INDEX {copied_index} ON {copy} ({columns}) WHERE {where}")
+            migrated = conn.scalar(condition_of, {"index": index.name})
+            modeled = conn.scalar(condition_of, {"index": copied_index})
+            assert migrated == modeled, index.name
+        conn.rollback()
+
+
 def test_filing_round_trip_with_default_status(clean_db: Engine) -> None:
     sessions = session_factory(clean_db)
     with sessions.begin() as session:

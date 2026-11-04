@@ -32,7 +32,13 @@ function quoted(query: string) {
 }
 
 function formsLabel(forms: string[]) {
-  return forms.length === 0 ? 'all forms' : forms.map(formLabel).join(' and ')
+  return forms.length === 0
+    ? 'all forms'
+    : forms
+        .map((form) =>
+          form === 'earnings-call' ? 'earnings call Q&A' : formLabel(form),
+        )
+        .join(' and ')
 }
 
 type Props = {
@@ -158,7 +164,7 @@ function Destination({ subscription, onRemove, removing }: DestinationProps) {
   function save(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
     const data = new FormData(event.currentTarget)
-    const forms = data.getAll('form') as ('4' | '8-K')[]
+    const forms = data.getAll('form') as ('4' | '8-K' | 'earnings-call')[]
     update.mutate(
       {
         id: subscription.id,
@@ -232,6 +238,15 @@ function Destination({ subscription, onRemove, removing }: DestinationProps) {
               defaultChecked={subscription.form_types.includes('8-K')}
             />{' '}
             8-K
+          </label>
+          <label className={styles.inline}>
+            <input
+              type="checkbox"
+              name="form"
+              value="earnings-call"
+              defaultChecked={subscription.form_types.includes('earnings-call')}
+            />{' '}
+            Earnings call Q&amp;A
           </label>
           <span className="muted">None checked means all forms.</span>
           <Form4FilterFields

@@ -346,6 +346,38 @@ describe('AlertsPage', () => {
     )
   })
 
+  it('turns earnings call Q&A on for an alert limited to some forms', async () => {
+    let patched: unknown
+    subscriptions = [{ ...APPLE_ALERT, form_types: ['8-K'] }]
+    mockApi({
+      '/me': () => USER,
+      'GET /subscriptions': () => subscriptions,
+      'PATCH /subscriptions/7': async (_url, request) => {
+        patched = await request.json()
+        subscriptions = [
+          { ...subscriptions[0], ...(patched as Partial<Subscription>) },
+        ]
+        return subscriptions[0]
+      },
+      '/companies': () => WATCHLIST,
+    })
+    renderRoute('/alerts')
+    await userEvent.click(
+      await screen.findByRole('button', {
+        name: 'Edit the forms and filters for the AAPL Discord alert',
+      }),
+    )
+    const form = screen.getByRole('form', {
+      name: 'Forms for the AAPL Discord alert',
+    })
+    await userEvent.click(within(form).getByLabelText('Earnings call Q&A'))
+    await userEvent.click(within(form).getByRole('button', { name: 'Save' }))
+    expect(
+      await screen.findByText('(8-K and earnings call Q&A)'),
+    ).toBeInTheDocument()
+    expect(patched).toMatchObject({ form_types: ['8-K', 'earnings-call'] })
+  })
+
   it("shows failed deliveries and edits an alert's forms", async () => {
     let patched: unknown
     subscriptions = [

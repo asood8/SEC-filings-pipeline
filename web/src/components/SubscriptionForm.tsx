@@ -211,6 +211,14 @@ export function SubscriptionForm({
           <input type="checkbox" name="form" value="8-K" /> Current reports
           (8-K)
         </label>
+        <label className={styles.inline}>
+          <input type="checkbox" name="form" value="earnings-call" /> Earnings
+          call Q&amp;A
+        </label>
+        <span className="muted">
+          Earnings call Q&amp;A: a summary of what analysts asked, after the
+          call, for the 7 companies that publish their transcripts.
+        </span>
       </fieldset>
 
       <fieldset>
@@ -298,7 +306,7 @@ export function SubscriptionForm({
   )
 }
 
-type SubscriptionBatchForms = ('4' | '8-K')[]
+type SubscriptionBatchForms = ('4' | '8-K' | 'earnings-call')[]
 
 type WebhookProps = {
   channel: Webhook

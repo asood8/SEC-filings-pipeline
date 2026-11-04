@@ -1189,9 +1189,9 @@ export interface components {
             query?: string | null;
             /**
              * Form Types
-             * @description Alert only about these forms; empty means every form.
+             * @description Alert only about these forms (earnings-call: a call's Q&A summary); empty means every form, call Q&A included.
              */
-            form_types?: ("4" | "8-K")[];
+            form_types?: ("4" | "8-K" | "earnings-call")[];
             /**
              * Form4 Trades
              * @description Form 4s only: alert about every one (all), only those reporting open-market buys or sells (open_market, SEC codes P and S), or only purchases (purchases). Other forms ignore it.
@@ -1237,9 +1237,9 @@ export interface components {
             query?: string | null;
             /**
              * Form Types
-             * @description Alert only about these forms; empty means every form.
+             * @description Alert only about these forms (earnings-call: a call's Q&A summary); empty means every form, call Q&A included.
              */
-            form_types?: ("4" | "8-K")[];
+            form_types?: ("4" | "8-K" | "earnings-call")[];
             /**
              * Form4 Trades
              * @description Form 4s only: alert about every one (all), only those reporting open-market buys or sells (open_market, SEC codes P and S), or only purchases (purchases). Other forms ignore it.
@@ -1317,9 +1317,9 @@ export interface components {
         SubscriptionUpdate: {
             /**
              * Form Types
-             * @description Alert only about these forms; empty means every form.
+             * @description Alert only about these forms (earnings-call: a call's Q&A summary); empty means every form, call Q&A included.
              */
-            form_types?: ("4" | "8-K")[] | null;
+            form_types?: ("4" | "8-K" | "earnings-call")[] | null;
             /**
              * Form4 Trades
              * @description Form 4s only: alert about every one (all), only those reporting open-market buys or sells (open_market, SEC codes P and S), or only purchases (purchases). Other forms ignore it.
@@ -2092,8 +2092,8 @@ export interface operations {
                 tickers?: string[];
                 /** @description Keyword alert: only filings whose summary matches this search, with the search's syntax ("buyback", "resign OR retire", '"credit facility"', "-routine"). Without a ticker, any watchlist company's matching filings. */
                 query?: string | null;
-                /** @description Alert only about these forms; empty means every form. */
-                form_types?: ("4" | "8-K")[];
+                /** @description Alert only about these forms (earnings-call: a call's Q&A summary); empty means every form, call Q&A included. */
+                form_types?: ("4" | "8-K" | "earnings-call")[];
                 /** @description Form 4s only: alert about every one (all), only those reporting open-market buys or sells (open_market, SEC codes P and S), or only purchases (purchases). Other forms ignore it. */
                 form4_trades?: "all" | "open_market" | "purchases";
                 /** @description Form 4s only: alert only when those open-market trades total at least this many US dollars (shares x price). A trade priced only in a footnote counts as meeting it. Null for no minimum. */

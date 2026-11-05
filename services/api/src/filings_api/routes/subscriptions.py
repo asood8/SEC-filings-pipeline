@@ -26,6 +26,7 @@ from filings_api.queries import SessionDep, company_by_ticker, filing_select, to
 from filings_api.schemas import (
     AlertPreview,
     AlertPreviewQuery,
+    CallPreviewOut,
     CompanyRef,
     DeliveryOut,
     Destination,
@@ -35,9 +36,17 @@ from filings_api.schemas import (
     SubscriptionOut,
     SubscriptionUpdate,
 )
-from filings_common.alert_filters import OPEN_MARKET_CODES, TradeLine, wants_8k, wants_form4
+from filings_common.alert_filters import (
+    CALL_QA,
+    OPEN_MARKET_CODES,
+    TradeLine,
+    wants_8k,
+    wants_form4,
+)
 from filings_common.amendments import changes_nothing, with_amendments
 from filings_common.db import (
+    CallSummary,
+    CallTranscript,
     Channel,
     Company,
     Filing,
@@ -51,6 +60,7 @@ from filings_common.db import (
     Subscription,
     User,
 )
+from filings_common.names import company_name
 from filings_common.parsed import EASTERN
 from filings_common.targets import masked_target, target_is_valid
 
@@ -436,12 +446,12 @@ def _trade_lines(session: Session, accession_nos: list[str]) -> dict[str, list[T
 
 @router.get(
     "/subscriptions/preview",
-    summary="Which recent filings an alert would have sent",
+    summary="Which recent filings and earnings calls an alert would have sent",
     description=(
         "Takes an alert's settings, as `POST /subscriptions/batch` does but without destinations, "
         "and lists the summarized filings of the last `days` it would have alerted about, newest "
-        "first, matched as the notifier matches them. Saves nothing; needs sign-in, like every "
-        "alert route."
+        "first, matched as the notifier matches them, and likewise the earnings calls whose Q&A "
+        "was summarized. Saves nothing; needs sign-in, like every alert route."
     ),
 )
 def preview_alert(
@@ -489,12 +499,59 @@ def preview_alert(
         return row.items is None or wants_8k(params.form8k_items, row.items)
 
     matches = [row for row in rows if wanted(row)]
+    calls_matched, calls = _call_preview(session, params, list(companies), since)
     return AlertPreview(
         since=since,
         matched=len(matches),
         capped=capped,
         items=[to_filing_out(*row[:4]) for row in matches[:PREVIEW_ITEMS]],
+        calls_matched=calls_matched,
+        calls=calls,
     )
+
+
+def _call_preview(
+    session: Session, params: AlertPreviewQuery, ciks: list[int], since: date
+) -> tuple[int, list[CallPreviewOut]]:
+    """The summarized earnings calls since `since` that the alert would have sent, as the notifier
+    matches them (filings_notifier.handler.CallNotificationHandler): the alert follows the
+    company, isn't a keyword alert, and takes every form or earnings-call Q&A. Their count and
+    the newest few, each with its current summary's headline."""
+    if params.query is not None or not ciks:
+        return 0, []
+    if params.form_types and CALL_QA not in params.form_types:
+        return 0, []
+    current = (
+        sa.select(
+            CallSummary.transcript_id, CallSummary.takeaways["headline"].astext.label("headline")
+        )
+        .order_by(CallSummary.transcript_id, CallSummary.created_at.desc(), CallSummary.id.desc())
+        .ext(distinct_on(CallSummary.transcript_id))
+        .subquery()
+    )
+    rows = session.execute(
+        sa.select(
+            CallTranscript.id,
+            Company.ticker,
+            Company.name,
+            CallTranscript.call_date,
+            current.c.headline,
+        )
+        .join(current, current.c.transcript_id == CallTranscript.id)
+        .join(Company, Company.cik == CallTranscript.cik)
+        .where(CallTranscript.cik.in_(ciks), CallTranscript.call_date >= since)
+        .order_by(CallTranscript.call_date.desc(), CallTranscript.id.desc())
+    ).all()
+    return len(rows), [
+        CallPreviewOut(
+            id=id_,
+            ticker=ticker,
+            company_name=company_name(name),
+            call_date=day,
+            headline=headline,
+        )
+        for id_, ticker, name, day, headline in rows[:PREVIEW_ITEMS]
+    ]
 
 
 @router.patch(

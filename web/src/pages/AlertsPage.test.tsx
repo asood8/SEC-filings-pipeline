@@ -238,6 +238,8 @@ describe('AlertsPage', () => {
         items: [
           filing({ accession_no: 'a', form_type: '4', headline: 'Cook sold' }),
         ],
+        calls_matched: 0,
+        calls: [],
       }),
     })
     renderRoute('/alerts')
@@ -279,6 +281,51 @@ describe('AlertsPage', () => {
     expect(
       within(form).queryByRole('link', { name: 'AAPL Form 4: Cook sold' }),
     ).not.toBeInTheDocument()
+  })
+
+  it('previews the earnings calls an alert would have sent', async () => {
+    mockApi({
+      '/me': () => USER,
+      'GET /subscriptions': () => [],
+      '/companies': () => WATCHLIST,
+      '/subscriptions/preview': () => ({
+        since: '2026-07-24',
+        matched: 0,
+        capped: false,
+        items: [],
+        calls_matched: 1,
+        calls: [
+          {
+            id: 12,
+            ticker: 'AAPL',
+            company_name: 'Apple Inc.',
+            call_date: '2026-07-30',
+            headline: 'Apple on iPhone demand',
+          },
+        ],
+      }),
+    })
+    renderRoute('/alerts')
+    const form = (
+      await screen.findByRole('heading', { name: 'Add alerts' })
+    ).closest('form')!
+    await userEvent.click(
+      await within(form).findByRole('checkbox', { name: /AAPL/ }),
+    )
+    await userEvent.click(within(form).getByLabelText(/Earnings\s+call Q&A/))
+    await userEvent.click(
+      within(form).getByRole('button', { name: 'Preview the last 90 days' }),
+    )
+    expect(
+      await within(form).findByText(
+        "1 earnings call's Q&A in the last 90 days would have sent this alert:",
+      ),
+    ).toBeInTheDocument()
+    expect(
+      within(form).getByRole('link', {
+        name: 'AAPL earnings call Q&A: Apple on iPhone demand',
+      }),
+    ).toHaveAttribute('href', '/calls/qa/12')
   })
 
   it('shows API errors', async () => {

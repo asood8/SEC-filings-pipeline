@@ -237,7 +237,8 @@ export function SubscriptionForm({
           Preview the last {PREVIEW_DAYS} days
         </button>{' '}
         <span className="muted">
-          Which recent filings these settings would have sent.
+          Which recent filings and earnings calls these settings would have
+          sent.
         </span>
       </div>
       {previewed && preview.isError && <ErrorMessage error={preview.error} />}
@@ -263,6 +264,27 @@ export function SubscriptionForm({
             </li>
           ))}
         </ul>
+      )}
+      {previewed && preview.data && preview.data.calls.length > 0 && (
+        <>
+          <p>
+            {callsSentence(
+              preview.data.calls_matched,
+              preview.data.calls.length,
+              preview.data.matched > 0,
+            )}
+          </p>
+          <ul className={styles.preview}>
+            {preview.data.calls.map((call) => (
+              <li key={call.id}>
+                <Link to={`/calls/qa/${call.id}`}>
+                  {call.ticker} earnings call Q&amp;A: {call.headline}
+                </Link>{' '}
+                <span className="muted">{formatDate(call.call_date)}</span>
+              </li>
+            ))}
+          </ul>
+        </>
       )}
 
       <fieldset>
@@ -307,6 +329,20 @@ export function SubscriptionForm({
 }
 
 type SubscriptionBatchForms = ('4' | '8-K' | 'earnings-call')[]
+
+/** "1 earnings call's Q&A ... would have sent this alert:" ("2 earnings calls'"; "it too" after
+ * matching filings), for the preview. */
+function callsSentence(
+  matched: number,
+  shown: number,
+  andFilings: boolean,
+): string {
+  const calls =
+    matched === 1 ? "1 earnings call's" : `${matched} earnings calls'`
+  const newest = matched > shown ? `; the newest ${shown}:` : ':'
+  const sent = andFilings ? 'it too' : 'this alert'
+  return `${calls} Q&A in the last ${PREVIEW_DAYS} days would have sent ${sent}${newest}`
+}
 
 type WebhookProps = {
   channel: Webhook

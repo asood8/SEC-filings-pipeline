@@ -145,6 +145,9 @@ starts "Earnings call Q&A:", it gives the call's day instead of a form and a fil
 links the transcript on the company's site; a link to the website's call page needs the public
 domain.
 
+The alert preview (`GET /subscriptions/preview`) lists the summarized calls of the period too
+(`calls_matched`, `calls`), matched the same way.
+
 ## Alternatives considered
 
 - **Dedupe in Redis.** It's lost on eviction or restart, and can't show what was delivered. The

@@ -373,8 +373,8 @@ export interface paths {
             cookie?: never;
         };
         /**
-         * Which recent filings an alert would have sent
-         * @description Takes an alert's settings, as `POST /subscriptions/batch` does but without destinations, and lists the summarized filings of the last `days` it would have alerted about, newest first, matched as the notifier matches them. Saves nothing; needs sign-in, like every alert route.
+         * Which recent filings and earnings calls an alert would have sent
+         * @description Takes an alert's settings, as `POST /subscriptions/batch` does but without destinations, and lists the summarized filings of the last `days` it would have alerted about, newest first, matched as the notifier matches them, and likewise the earnings calls whose Q&A was summarized. Saves nothing; needs sign-in, like every alert route.
          */
         get: operations["preview_alert_subscriptions_preview_get"];
         put?: never;
@@ -418,7 +418,7 @@ export interface components {
             /**
              * Since
              * Format: date
-             * @description The first filing date looked at.
+             * @description The first filing (and call) date looked at.
              */
             since: string;
             /**
@@ -436,6 +436,16 @@ export interface components {
              * @description The newest of them, at most 10.
              */
             items: components["schemas"]["FilingOut"][];
+            /**
+             * Calls Matched
+             * @description How many earnings calls since then would have sent it, once their Q&A was summarized (ADR-0022): for an alert on companies, not a keyword alert, that takes every form or earnings-call.
+             */
+            calls_matched: number;
+            /**
+             * Calls
+             * @description The newest of those calls, at most 10.
+             */
+            calls: components["schemas"]["CallPreviewOut"][];
         };
         /** CallExchangeOut */
         CallExchangeOut: {
@@ -464,6 +474,28 @@ export interface components {
              * @description Numbers in this summary that the exchange never states, worth verifying.
              */
             ungrounded_numbers?: string[];
+        };
+        /** CallPreviewOut */
+        CallPreviewOut: {
+            /**
+             * Id
+             * @description The call's id, for GET /call-summaries/{id}.
+             */
+            id: number;
+            /** Ticker */
+            ticker: string;
+            /** Company Name */
+            company_name: string;
+            /**
+             * Call Date
+             * Format: date
+             */
+            call_date: string;
+            /**
+             * Headline
+             * @description Its Q&A summary's headline.
+             */
+            headline: string;
         };
         /** CallSummaries */
         CallSummaries: {

@@ -4,7 +4,7 @@ one goes through Google sign-in and the real session cookie."""
 import logging
 from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
-from datetime import date
+from datetime import UTC, date, datetime
 from typing import Any, cast, get_args
 
 import httpx2
@@ -21,6 +21,7 @@ from filings_api.routes.subscriptions import MAX_SUBSCRIPTIONS, _lock_user
 from filings_api.schemas import AlertFormType
 from filings_common.alert_filters import CALL_QA
 from filings_common.db import (
+    CallSummary,
     CallTranscript,
     Company,
     Filing,
@@ -877,3 +878,61 @@ def test_an_alert_can_ask_for_earnings_call_qa(sign_in: SignIn, seeded: Engine) 
     assert created.json()["form_types"] == ["8-K", "earnings-call"]  # sorted, once each
     assert CALL_QA in get_args(AlertFormType)  # the notifier's name for it
     assert subscribe(alice, form_types=["10-K"]).status_code == 422
+
+
+@pytest.fixture
+def summarized_calls(seeded: Engine) -> dict[str, int]:
+    """Apple's July call (summarized twice) and May call (before the 90 days)."""
+    ids = {}
+    with session_factory(seeded).begin() as session:
+        for key, day in [("july", date(2026, 7, 30)), ("may", date(2026, 5, 1))]:
+            transcript = CallTranscript(
+                cik=320193,
+                call_date=day,
+                source_url=f"https://ir.example/{key}.pdf",
+                text_sha256="x",
+                words=9000,
+                exchanges=8,
+            )
+            session.add(transcript)
+            session.flush()
+            ids[key] = transcript.id
+            for version, headline in [(1, "Old headline"), (2, f"Apple's {key} call")]:
+                session.add(
+                    CallSummary(
+                        transcript_id=transcript.id,
+                        provider="ollama",
+                        model="m",
+                        prompt_version=version,
+                        takeaways={"headline": headline, "summary": "s", "key_points": []},
+                        exchanges=[],
+                        ungrounded_numbers=[],
+                        ungrounded_names=[],
+                        created_at=datetime(2026, 8, version, tzinfo=UTC),
+                    )
+                )
+    return ids
+
+
+@pytest.mark.usefixtures("ready")
+def test_preview_lists_the_summarized_calls_an_alert_would_have_sent(
+    sign_in: SignIn, summarized_calls: dict[str, int]
+) -> None:
+    alice = sign_in("alice")
+    body = preview(alice, tickers="AAPL")  # every form: call Q&A included
+    assert body["calls_matched"] == 1  # not the May call, before the 90 days
+    assert body["calls"] == [
+        {
+            "id": summarized_calls["july"],
+            "ticker": "AAPL",
+            "company_name": "Apple Inc.",
+            "call_date": "2026-07-30",
+            "headline": "Apple's july call",  # the current summary's
+        }
+    ]
+    calls_only = preview(alice, tickers="AAPL", form_types="earnings-call")
+    assert (calls_only["matched"], calls_only["calls_matched"]) == (0, 1)
+    assert preview(alice, tickers="AAPL", form_types="8-K")["calls"] == []
+    # A keyword alert matches filings' search documents only, as in the notifier.
+    assert preview(alice, tickers="AAPL", query="buyback")["calls"] == []
+    assert preview(alice, tickers="AAPL", days=365)["calls_matched"] == 2

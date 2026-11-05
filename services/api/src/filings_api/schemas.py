@@ -633,13 +633,29 @@ class AlertPreviewQuery(BaseModel):
         return self
 
 
+class CallPreviewOut(BaseModel):
+    id: int = Field(description="The call's id, for GET /call-summaries/{id}.")
+    ticker: str
+    company_name: str
+    call_date: date
+    headline: str = Field(description="Its Q&A summary's headline.")
+
+
 class AlertPreview(BaseModel):
-    since: date = Field(description="The first filing date looked at.")
+    since: date = Field(description="The first filing (and call) date looked at.")
     matched: int = Field(description="How many filings since then would have sent the alert.")
     capped: bool = Field(
         description="Only the newest candidates were checked, so `matched` is a lower bound."
     )
     items: list[FilingOut] = Field(description="The newest of them, at most 10.")
+    calls_matched: int = Field(
+        description=(
+            "How many earnings calls since then would have sent it, once their Q&A was "
+            "summarized (ADR-0022): for an alert on companies, not a keyword alert, that takes "
+            "every form or earnings-call."
+        ),
+    )
+    calls: list[CallPreviewOut] = Field(description="The newest of those calls, at most 10.")
 
 
 class SubscriptionBatchOut(BaseModel):

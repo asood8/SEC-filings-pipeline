@@ -20,6 +20,7 @@ FIXTURES = Path(__file__).parents[3] / "tests" / "fixtures" / "form8k"
 
 SEC_ITEMS = {
     "0000002488-26-000182": ["3.02"],
+    "0000007084-26-000054": ["2.02", "9.01"],  # each title flush against its number
     "0000063908-26-000076": ["7.01", "9.01"],
     "0000320187-26-000143": ["5.02", "5.07", "9.01"],
     "0000320187-26-000184": ["2.02", "2.05", "9.01"],
@@ -59,6 +60,12 @@ def test_earnings_release_item() -> None:
     assert results.text.startswith("On September 10, 2026, Adobe Inc.")
     assert "attached hereto as Exhibit 99.1" in results.text
     assert "Adobe Reports Record Q3 Results" in exhibits.text
+
+
+def test_a_title_flush_against_the_item_number() -> None:
+    [results, _] = fixture("0000007084-26-000054").items
+    assert results.title == "Results of Operations and Financial Condition"
+    assert results.text.startswith("On November 3, 2026, Archer-Daniels-Midland Company (ADM)")
 
 
 def test_references_inside_sentences_do_not_split_items() -> None:

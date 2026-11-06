@@ -37,7 +37,7 @@ from pydantic import ValidationError
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.orm import Session, sessionmaker
 
-from filings_common import metrics, telemetry
+from filings_common import metrics, telemetry, unsubscribe
 from filings_common.alert_filters import (
     CALL_QA,
     OPEN_MARKET_CODES,
@@ -88,11 +88,17 @@ class NotificationHandler:
         senders: Mapping[Channel, Sender],
         *,
         site_url: str | None = None,
+        api_url: str | None = None,
+        unsubscribe_secret: str | None = None,
     ) -> None:
         self._sessions = sessions
         self._senders = senders
         # The website's address (ALERTS_SITE_URL): alerts link its page for the filing or call.
         self._site_url = site_url.rstrip("/") if site_url else None
+        # Email alerts' one-click unsubscribe (ADR-0012): the API's address (ALERTS_API_URL) and
+        # the secret that signs the links (UNSUBSCRIBE_SECRET). Without both, no links.
+        self._api_url = api_url.rstrip("/") if api_url else None
+        self._unsubscribe_secret = unsubscribe_secret
         metrics.start_at_zero(
             metrics.NOTIFICATIONS,
             (
@@ -164,6 +170,18 @@ class NotificationHandler:
 
     def _page(self, path: str) -> str | None:
         return f"{self._site_url}/{path}" if self._site_url else None
+
+    def _unsubscribe_links(self, subscription: Subscription) -> tuple[str | None, str | None]:
+        """An email alert's unsubscribe URL and confirmation page, signed for its subscription.
+        None for webhook alerts: anyone who can read the channel could follow the link."""
+        if (
+            subscription.channel is not Channel.EMAIL
+            or self._api_url is None
+            or self._unsubscribe_secret is None
+        ):
+            return None, None
+        query = f"unsubscribe?token={unsubscribe.token(subscription.id, self._unsubscribe_secret)}"
+        return f"{self._api_url}/{query}", self._page(query)
 
     def _matching_subscriptions(
         self, session: Session, alert: Alert, cik: int, discovered_at: datetime
@@ -287,8 +305,10 @@ class NotificationHandler:
                     form4_min_value=subscription.form4_min_value,
                     form8k_items=subscription.form8k_items,
                 )
+                url, page = self._unsubscribe_links(subscription)
                 self._senders[subscription.channel].send(
-                    subscription.target, replace(alert, reason=reason)
+                    subscription.target,
+                    replace(alert, reason=reason, unsubscribe_url=url, unsubscribe_page=page),
                 )
             except PermanentDeliveryError as exc:
                 notification.status = NotificationStatus.FAILED

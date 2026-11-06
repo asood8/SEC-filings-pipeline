@@ -7,6 +7,7 @@ from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanE
 from opentelemetry.trace import StatusCode
 from sqlalchemy.engine import Engine
 
+from filings_common import unsubscribe
 from filings_common.consumer import PermanentError, Received
 from filings_common.db import (
     Channel,
@@ -757,3 +758,38 @@ def test_with_a_website_a_filing_alert_links_the_filings_page(
     assert alert.page_url == f"https://app.example.com/filings/{FORM4}"
     assert alert.url == "https://www.sec.gov/x.xml"  # the original, linked beside it
     assert NotificationHandler(session_factory(clean_db), fakes)._page("x") is None
+
+
+def test_only_email_alerts_get_signed_unsubscribe_links(
+    clean_db: Engine, world: dict[str, int]
+) -> None:
+    secret = "u" * 64
+    fakes = senders()
+    NotificationHandler(
+        session_factory(clean_db),
+        fakes,
+        site_url="https://app.example.com",
+        api_url="https://api.example.com/",
+        unsubscribe_secret=secret,
+    )(ready_event(world["summary_id"]))
+    email = fakes[Channel.EMAIL].alerts[0]
+    assert email.unsubscribe_url is not None
+    assert email.unsubscribe_url.startswith("https://api.example.com/unsubscribe?token=")
+    assert email.unsubscribe_page == email.unsubscribe_url.replace(
+        "https://api.example.com", "https://app.example.com"
+    )
+    signed = email.unsubscribe_url.split("token=", 1)[1]
+    assert unsubscribe.subscription_id(signed, secret) == world["berkshire_email"]
+    # A webhook posts to a channel others can read: no link that would stop the owner's alert.
+    assert fakes[Channel.DISCORD].alerts[0].unsubscribe_url is None
+    assert fakes[Channel.SLACK].alerts[0].unsubscribe_url is None
+
+
+def test_without_a_secret_emails_have_no_unsubscribe_link(
+    clean_db: Engine, world: dict[str, int]
+) -> None:
+    fakes = senders()
+    NotificationHandler(session_factory(clean_db), fakes, api_url="https://api.example.com")(
+        ready_event(world["summary_id"])
+    )
+    assert fakes[Channel.EMAIL].alerts[0].unsubscribe_url is None

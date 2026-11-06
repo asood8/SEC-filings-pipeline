@@ -409,6 +409,27 @@ export interface paths {
         patch: operations["update_subscription_subscriptions__subscription_id__patch"];
         trace?: never;
     };
+    "/unsubscribe": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Which email alert an unsubscribe link stops */
+        get: operations["describe_unsubscribe_get"];
+        put?: never;
+        /**
+         * Stop an email alert, one click
+         * @description RFC 8058 one-click unsubscribe: mail apps POST `List-Unsubscribe=One-Click` here, and the website's confirmation page POSTs too. Deletes the email alert the token names; repeating it is harmless.
+         */
+        post: operations["unsubscribe_unsubscribe_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -1423,6 +1444,29 @@ export interface components {
              */
             unpriced_shares: number;
         };
+        /** UnsubscribeOut */
+        UnsubscribeOut: {
+            /** @description The company the alert follows, if any. */
+            company: components["schemas"]["CompanyRef"] | null;
+            /**
+             * Query
+             * @description A keyword alert's words, if any.
+             */
+            query: string | null;
+            /**
+             * Target
+             * @description The email address, partly masked.
+             */
+            target: string;
+        };
+        /** UnsubscribedOut */
+        UnsubscribedOut: {
+            /**
+             * Unsubscribed
+             * @description Always true: the alert is gone, or already was.
+             */
+            unsubscribed: boolean;
+        };
         /** UpcomingCall */
         UpcomingCall: {
             /**
@@ -2213,6 +2257,91 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["SubscriptionOut"];
                 };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    describe_unsubscribe_get: {
+        parameters: {
+            query: {
+                /** @description From the email's link. */
+                token: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UnsubscribeOut"];
+                };
+            };
+            /** @description Not a valid link. */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Already gone. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    unsubscribe_unsubscribe_post: {
+        parameters: {
+            query: {
+                /** @description From the email's link. */
+                token: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UnsubscribedOut"];
+                };
+            };
+            /** @description Not a valid link. */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             /** @description Validation Error */
             422: {

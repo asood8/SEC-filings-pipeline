@@ -129,3 +129,20 @@ export function useDeleteSubscription() {
       queryClient.invalidateQueries({ queryKey: ['subscriptions'] }),
   })
 }
+
+/** The email alert an unsubscribe link (from an alert email) would stop. */
+export const unsubscribeQuery = (token: string) =>
+  queryOptions({
+    queryKey: ['unsubscribe', token],
+    queryFn: () =>
+      unwrap(api.GET('/unsubscribe', { params: { query: { token } } })),
+    retry: false,
+  })
+
+/** Stops the email alert the link names; needs no sign-in (the link is signed). */
+export function useUnsubscribe(token: string) {
+  return useMutation({
+    mutationFn: () =>
+      unwrap(api.POST('/unsubscribe', { params: { query: { token } } })),
+  })
+}

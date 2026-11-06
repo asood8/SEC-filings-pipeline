@@ -185,6 +185,29 @@ class GoogleSignInSettings(BaseSettings):
         return None if isinstance(value, str) and not value.strip() else value
 
 
+class UnsubscribeSettings(BaseSettings):
+    """One-click unsubscribe links in email alerts (ADR-0012): the notifier signs each link with
+    this secret and the API checks it. Unset means emails carry no unsubscribe link and the API's
+    unsubscribe route answers 404. Changing it voids the links in emails already sent."""
+
+    model_config = _config("UNSUBSCRIBE_")
+
+    # At least 32 characters: `openssl rand -hex 32`.
+    secret: SecretStr | None = None
+
+    @field_validator("secret", mode="before")
+    @classmethod
+    def _blank_is_unset(cls, value: object) -> object:
+        return None if isinstance(value, str) and not value.strip() else value
+
+    @field_validator("secret")
+    @classmethod
+    def _long_enough(cls, value: SecretStr | None) -> SecretStr | None:
+        if value is not None and len(value.get_secret_value()) < 32:
+            raise ValueError("must be at least 32 characters (openssl rand -hex 32)")
+        return value
+
+
 class TelemetrySettings(BaseSettings):
     """OpenTelemetry traces and metrics, from the standard OTEL_* variables. Without an endpoint
     both are off.

@@ -30,7 +30,10 @@ PROBE_PATHS = frozenset({"/healthz", "/readyz"})
 UNLIMITED_PATHS = PROBE_PATHS
 UNCACHED_PATHS = PROBE_PATHS | {"/openapi.json", "/docs", "/redoc"}
 # Per-user responses: never cached here, and marked no-store so browsers and proxies don't either.
-PRIVATE_PATH_PREFIXES = ("/auth", "/me", "/subscriptions")
+PRIVATE_PATH_PREFIXES = ("/auth", "/me", "/subscriptions", "/unsubscribe")
+# Authorized by a signed token in the URL, never by the session cookie, so a form body from a
+# mail app's one-click unsubscribe (RFC 8058) is fine: there is nothing for another site to forge.
+TOKEN_PATHS = frozenset({"/unsubscribe"})
 CACHE_PREFIX = "api-cache:v1"
 STATE_CHANGING_METHODS = frozenset({"POST", "PUT", "PATCH", "DELETE"})
 MAX_BODY_BYTES = 64 * 1024  # the largest real body, a batch of alerts, is a few KB
@@ -190,7 +193,11 @@ class CsrfMiddleware(BaseHTTPMiddleware):
             origin = request.headers.get("origin")
             if origin is not None and not origin_allowed(request, origin):
                 return JSONResponse({"detail": "origin not allowed"}, status_code=403)
-            if _has_body(request.headers) and not _is_json(request.headers.get("content-type")):
+            if (
+                request.url.path not in TOKEN_PATHS
+                and _has_body(request.headers)
+                and not _is_json(request.headers.get("content-type"))
+            ):
                 return JSONResponse({"detail": "request body must be JSON"}, status_code=415)
         return await call_next(request)
 

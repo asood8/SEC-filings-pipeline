@@ -22,7 +22,7 @@ import httpx2
 from filings_common.db import Channel
 from filings_common.parsed import InvestorCall
 from filings_common.summaries import DISCLAIMER
-from filings_common.targets import target_is_valid
+from filings_common.targets import mask_email, target_is_valid
 
 logger = logging.getLogger(__name__)
 
@@ -58,6 +58,10 @@ class Alert:
     # The website's page for it, once the site has a public address (ALERTS_SITE_URL): the
     # alert's title links it, and `url` (the original) is linked beside it.
     page_url: str | None = None
+    # Email only (ADR-0012): the API's one-click unsubscribe URL (the List-Unsubscribe header)
+    # and the website's page that confirms it (a link in the body), both carrying a signed token.
+    unsubscribe_url: str | None = None
+    unsubscribe_page: str | None = None
 
     @property
     def link(self) -> str:
@@ -212,6 +216,10 @@ def _email_message(target: str, alert: Alert, sender: str) -> EmailMessage:
     message["To"] = target
     # One line: a line break would make the header invalid (FilingSummary already removes them).
     message["Subject"] = " ".join(f"[{alert.ticker}] {alert.headline}".split())
+    if alert.unsubscribe_url is not None:
+        # RFC 8058: mail apps show an Unsubscribe button that POSTs here, with no page to visit.
+        message["List-Unsubscribe"] = f"<{alert.unsubscribe_url}>"
+        message["List-Unsubscribe-Post"] = "List-Unsubscribe=One-Click"
     points = "\n".join(f"- {p}" for p in alert.key_points)
     call = f"{alert.investor_call.describe()}\n\n" if alert.investor_call else ""
     if alert.call_id is not None:
@@ -230,6 +238,7 @@ def _email_message(target: str, alert: Alert, sender: str) -> EmailMessage:
         f"{alert.headline}\n\n{alert.summary}\n\n{points}\n\n{call}{about}\n\n"
         + (f"{alert.reason}\n" if alert.reason else "")
         + f"{DISCLAIMER}\n"
+        + (f"\nStop these alerts: {alert.unsubscribe_page}\n" if alert.unsubscribe_page else "")
     )
     return message
 
@@ -270,13 +279,6 @@ class SmtpEmailSender:
             raise DeliveryError(f"SMTP {exc.smtp_code}") from exc
         except (smtplib.SMTPException, OSError) as exc:
             raise DeliveryError(f"SMTP failed: {exc!r}") from exc
-
-
-def mask_email(address: str) -> str:
-    """The address with all but the first character of its local part hidden: a***@example.com.
-    Enough to tell recipients apart in a log without writing anyone's address into it."""
-    local, _, domain = address.rpartition("@")
-    return f"{local[:1]}***@{domain}"
 
 
 class LogEmailSender:

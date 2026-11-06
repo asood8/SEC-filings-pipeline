@@ -255,7 +255,9 @@ leaves out 10b5-1 plan trades), and `GET /calls?days=60`
 subscribe to, `GET /calls.ics`; both take `ticker` for one company's), and
 `GET /call-summaries?ticker=MSFT` / `GET /call-summaries/{id}` (automated summaries of past
 earnings calls' Q&A, from the companies' own transcripts: takeaways, then each analyst's
-question and management's answer, with a link to the transcript, ADR-0022). `GET /feeds/filings.atom` (optionally `cik`, `form_type`) is
+question and management's answer, with a link to the transcript, ADR-0022), and
+`GET`/`POST /unsubscribe?token=...` (email alerts' signed one-click unsubscribe, no sign-in).
+`GET /feeds/filings.atom` (optionally `cik`, `form_type`) is
 the latest summarized filings as an Atom feed, for a feed reader. A Form 4's reporting
 owners come with the name as filed and a readable one ("COOK TIMOTHY D" as "Timothy D Cook"),
 and with who they are to the company: a short `relationship` ("Executive Chair, Director",

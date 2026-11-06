@@ -11,6 +11,7 @@ import pytest
 
 from filings_common.alert_filters import CALL_QA
 from filings_common.parsed import InvestorCall
+from filings_common.targets import mask_email
 from filings_notifier.channels import (
     Alert,
     DeliveryError,
@@ -19,7 +20,6 @@ from filings_notifier.channels import (
     PermanentDeliveryError,
     SlackSender,
     SmtpEmailSender,
-    mask_email,
 )
 
 DISCORD = "https://discord.com/api/webhooks/123456/abc-DEF_789"
@@ -333,3 +333,19 @@ def test_without_a_website_nothing_extra_is_linked() -> None:
     DiscordSender(transport=transport).send(DISCORD, ALERT)
     fields = json.loads(requests[0].content)["embeds"][0]["fields"]
     assert not any(field["name"] == "Original filing" for field in fields)
+
+
+def test_an_email_with_unsubscribe_links_offers_one_click(monkeypatch: pytest.MonkeyPatch) -> None:
+    url = "https://api.example.com/unsubscribe?token=7.abc"
+    page = "https://app.example.com/unsubscribe?token=7.abc"
+    monkeypatch.setattr(smtplib, "SMTP", FakeSmtp)
+    FakeSmtp.sent, FakeSmtp.refuse = [], False
+    sender = SmtpEmailSender(host="smtp", port=587, username="u", password="p", sender="a@x.com")
+    sender.send("ops@example.com", replace(ALERT, unsubscribe_url=url, unsubscribe_page=page))
+    sender.send("ops@example.com", ALERT)
+    linked, plain = FakeSmtp.sent
+    assert linked["List-Unsubscribe"] == f"<{url}>"
+    assert linked["List-Unsubscribe-Post"] == "List-Unsubscribe=One-Click"  # RFC 8058
+    assert linked.get_content().endswith(f"\nStop these alerts: {page}\n")
+    assert plain["List-Unsubscribe"] is None
+    assert "Stop these alerts" not in plain.get_content()

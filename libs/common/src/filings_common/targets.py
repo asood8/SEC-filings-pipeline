@@ -39,3 +39,11 @@ def masked_target(channel: Channel, target: str) -> str:
         return target
     base, _, token = target.rpartition("/")
     return f"{base}/…{token[-4:] if len(token) >= 16 else ''}"
+
+
+def mask_email(address: str) -> str:
+    """The address with all but the first character of its local part hidden: a***@example.com.
+    Enough to tell recipients apart (in a log, on a page reached by a forwardable link) without
+    showing anyone's address."""
+    local, _, domain = address.rpartition("@")
+    return f"{local[:1]}***@{domain}"

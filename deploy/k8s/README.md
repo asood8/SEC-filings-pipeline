@@ -78,6 +78,7 @@ and turns them back into ordinary Secrets.
 | `sec-edgar` | `SEC_CONTACT_EMAIL` (personal, so not in the public config) | discovery, load-companies |
 | `gemini` (optional) | `GEMINI_API_KEY` | summarizer, call-transcripts |
 | `smtp` (optional until `EMAIL_BACKEND=smtp`) | `EMAIL_SMTP_USERNAME`, `EMAIL_SMTP_PASSWORD` | notifier |
+| `unsubscribe` (optional) | `UNSUBSCRIBE_SECRET` (`openssl rand -hex 32`): signs email alerts' one-click unsubscribe links | notifier, api |
 | `cloudflared` | `TUNNEL_TOKEN` | cloudflared |
 | `grafana-cloud` | `GRAFANA_CLOUD_OTLP_ENDPOINT`, `GRAFANA_CLOUD_INSTANCE_ID`, `GRAFANA_CLOUD_API_TOKEN` | otel-collector |
 

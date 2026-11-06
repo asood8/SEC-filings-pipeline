@@ -37,6 +37,7 @@ from filings_api.routes import (
     insider_trades,
     search,
     subscriptions,
+    unsubscribe,
 )
 from filings_common.config import (
     ApiSettings,
@@ -44,6 +45,7 @@ from filings_common.config import (
     EmbeddingSettings,
     GoogleSignInSettings,
     RedisSettings,
+    UnsubscribeSettings,
 )
 from filings_common.db import create_engine, session_factory
 from filings_common.embeddings import Embedder, embedder_from_settings
@@ -101,6 +103,7 @@ def create_app(
     embedder: Embedder | None = None,
     settings: ApiSettings | None = None,
     google_verifier: GoogleIdTokenVerifier | None = None,
+    unsubscribe_secret: str | None = None,
 ) -> FastAPI:
     """Build the app. Given `sessions` (tests), it uses exactly the dependencies passed in;
     otherwise it connects to everything from the environment on startup, and sets up logging and
@@ -178,6 +181,11 @@ def create_app(
     app.state.session_lifetime = timedelta(days=settings.session_lifetime_days)
     app.state.cookie_secure = settings.cookie_secure
     app.state.allowed_origins = frozenset(settings.cors_origins)
+    # Signs the email alerts' unsubscribe links (routes/unsubscribe); tests pass their own.
+    if sessions is None:
+        configured = UnsubscribeSettings().secret
+        unsubscribe_secret = configured.get_secret_value() if configured is not None else None
+    app.state.unsubscribe_secret = unsubscribe_secret
     # Starlette runs the last-added middleware first, so requests pass through these bottom-up:
     # CORS, then the rate limit, the body size limit, the CSRF check, and the cache. An oversized
     # body still spends the client's rate limit.
@@ -225,6 +233,7 @@ def create_app(
     app.include_router(search.router)
     app.include_router(auth.router)
     app.include_router(subscriptions.router)
+    app.include_router(unsubscribe.router)
     if telemetry.enabled:
         instrument(app)
     return app

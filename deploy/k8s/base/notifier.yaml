@@ -42,6 +42,10 @@ spec:
             - secretRef:
                 name: smtp
                 optional: true
+            # Signs email alerts' unsubscribe links; without it, emails have none.
+            - secretRef:
+                name: unsubscribe
+                optional: true
           env:
             - name: DATABASE_URL
               value: postgresql+psycopg://$(POSTGRES_USER):$(POSTGRES_PASSWORD)@postgres:5432/$(POSTGRES_DB)

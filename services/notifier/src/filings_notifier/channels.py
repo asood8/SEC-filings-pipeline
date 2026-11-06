@@ -55,6 +55,18 @@ class Alert:
     # Why this subscription sent it, when the alert alone doesn't say (alert_filters.alert_reason).
     reason: str | None = None
     call_id: int | None = None  # the transcript, for an earnings call's Q&A
+    # The website's page for it, once the site has a public address (ALERTS_SITE_URL): the
+    # alert's title links it, and `url` (the original) is linked beside it.
+    page_url: str | None = None
+
+    @property
+    def link(self) -> str:
+        """Where the alert's title points: the website's page, else the original."""
+        return self.page_url or self.url
+
+    @property
+    def original_label(self) -> str:
+        return "Full transcript" if self.call_id is not None else "Original filing"
 
     @property
     def subject(self) -> str:
@@ -92,7 +104,7 @@ class DiscordSender:
             "embeds": [
                 {
                     "title": alert.headline[:256],
-                    "url": alert.url,
+                    "url": alert.link,
                     "description": alert.summary[:4000],
                     "fields": [
                         {
@@ -102,6 +114,7 @@ class DiscordSender:
                         },
                         *_discord_what(alert),
                         *_discord_call_field(alert.investor_call),
+                        *_discord_original_field(alert),
                     ],
                     "footer": {"text": _with_reason(DISCLAIMER, alert.reason)},
                 }
@@ -117,6 +130,13 @@ def _discord_what(alert: Alert) -> list[dict[str, Any]]:
         {"name": "Form", "value": alert.form_type, "inline": True},
         {"name": "Filed", "value": alert.filed_at.isoformat(), "inline": True},
     ]
+
+
+def _discord_original_field(alert: Alert) -> list[dict[str, Any]]:
+    """With the title on the website's page, the original (sec.gov, the transcript) linked too."""
+    if alert.page_url is None:
+        return []
+    return [{"name": alert.original_label, "value": alert.url, "inline": False}]
 
 
 def _what(alert: Alert) -> str:
@@ -152,15 +172,20 @@ class SlackSender:
             f"{alert.company_name} ({alert.ticker}) · {_what(alert)} · "
             f"{_with_reason(DISCLAIMER, alert.reason)}"
         )
+        original = (
+            [{"type": "mrkdwn", "text": f"<{alert.url}|{alert.original_label}>"}]
+            if alert.page_url is not None
+            else []
+        )
         payload = {
             # The notification's text, also read as markup: escaped like the blocks.
-            "text": f"[{alert.ticker}] {_slack_escape(alert.headline)} {alert.url}",
+            "text": f"[{alert.ticker}] {_slack_escape(alert.headline)} {alert.link}",
             "blocks": [
                 {
                     "type": "section",
                     "text": {
                         "type": "mrkdwn",
-                        "text": f"*<{alert.url}|{_slack_escape(alert.headline)}>*\n"
+                        "text": f"*<{alert.link}|{_slack_escape(alert.headline)}>*\n"
                         f"{_slack_escape(alert.summary)}"
                         + (
                             f"\n{_slack_escape(alert.investor_call.describe())}"
@@ -171,7 +196,10 @@ class SlackSender:
                 },
                 {
                     "type": "context",
-                    "elements": [{"type": "mrkdwn", "text": _slack_escape(context)}],
+                    "elements": [
+                        {"type": "mrkdwn", "text": _slack_escape(context)},
+                        *original,
+                    ],
                 },
             ],
         }
@@ -196,6 +224,8 @@ def _email_message(target: str, alert: Alert, sender: str) -> EmailMessage:
             f"{alert.company_name} ({alert.ticker}), Form {alert.form_type}, "
             f"filed {alert.filed_at.isoformat()}\nOriginal filing: {alert.url}"
         )
+    if alert.page_url is not None:
+        about = f"On the website: {alert.page_url}\n{about}"
     message.set_content(
         f"{alert.headline}\n\n{alert.summary}\n\n{points}\n\n{call}{about}\n\n"
         + (f"{alert.reason}\n" if alert.reason else "")

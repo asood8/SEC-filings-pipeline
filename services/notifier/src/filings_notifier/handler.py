@@ -82,9 +82,17 @@ class PendingAlertsError(Exception):
 
 
 class NotificationHandler:
-    def __init__(self, sessions: sessionmaker[Session], senders: Mapping[Channel, Sender]) -> None:
+    def __init__(
+        self,
+        sessions: sessionmaker[Session],
+        senders: Mapping[Channel, Sender],
+        *,
+        site_url: str | None = None,
+    ) -> None:
         self._sessions = sessions
         self._senders = senders
+        # The website's address (ALERTS_SITE_URL): alerts link its page for the filing or call.
+        self._site_url = site_url.rstrip("/") if site_url else None
         metrics.start_at_zero(
             metrics.NOTIFICATIONS,
             (
@@ -150,8 +158,12 @@ class NotificationHandler:
                 if form8k is not None and form8k.investor_call is not None
                 else None
             ),
+            page_url=self._page(f"filings/{filing.accession_no}"),
         )
         return alert, filing.created_at
+
+    def _page(self, path: str) -> str | None:
+        return f"{self._site_url}/{path}" if self._site_url else None
 
     def _matching_subscriptions(
         self, session: Session, alert: Alert, cik: int, discovered_at: datetime
@@ -343,6 +355,7 @@ class CallNotificationHandler(NotificationHandler):
                 key_points=takeaways.key_points,
                 url=transcript.source_url,
                 call_id=transcript.id,
+                page_url=self._page(f"calls/qa/{transcript.id}"),
             )
             subscription_ids = list(
                 session.scalars(

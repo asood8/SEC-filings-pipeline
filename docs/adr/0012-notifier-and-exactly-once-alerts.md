@@ -148,6 +148,14 @@ domain.
 The alert preview (`GET /subscriptions/preview`) lists the summarized calls of the period too
 (`calls_matched`, `calls`), matched the same way.
 
+### Links to the website (added 2026-11-05)
+
+With `ALERTS_SITE_URL` set (the website's address, once the domain exists), an alert's title
+links the website's page for it, the filing's or the call's Q&A, and the original is linked
+beside it: "Original filing" (sec.gov) or "Full transcript" (the company's site), as a Discord
+field, a Slack context link, and a line of the email. Unset, as before the domain, alerts link
+the original only.
+
 ## Alternatives considered
 
 - **Dedupe in Redis.** It's lost on eviction or restart, and can't show what was delivered. The

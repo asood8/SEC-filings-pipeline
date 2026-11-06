@@ -73,9 +73,11 @@ them. Ford's newest transcript can first appear under a name without its year
 (`content_files/Ford-Q3-Earnings-Transcript.pdf`), which can't be dated safely, so its source reads
 only the dated names under `doc_financials/`.
 
-Two changes came with it: listing pages are also read for links in the JSON some sites embed for
-their document lists (Ford's), and an analyst's firm may be written with initials ("J.P. Morgan"
-was cut to "J"; `SPLITTER_VERSION` 2).
+Three changes came with it: listing pages are also read for links in the JSON some sites embed
+for their document lists (Ford's); an analyst's firm may be written with initials ("J.P. Morgan"
+was cut to "J"; `SPLITTER_VERSION` 2); and a listed transcript whose link gives only its quarter
+is checked against the 120-day lookback once its text gives the date (Ford's and Dell's spring
+calls were stored before; Nike's source had the same gap).
 
 ### The pilot (laptop, llama3.2:3b)
 

@@ -485,6 +485,30 @@ def test_unusable_documents_old_calls_and_broken_sources(
 
 
 @pytest.mark.integration
+def test_a_listed_transcript_older_than_the_lookback_is_not_stored(
+    clean_db: Engine, mongo_db: Database[dict[str, Any]]
+) -> None:
+    seed(clean_db)
+    site = FakeSite(
+        {
+            "https://other.example/earnings": ok(
+                '<a href="/q3-2026.pdf">Q3</a> <a href="/q1-2026.pdf">Q1</a>'
+            ),
+            "https://other.example/q3-2026.pdf": ok(
+                pdf(call_lines("Other", "October 8, 2026")), "application/pdf"
+            ),
+            "https://other.example/q1-2026.pdf": ok(
+                pdf(call_lines("Other", "April 29, 2026")), "application/pdf"
+            ),
+        }
+    )
+    report = run(clean_db, mongo_db, site, [OTHER])
+    assert report.stored == ["OTHR"]
+    # The links give only quarters; April's call is past the 120 days once its text is read.
+    assert [day for _, day, _ in stored(clean_db)] == [date(2026, 10, 8)]
+
+
+@pytest.mark.integration
 def test_an_earnings_call_with_no_transcript_three_weeks_on_is_overdue(
     clean_db: Engine, mongo_db: Database[dict[str, Any]], measured: Any
 ) -> None:

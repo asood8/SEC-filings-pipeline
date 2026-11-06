@@ -471,7 +471,7 @@ def _fetch_company(
         document = client.get(candidate.url)
         if document is None:
             continue  # not posted (yet)
-        stored_day = _store(sessions, store, source, company, candidate, document, done)
+        stored_day = _store(sessions, store, source, company, candidate, document, done, since)
         if stored_day is not None:
             known.add(candidate.url)
             done.add(reported_period(stored_day, source.fiscal_year_start_month))
@@ -487,6 +487,7 @@ def _store(
     candidate: Candidate,
     document: Document,
     done: set[Period],
+    since: date,
 ) -> date | None:
     text = document_text(document, source)
     if text is None:
@@ -508,6 +509,10 @@ def _store(
             exchanges,
             day,
         )
+        return None
+    if day < since:
+        # A listing link dated only by its quarter is fetched before its date is known.
+        logger.info("%s: the call of %s is older than the lookback; not stored", candidate.url, day)
         return None
     if reported_period(day, source.fiscal_year_start_month) in done:
         # The same call under another address (a listing's links moved): stored once.

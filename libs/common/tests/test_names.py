@@ -102,6 +102,16 @@ def test_display_name(name: str, shown: str) -> None:
         ("NVIDIA CORP", "NVIDIA Corp"),
         ("AMAZON COM INC", "Amazon.com Inc"),
         ("SAP SE", "SAP SE"),
+        ("CONOCOPHILLIPS", "ConocoPhillips"),
+        ("METLIFE INC", "MetLife Inc"),
+        ("HP INC", "HP Inc"),
+        ("TD SYNNEX CORP", "TD SYNNEX Corp"),
+        ("TJX COMPANIES INC /DE/", "TJX Companies Inc"),
+        # Whole names: a brand in a name not all in capitals, a surname, nicknames.
+        ("CVS HEALTH Corp", "CVS Health Corp"),
+        ("LOWES COMPANIES INC", "Lowe's Companies Inc"),
+        ("FEDERAL NATIONAL MORTGAGE ASSOCIATION FANNIE MAE", "Fannie Mae"),
+        ("FEDERAL HOME LOAN MORTGAGE CORP", "Freddie Mac"),
         ("BOOKING COM", "Booking.com"),
         ("COM DEV INTERNATIONAL", "Com Dev International"),  # made up: a first word stays one
     ],

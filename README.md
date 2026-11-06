@@ -21,7 +21,8 @@ Tunnel, and OpenTelemetry with Grafana Cloud.
 
 ## What it does today
 
-On a live run against EDGAR, for a watchlist of 35 large US companies:
+On a live run against EDGAR, for the first watchlist of 35 large US companies (it now follows
+99: the Fortune 100 companies that trade on a market, plus 7 more):
 
 - **Discovery** found 275 recent filings (255 Form 4 insider trades and 20 Form 8-K current
   reports). It respected SEC's fair-access rules: a declared User-Agent, and a rate limit shared
@@ -32,7 +33,7 @@ On a live run against EDGAR, for a watchlist of 35 large US companies:
   page with a calendar feed ("Q&A session: Oct 21, 2026, 5:30 pm ET, https://ir.tesla.com"):
   9 of the 22 8-Ks do, and all 9 were read correctly.
 - **Earnings-call Q&A** is summarized from the transcripts 7 companies publish on their own
-  sites (the only ones of the 35 whose terms allow automated downloads; ADR-0022): each
+  sites (the only ones of the first 35 whose terms allow automated downloads; ADR-0022): each
   analyst's question and management's answer, then the call's takeaways, with a link to the
   transcript, and an alert to the company's subscribers. A nightly job fetches politely (robots.txt, a second between requests) and never
   republishes the transcript. On 6 hand-labeled exchanges the local model states 69% of the key

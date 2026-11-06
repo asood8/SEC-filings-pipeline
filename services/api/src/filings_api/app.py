@@ -6,12 +6,14 @@ import os
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from datetime import timedelta
+from typing import Any
 
 import redis
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor
+from opentelemetry.trace import Span
 from redis.backoff import NoBackoff
 from redis.retry import Retry
 from sqlalchemy.orm import Session, sessionmaker
@@ -20,6 +22,7 @@ from filings_api.embedding_cache import QueryEmbeddingCache
 from filings_api.google import GoogleIdTokenVerifier, GoogleSigningKeys
 from filings_api.middleware import (
     PROBE_PATHS,
+    TOKEN_PATHS,
     BodySizeLimitMiddleware,
     CacheMiddleware,
     CsrfMiddleware,
@@ -79,8 +82,10 @@ def instrument(app: FastAPI) -> None:
 
     The span records the method, route, URL, and status, never request headers or bodies, which
     carry the session cookie, Google ID tokens, and webhook URLs. Query strings hold only search
-    terms and filters. Should header capture ever be turned on (OTEL_INSTRUMENTATION_HTTP_CAPTURE_
-    HEADERS_*), cookie and authorization values are still redacted.
+    terms and filters, except /unsubscribe's, a signed token that works as a credential: that
+    route's query is recorded as redacted. Should header capture ever be turned on
+    (OTEL_INSTRUMENTATION_HTTP_CAPTURE_HEADERS_*), cookie and authorization values are still
+    redacted.
 
     Metrics: `http.server.request.duration` by method, route, and status, and
     `http.server.active_requests`. They follow the stable HTTP semantic conventions, which the
@@ -93,7 +98,14 @@ def instrument(app: FastAPI) -> None:
         excluded_urls=",".join(sorted(PROBE_PATHS)),
         exclude_spans=["receive", "send"],
         http_capture_headers_sanitize_fields=["cookie", "authorization"],
+        server_request_hook=_redact_tokens,
     )
+
+
+def _redact_tokens(span: Span, scope: dict[str, Any]) -> None:
+    """A signed unsubscribe token in the query works as a credential: keep it out of traces."""
+    if scope.get("path") in TOKEN_PATHS and span.is_recording():
+        span.set_attribute("url.query", "token=REDACTED")
 
 
 def create_app(

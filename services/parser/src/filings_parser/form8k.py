@@ -35,7 +35,11 @@ PARSER_VERSION = 2
 MAX_EXHIBIT_TEXT = 100_000
 MAX_NOTE_TEXT = 5_000
 
-_ITEM_HEADING = re.compile(r"^item\s*(\d{1,2})\.(\d{2})\b[\s.:\-\u2013\u2014]*(.*)$", re.IGNORECASE)
+# The title may follow the number with no space: ADM sets "Item 2.02" and "Results of Operations"
+# in adjacent spans, which read "Item 2.02Results of Operations".
+_ITEM_HEADING = re.compile(
+    r"^item\s*(\d{1,2})\.(\d{2})(?!\d)[\s.:\-\u2013\u2014]*(.*)$", re.IGNORECASE
+)
 _SIGNATURES = re.compile(r"^signatures?\b", re.IGNORECASE)
 # Lines that are only layout: page numbers ("3", "- 3 -") and "Table of Contents" back-links.
 _LAYOUT_LINE = re.compile(

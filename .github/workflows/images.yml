@@ -42,6 +42,7 @@ on:
       - uv.lock
       - .dockerignore
       - config/watchlist.toml
+      - config/transcript_sources.toml
       - .github/workflows/images.yml
       - deploy/**
   # By hand: Actions -> Images -> Run workflow, on main. Deploys main's newest commit, or the
@@ -73,7 +74,7 @@ concurrency:
 env:
   # What goes into an image, as git pathspecs: what the build reads (.dockerignore's allowlist)
   # and this file, which says how the images are built. One line; the push paths list the same.
-  IMAGE_INPUTS: services libs docker pyproject.toml uv.lock .dockerignore config/watchlist.toml .github/workflows/images.yml
+  IMAGE_INPUTS: services libs docker pyproject.toml uv.lock .dockerignore config/watchlist.toml config/transcript_sources.toml .github/workflows/images.yml
   SHORT_SHA_LENGTH: 7
   # The images production runs and their tags, on the production branch. On main the tags are a
   # placeholder; the deploy job sets them.

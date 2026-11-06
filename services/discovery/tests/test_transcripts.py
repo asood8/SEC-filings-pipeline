@@ -92,7 +92,10 @@ def call_lines(company: str = "Example Corp", day: str = "October 13, 2026") -> 
 
 def test_the_source_file_is_valid() -> None:
     sources = load_sources(CONFIG)
-    assert {s.ticker for s in sources} == {"MSFT", "GOOGL", "JPM", "BAC", "JNJ", "PEP", "NKE"}
+    assert {s.ticker for s in sources} == {
+        *("MSFT", "GOOGL", "JPM", "BAC", "JNJ", "PEP", "NKE"),  # the first survey
+        *("F", "DELL", "SNX"),  # the second
+    }
 
 
 @pytest.mark.parametrize(
@@ -184,6 +187,24 @@ def test_a_listing_gives_its_newest_transcript_links() -> None:
     assert listing_candidates(LISTING, "https://x.example/earnings", by_date) == [
         Candidate("https://x.example/docs/2026-10-14+Call.pdf", date(2026, 10, 14))
     ]
+
+
+def test_a_listing_reads_links_from_the_json_a_page_embeds() -> None:
+    page = (
+        'documentCategoryData: [{"category":"Earnings Transcript","data":[{"year":2026,'
+        '"documents":[{"text":"Q1","link":"//cdn.example/files/2026/q1/X-Q1-2026-Transcript.pdf"},'
+        '{"text":"Q2","link":"\\/\\/cdn.example\\/files\\/2026\\/q2\\/X-Q2-2026-Transcript.pdf"},'
+        '{"text":"Q3","link":"//cdn.example/files/X-Q3-Transcript.pdf"}]}]}]'
+    )
+    source = Source(
+        ticker="X",
+        listing="https://x.example/financials",
+        link=r"files/(?P<year>\d{4})/q(?P<quarter>[1-4])/X-Q[1-4]-\d{4}-Transcript\.pdf$",
+    )
+    assert listing_candidates(page, "https://x.example/financials", source) == [
+        Candidate("https://cdn.example/files/2026/q2/X-Q2-2026-Transcript.pdf", None),
+        Candidate("https://cdn.example/files/2026/q1/X-Q1-2026-Transcript.pdf", None),
+    ]  # not the Q3 file, whose name gives no year
 
 
 # --- Reading sites --------------------------------------------------------------------------------

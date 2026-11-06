@@ -17,7 +17,7 @@ from dataclasses import dataclass
 from datetime import date, datetime
 
 # Bump when splitting changes, so stored transcripts can be counted again.
-SPLITTER_VERSION = 1
+SPLITTER_VERSION = 2  # 2: firms written with initials ("J.P. Morgan")
 
 # Curly apostrophes and no-break spaces, as plain ones.
 _PLAIN = str.maketrans({chr(0x2018): "'", chr(0x2019): "'", chr(0xA0): " ", chr(0x202F): " "})
@@ -30,7 +30,9 @@ _BOILERPLATE = re.compile(
 _OPERATOR = re.compile(r"\[?\b(?:OPERATOR|Operator)\b(?!\s+Instructions)\s*[:\]]?")
 _WORD = r"[A-Z][\w.'-]*"
 _NAME = rf"{_WORD}(?:\s+{_WORD}){{1,3}}"
-_FIRM_WORD = r"[A-Z][\w&'-]*"  # no dots: a firm's name ends at its sentence's period
+# No dots, so a firm's name ends at its sentence's period; but initials ("J.P." in J.P. Morgan)
+# are one word.
+_FIRM_WORD = r"(?:(?:[A-Z]\.){2,}|[A-Z][\w&'-]*)"
 _FIRM = rf"{_FIRM_WORD}(?:\s+(?:of\s+|and\s+|&\s+)?{_FIRM_WORD}){{0,4}}"
 _NAMED = re.compile(
     rf"(?:from|to|of)\s+(?:the\s+line\s+of\s+)?(?P<name>{_NAME})\s+(?:with|from|of|at)\s+"

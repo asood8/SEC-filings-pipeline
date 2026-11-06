@@ -323,11 +323,21 @@ class Candidate:
     call_date: date | None  # when the address or link gives it
 
 
+# Links in href attributes, and in the JSON some sites embed for their document lists (Q4's:
+# {"text":"Q2","link":"//s205.q4cdn.com/.../Ford-Q2-2026-Earnings-Call-Transcript.pdf"}).
+_LINKS = re.compile(
+    r"""href\s*=\s*["'](?P<href>[^"']+)["']"""
+    r'''|"(?:link|url|href)"\s*:\s*"(?P<json>[^"]+)"''',
+    re.IGNORECASE,
+)
+
+
 def listing_candidates(page: str, base_url: str, source: Source) -> list[Candidate]:
     """The newest `source.keep` transcript links on a listing page."""
     assert source.link is not None
     found: dict[str, tuple[tuple[int, ...], date | None]] = {}
-    for href in re.findall(r"""href\s*=\s*["']([^"']+)["']""", page, re.IGNORECASE):
+    for found_link in _LINKS.finditer(page):
+        href = (found_link["href"] or found_link["json"]).replace("\\/", "/")
         url = urljoin(base_url, href.strip())
         if url in found or (match := source.link.search(url)) is None:
             continue

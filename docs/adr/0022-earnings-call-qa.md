@@ -51,6 +51,32 @@ still missing 27 days after the call).
 Visa is left out of v1: its transcript list is reachable only through its investor site's data
 feed, called with a key embedded in the page, not from a plain page or a predictable address.
 
+### The second survey (2026-11-06): the 64 companies added to the watchlist
+
+The same checks for the Fortune 100 companies added that day, with the project's own site client
+(robots.txt honored, a second between requests to a host, the `Filingwire/1.0` User-Agent): each
+investor site's home page, the terms of use it links to (or the company site's), and its results
+pages for transcripts.
+
+| Verdict | Companies |
+|---|---|
+| **transcript** (3) | **F**: own PDFs; the terms let crawlers in if they follow robots.txt, downloads for personal, non-commercial use. **DELL**: own PDFs; downloads for personal, non-commercial use, no mirroring. **SNX**: own PDFs; the only terms the site links are its sales terms, silent on the site. |
+| the site refuses automated requests (HTTP 403) (17) | GM, MPC, SNEX, HUM, CMCSA, RTX, ET, LMT, COF, ALL, GLXY, ABBV, TJX, UAL, CHTR, AAL, EPD |
+| terms ban robots, scrapers, data mining or automated access (16) | CVS, MCK, C, FNMA, FMCC, VZ, T, VLO, TGT, PG, HCA, MRK, PRU, CSCO, TSN, TRV |
+| terms bar downloading, copying or storing the content (7) | COR, KR ("insignificant portions"), PSX, COP, FDX, HPQ, MET ("substantially copy on your own server") |
+| terms allow it, but no transcripts of their own (5) | ELV, WFC, MS, PGR, BMY |
+| terms unreadable: their host refuses automated requests, the page is built by scripts, or it wasn't found (16) | HD, LOW, DAL (all three post transcripts), CNC (robots.txt disallows its terms), UPS, SYY, AXP, ACI, ADM, IBM, PFGC, INGM, GD, UBER, CI, CAH |
+
+So **3 of 64 are usable**, again all through their own transcripts. Home Depot, Lowe's and Delta
+publish transcripts, but their terms couldn't be read here; reading them in a browser could add
+them. Ford's newest transcript can first appear under a name without its year
+(`content_files/Ford-Q3-Earnings-Transcript.pdf`), which can't be dated safely, so its source reads
+only the dated names under `doc_financials/`.
+
+Two changes came with it: listing pages are also read for links in the JSON some sites embed for
+their document lists (Ford's), and an analyst's firm may be written with initials ("J.P. Morgan"
+was cut to "J"; `SPLITTER_VERSION` 2).
+
 ### The pilot (laptop, llama3.2:3b)
 
 Seven real transcripts (Microsoft, Alphabet, JPMorgan, Bank of America, J&J, PepsiCo, Nike):
@@ -153,9 +179,9 @@ On the laptop, against the real sites and the local model only (no Gemini):
 
 ## Consequences
 
-- Coverage is 7 of 35 companies (20%), mostly technology, banks and consumer names. Adding one
-  means reading its terms first (runbook, "Earnings-call transcripts"). The 64 companies added
-  to the watchlist on 2026-11-06 (99 in all) haven't been surveyed yet.
+- Coverage is 10 of the 99 watchlist companies (10%): 7 of the first 35, and 3 of the 64 added on
+  2026-11-06 (Ford, Dell, TD SYNNEX). Adding one means reading its terms first (runbook,
+  "Earnings-call transcripts").
 - Sources are per-site and will break when a site changes; the overdue alert says when.
 - The small model's known weakness (who did what) matters more in Q&A, which is mostly who said
   what. The labels make that measurable.

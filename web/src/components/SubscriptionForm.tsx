@@ -217,7 +217,7 @@ export function SubscriptionForm({
         </label>
         <span className="muted">
           Earnings call Q&amp;A: a summary of what analysts asked, after the
-          call, for the 7 companies that publish their transcripts.
+          call, for the 10 companies that publish their transcripts.
         </span>
       </fieldset>
 

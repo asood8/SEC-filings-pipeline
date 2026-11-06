@@ -32,8 +32,8 @@ On a live run against EDGAR, for the first watchlist of 35 large US companies (i
   day, time, and webcast link are shown on the filing's page, in alerts, and on an Upcoming calls
   page with a calendar feed ("Q&A session: Oct 21, 2026, 5:30 pm ET, https://ir.tesla.com"):
   9 of the 22 8-Ks do, and all 9 were read correctly.
-- **Earnings-call Q&A** is summarized from the transcripts 7 companies publish on their own
-  sites (the only ones of the first 35 whose terms allow automated downloads; ADR-0022): each
+- **Earnings-call Q&A** is summarized from the transcripts 10 companies publish on their own
+  sites (the only ones of the 99 whose terms allow automated downloads; ADR-0022): each
   analyst's question and management's answer, then the call's takeaways, with a link to the
   transcript, and an alert to the company's subscribers. A nightly job fetches politely (robots.txt, a second between requests) and never
   republishes the transcript. On 6 hand-labeled exchanges the local model states 69% of the key

@@ -232,6 +232,6 @@ CLAUDE.md
 - Production accounts, before the first `terraform apply` ([infra/terraform/README.md](../infra/terraform/README.md#decisions-first-brief-12)): the Oracle home region and where the Terraform state lives. Decided 2026-10-21: R2 with a payment method on file, Pages built from GitHub, the Atlas region near the Oracle one.
 - Later form types (10-Q/10-K section changes, 13F)
 - ~~Earnings-call Q&A~~ Decided 2026-11-04: summaries of the Q&A from the transcripts companies
-  publish on their own sites, for the 7 watchlist companies whose terms allow automated
+  publish on their own sites, for the 10 watchlist companies (7, then 3 more of the 64 added on 2026-11-06) whose terms allow automated
   downloads; no speech-to-text (none of them needs it) and nothing republished
   ([ADR-0022](adr/0022-earnings-call-qa.md))

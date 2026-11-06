@@ -1054,9 +1054,20 @@ Not fixed, for a decision when the watchlist grows:
   compilation. Template Form 4s tie on rank, so these return the newest matches. On the 35-company
   watchlist after 10 years (35,000 documents) the worst word stays under about 0.3 s. The ticker
   check before a query (`_ticker_words`) also reads every match of a short lowercase word ("sold",
-  "share", "chief"): 35–95 ms here. Options, if it matters: rank only the newest N matches (results change only when an older
-  match outranks them), a RUM index (an extension the pgvector image lacks), or a search engine
-  (ADR-0011 rejected one for this size).
+  "share", "chief"): 35–95 ms here. Options, if it matters: rank only the newest N matches
+  (results change only when an older match outranks them), a RUM index (an extension the pgvector
+  image lacks), or a search engine (ADR-0011 rejected one for this size).
+
+  **At 99 companies** (measured 2026-11-06, when the watchlist grew to that): synthetic data for
+  99 companies over 10 years (96,000 filings, 977 MB, 13 minutes to generate). The laptop was
+  busy summarizing with the local model, which made simple queries about 2.3 times slower than in
+  the run above (the feed 17–22 ms instead of 7–9), so these are on the high side. Keyword `sold`
+  329 / 428 ms (p50 / p95), `shares` 244 / 264, the busiest company's ticker 273 / 294, a phrase
+  within one company 394 / 425; semantic and hybrid search with an 8-K filter 444–506 ms (random
+  vectors, as above); insider trades over 365 days 182 ms; everything else under 100 ms. On the A1,
+  2 to 3 times slower, the worst word is about 0.3 to 1 s after 10 years, and the real database is
+  a tenth of that size today. **Not changed**: revisit past about 250 companies, or sooner if the
+  A1's own numbers (the API dashboard's p95) say so.
 - **Insider trades read `form4_filings` whole** (added 2026-10-08, measured on synthetic data
   made the same way, with fewer embeddings and users, which it doesn't read). The filing-date
   condition finds the window's filings through the feed's index (3,400 for 30 days), but at the
@@ -1086,7 +1097,8 @@ the usual advice for SSDs and fully cached data, which production has. Measured 
   were 1.5% apart.
 
 So nothing to gain at the size the system runs, and a regression at the size where it would
-matter. Revisit with a watchlist past about 100 companies, together with keyword search's join:
+matter. Revisit with a watchlist past about 250 companies (99 were measured above, 2026-11-06),
+together with keyword search's join:
 its filters and its tie-break (form type, company, filing date) come from `filings`, so every
 match is joined before the top 20 are picked. Copying those three columns, which never change
 for a filing, into `filing_search` would let it pick the top 20 alone, with either setting.

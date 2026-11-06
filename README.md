@@ -1,4 +1,4 @@
-# SEC Filings Intelligence Pipeline (in progress)
+# Filingwire: an SEC filings intelligence pipeline (in progress)
 
 [![CI](https://github.com/asood8/SEC-filings-pipeline/actions/workflows/ci.yml/badge.svg)](https://github.com/asood8/SEC-filings-pipeline/actions/workflows/ci.yml)
 
@@ -8,7 +8,7 @@
 > storage, MongoDB Atlas, dashboards, and spending guardrails. The server itself is waiting on
 > Oracle's free-tier capacity, so there is no public site yet. See [Progress](#progress).
 
-A pipeline that watches SEC EDGAR for new filings from a watchlist of public companies, parses
+Filingwire is a pipeline that watches SEC EDGAR for new filings from a watchlist of public companies, parses
 them, summarizes them in plain English, makes them searchable by keyword and by meaning, and
 alerts subscribed users on Discord, Slack, or email. It is designed to run indefinitely on free tiers at $0/month, on a single arm64
 VM, and it's built with production practices: event-driven services, infrastructure as code,

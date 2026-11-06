@@ -23,6 +23,4 @@ class DiscoverySettings(BaseSettings):
     # An earnings 8-K this old with no transcript yet counts as overdue (a source that broke).
     transcript_overdue_days: int = Field(default=21, ge=1)
     # Sent to companies' sites (not SEC's): names the project, with no contact address.
-    transcript_user_agent: str = (
-        "filings-pipeline/1.0 (+https://github.com/asood8/SEC-filings-pipeline)"
-    )
+    transcript_user_agent: str = "Filingwire/1.0 (+https://github.com/asood8/SEC-filings-pipeline)"

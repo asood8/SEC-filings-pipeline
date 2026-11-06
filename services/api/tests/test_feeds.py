@@ -40,7 +40,7 @@ def test_summarized_filings_newest_first(client: TestClient, seeded: Engine, ids
             )
         )
     feed = parse(client.get("/feeds/filings.atom"))
-    assert feed.findtext("a:title", namespaces=NS) == "SEC filings"
+    assert feed.findtext("a:title", namespaces=NS) == "Filingwire"
     assert titles(feed) == [
         "AAPL Form 4: Tim Cook sold 50,000 AAPL shares",
         "MSFT 8-K: Microsoft reports record quarterly revenue",
@@ -67,10 +67,10 @@ def test_summarized_filings_newest_first(client: TestClient, seeded: Engine, ids
 @pytest.mark.parametrize(
     ("params", "title", "count"),
     [
-        ({"cik": 320193}, "SEC filings: AAPL", 2),
-        ({"form_type": "8-K"}, "SEC filings: 8-Ks", 2),
-        ({"form_type": "4"}, "SEC filings: Form 4s", 1),
-        ({"cik": 320193, "form_type": "8-K"}, "SEC filings: AAPL, 8-Ks", 1),
+        ({"cik": 320193}, "Filingwire: AAPL", 2),
+        ({"form_type": "8-K"}, "Filingwire: 8-Ks", 2),
+        ({"form_type": "4"}, "Filingwire: Form 4s", 1),
+        ({"cik": 320193, "form_type": "8-K"}, "Filingwire: AAPL, 8-Ks", 1),
     ],
 )
 def test_filters(
@@ -83,7 +83,7 @@ def test_filters(
 
 def test_one_8k_item(client: TestClient, ids: Any) -> None:
     feed = parse(client.get("/feeds/filings.atom", params={"item": "5.02"}))
-    assert feed.findtext("a:title", namespaces=NS) == "SEC filings: 8-K item 5.02"
+    assert feed.findtext("a:title", namespaces=NS) == "Filingwire: 8-K item 5.02"
     assert titles(feed) == ["AAPL 8-K: Apple names Kevan Parekh chief financial officer"]
 
 

@@ -68,7 +68,7 @@ describe('SuggestCompanyPage', () => {
     expect(
       screen.getByRole('heading', { level: 1, name: 'Suggest a company' }),
     ).toHaveFocus()
-    expect(document.title).toBe('Suggest a company · SEC Filings')
+    expect(document.title).toBe('Suggest a company · Filingwire')
     expect(screen.getByText('None yet.')).toBeInTheDocument()
   })
 

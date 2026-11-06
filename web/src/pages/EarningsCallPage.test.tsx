@@ -14,7 +14,7 @@ describe('EarningsCallPage', () => {
         name: 'JPMorgan Chase: deposits, credit and the consumer',
       }),
     ).toBeInTheDocument()
-    expect(document.title).toBe('JPM earnings call, Oct 13, 2026 · SEC Filings')
+    expect(document.title).toBe('JPM earnings call, Oct 13, 2026 · Filingwire')
     expect(
       screen.getByRole('link', { name: 'JPMorgan Chase & Co.' }),
     ).toHaveAttribute('href', '/companies/JPM')

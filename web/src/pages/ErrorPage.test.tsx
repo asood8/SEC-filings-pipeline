@@ -20,7 +20,7 @@ describe('ErrorPage', () => {
     expect(
       screen.getByRole('link', { name: 'latest filings' }),
     ).toHaveAttribute('href', '/')
-    expect(document.title).toBe('Something went wrong · SEC Filings')
+    expect(document.title).toBe('Something went wrong · Filingwire')
     expect(screen.getByRole('main')).toBeInTheDocument()
   })
 })

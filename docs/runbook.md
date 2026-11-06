@@ -527,7 +527,7 @@ page about the request rate) that lifts after about 10 minutes under the limit.
 How the pipeline keeps to them (ADR-0004, `filings_common.edgar`):
 
 - Every SEC request goes through `EdgarClient`, with the User-Agent
-  `sec-filings-pipeline <SEC_CONTACT_EMAIL>`.
+  `Filingwire <SEC_CONTACT_EMAIL>`.
 - One token bucket in Valkey (key `ratelimit:sec`) is shared by every process: 5 requests/s,
   burst 1 (`SEC_RATE_LIMIT_PER_SECOND`, `SEC_RATE_LIMIT_BURST`; the settings refuse more than
   10 and 5). If Valkey is down, discovery fails instead of going unthrottled.

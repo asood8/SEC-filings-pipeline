@@ -26,7 +26,7 @@ describe('UnsubscribePage', () => {
         /Stop the alerts about Apple Inc\. \(AAPL\) sent to a\*\*\*@example\.com\?/,
       ),
     ).toBeInTheDocument()
-    expect(document.title).toBe('Stop email alerts · SEC Filings')
+    expect(document.title).toBe('Stop email alerts · Filingwire')
     expect(posted).toBe(0) // opening the link changes nothing
     await userEvent.click(
       screen.getByRole('button', { name: 'Stop these alerts' }),

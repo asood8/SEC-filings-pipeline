@@ -25,7 +25,7 @@ describe('SearchPage', () => {
     expect(screen.getByRole('status')).toHaveTextContent(
       '1 match for “new cfo”.',
     )
-    expect(document.title).toBe('Search: new cfo · SEC Filings')
+    expect(document.title).toBe('Search: new cfo · Filingwire')
     const searched = requests.find((url) => url.pathname === '/search')!
     expect(searched.searchParams.get('q')).toBe('new cfo')
     expect(searched.searchParams.get('mode')).toBe('semantic')
@@ -134,7 +134,7 @@ describe('SearchPage', () => {
     })
     const router = renderRoute('/search')
     expect(requests).toHaveLength(0) // nothing to search for yet
-    expect(document.title).toBe('Search · SEC Filings')
+    expect(document.title).toBe('Search · Filingwire')
 
     const input = screen.getByLabelText('Search for')
     expect(input).toHaveAccessibleDescription(/quoted phrases/)

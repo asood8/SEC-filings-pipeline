@@ -11,10 +11,10 @@ describe('AboutPage', () => {
     expect(
       await screen.findByRole('heading', {
         level: 1,
-        name: 'About SEC Filings',
+        name: 'About Filingwire',
       }),
     ).toBeInTheDocument()
-    expect(document.title).toBe('About · SEC Filings')
+    expect(document.title).toBe('About · Filingwire')
     for (const name of [
       'What it covers',
       'Where the data comes from',
@@ -46,7 +46,7 @@ describe('AboutPage', () => {
     expect(
       await screen.findByRole('heading', {
         level: 1,
-        name: 'About SEC Filings',
+        name: 'About Filingwire',
       }),
     ).toHaveFocus()
   })

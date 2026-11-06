@@ -144,7 +144,7 @@ def test_one_companys_calls(client: TestClient) -> None:
     assert client.get("/calls", params={"ticker": "NOPE"}).status_code == 404
 
     text = client.get("/calls.ics", params={"ticker": "msft"}).text.replace("\r\n ", "")
-    assert "X-WR-CALNAME:SEC filings: MSFT investor calls\r\n" in text
+    assert "X-WR-CALNAME:Filingwire: MSFT investor calls\r\n" in text
     assert text.count("BEGIN:VEVENT") == 1  # Microsoft's call only, not Apple's two
     assert client.get("/calls.ics", params={"ticker": "NOPE"}).status_code == 404
 

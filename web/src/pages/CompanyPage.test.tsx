@@ -34,7 +34,7 @@ describe('CompanyPage', () => {
     expect(
       await screen.findByRole('heading', { name: 'Apple Inc.' }),
     ).toBeInTheDocument()
-    expect(document.title).toBe('Apple Inc. (AAPL) · SEC Filings')
+    expect(document.title).toBe('Apple Inc. (AAPL) · Filingwire')
     expect(
       screen.getByRole('link', {
         name: 'Atom feed of AAPL filings (opens in a new tab)',
@@ -104,12 +104,12 @@ describe('CompanyPage', () => {
     })
     renderRoute('/companies/zzzz')
 
-    await waitFor(() => expect(document.title).toBe('ZZZZ · SEC Filings'))
+    await waitFor(() => expect(document.title).toBe('ZZZZ · Filingwire'))
     answer(Response.json({ detail: 'Not Found' }, { status: 404 }))
     expect(
       await screen.findByRole('heading', { name: 'Not found' }),
     ).toBeInTheDocument()
-    expect(document.title).toBe('Company not found · SEC Filings')
+    expect(document.title).toBe('Company not found · Filingwire')
   })
 
   it('shows insider buying and selling by owner, with totals', async () => {

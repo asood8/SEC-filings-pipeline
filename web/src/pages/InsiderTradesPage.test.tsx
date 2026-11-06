@@ -108,7 +108,7 @@ describe('InsiderTradesPage', () => {
     expect(requests.at(-1)?.search).toBe('?side=buy&days=30')
     expect(router.state.location.search).toBe('')
     expect(document.title).toBe(
-      'Insider trades: purchases, last 30 days · SEC Filings',
+      'Insider trades: purchases, last 30 days · Filingwire',
     )
     expect(
       screen.getByRole('link', { name: 'Insider trades' }),

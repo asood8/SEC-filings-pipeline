@@ -1,7 +1,7 @@
 import { useEffect } from 'react'
 import { SITE_NAME } from './site'
 
-/** "Apple Inc. (AAPL) · SEC Filings", or the site's name alone. */
+/** "Apple Inc. (AAPL) · Filingwire", or the site's name alone. */
 export function pageTitle(title?: string): string {
   return title ? `${title} · ${SITE_NAME}` : SITE_NAME
 }

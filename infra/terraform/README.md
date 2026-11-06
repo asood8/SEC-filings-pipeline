@@ -212,8 +212,9 @@ terraform output -raw mongodb_url \
 | `gemini`, `sec-edgar`, `smtp` | your own values |
 
 Then the non-secret settings in `deploy/k8s/overlays/production/config.env`: `API_CORS_ORIGINS`
-is `terraform output -raw api_cors_origins`, and `GOOGLE_CLIENT_ID` is the same public ID as the
-`google_client_id` variable. List the sealed files in the overlay's `kustomization.yaml`, commit,
+is `terraform output -raw api_cors_origins`, `GOOGLE_CLIENT_ID` is the same public ID as the
+`google_client_id` variable, and `ALERTS_SITE_URL` is `terraform output -raw web_url` (alerts
+link the website's pages). List the sealed files in the overlay's `kustomization.yaml`, commit,
 and push to `main`; once CI passes, the image workflow deploys them to `production`, and Argo CD
 does the rest.
 

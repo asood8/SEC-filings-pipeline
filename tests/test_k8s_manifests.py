@@ -438,9 +438,9 @@ def test_argo_cd_manages_both_applications_from_this_repository() -> None:
 def _settings_env_names() -> set[str]:
     from filings_common import config
     from filings_discovery.config import DiscoverySettings
-    from filings_notifier.cli import EmailSettings
+    from filings_notifier.cli import AlertSettings, EmailSettings
 
-    classes: list[type[BaseSettings]] = [DiscoverySettings, EmailSettings]
+    classes: list[type[BaseSettings]] = [DiscoverySettings, EmailSettings, AlertSettings]
     classes += [
         value
         for value in vars(config).values()

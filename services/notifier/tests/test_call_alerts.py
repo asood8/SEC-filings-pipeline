@@ -168,3 +168,23 @@ def test_an_unknown_summary_or_a_bad_event_is_a_dead_letter(
         handler(
             replace(received(CallSummarized(transcript_id=1, summary_id=1, cik=1)), value=b"{}")
         )
+
+
+def test_with_a_website_a_call_alert_links_the_calls_page(
+    clean_db: Engine, call: dict[str, int]
+) -> None:
+    sender = FakeSender()
+    handler = CallNotificationHandler(
+        session_factory(clean_db),
+        {Channel.DISCORD: sender},
+        site_url="https://app.example.com/",
+    )
+    handler(
+        received(
+            CallSummarized(transcript_id=call["transcript"], summary_id=call["summary"], cik=789019)
+        )
+    )
+    alert = sender.alerts[0][1]
+    assert alert.page_url == f"https://app.example.com/calls/qa/{call['transcript']}"
+    assert alert.link == alert.page_url
+    assert alert.url == SOURCE  # the transcript, linked beside it

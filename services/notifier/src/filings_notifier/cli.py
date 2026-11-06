@@ -5,7 +5,7 @@ import signal
 import threading
 from typing import Literal
 
-from pydantic import SecretStr
+from pydantic import AnyHttpUrl, SecretStr, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from filings_common.config import DatabaseSettings, KafkaSettings
@@ -31,6 +31,20 @@ from filings_notifier.handler import (
 PROCESS_NAME = "filings-notifier"
 CONSUMER_GROUP = "notifier"
 logger = logging.getLogger("filings_notifier")
+
+
+class AlertSettings(BaseSettings):
+    model_config = SettingsConfigDict(env_prefix="ALERTS_", env_file=".env", extra="ignore")
+
+    # The website's public address (https://app.<domain>), once it has one: each alert's title
+    # then links the filing's or call's page there, with the original beside it. Unset, alerts
+    # link the original only.
+    site_url: AnyHttpUrl | None = None
+
+    @field_validator("site_url", mode="before")
+    @classmethod
+    def _blank_is_unset(cls, value: object) -> object:
+        return None if value == "" else value  # ALERTS_SITE_URL= in config.env until the domain
 
 
 class EmailSettings(BaseSettings):
@@ -82,13 +96,17 @@ def main() -> int:
     dead_letters = KafkaPublisher(kafka.bootstrap_servers)
     try:
         sessions = session_factory(engine)
+        site_url = AlertSettings().site_url
+        site = str(site_url) if site_url is not None else None
         run_consumer(
             make_consumer(kafka.bootstrap_servers, CONSUMER_GROUP),
             [Topic.FILINGS_READY, Topic.CALLS_SUMMARIZED],
             TopicHandler(
                 {
-                    Topic.FILINGS_READY: NotificationHandler(sessions, senders),
-                    Topic.CALLS_SUMMARIZED: CallNotificationHandler(sessions, senders),
+                    Topic.FILINGS_READY: NotificationHandler(sessions, senders, site_url=site),
+                    Topic.CALLS_SUMMARIZED: CallNotificationHandler(
+                        sessions, senders, site_url=site
+                    ),
                 }
             ),
             dead_letters,

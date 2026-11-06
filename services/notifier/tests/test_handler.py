@@ -744,3 +744,16 @@ def test_8k_alerts_and_item_filters_include_8k_amendments(
     assert fakes[Channel.DISCORD].sent == [(officers, accession_no)]
     assert alert.reason == "Your alert: AAPL · 8-K: 5.02"  # the filters of the form it amends
     assert fakes[Channel.EMAIL].sent == [("ops@example.com", accession_no)]  # every form
+
+
+def test_with_a_website_a_filing_alert_links_the_filings_page(
+    clean_db: Engine, world: dict[str, int]
+) -> None:
+    fakes = senders()
+    NotificationHandler(session_factory(clean_db), fakes, site_url="https://app.example.com/")(
+        ready_event(world["summary_id"])
+    )
+    alert = fakes[Channel.DISCORD].alerts[0]
+    assert alert.page_url == f"https://app.example.com/filings/{FORM4}"
+    assert alert.url == "https://www.sec.gov/x.xml"  # the original, linked beside it
+    assert NotificationHandler(session_factory(clean_db), fakes)._page("x") is None

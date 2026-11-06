@@ -285,3 +285,51 @@ def test_slack_and_email_name_the_call_not_a_form(monkeypatch: pytest.MonkeyPatc
     assert "Microsoft (MSFT), earnings call of 2026-10-28\n" in body
     assert f"Full transcript, on the company's site: {CALL_SOURCE}" in body
     assert "Form " not in body
+
+
+# --- Links to the website's pages (ALERTS_SITE_URL) -----------------------------------------------
+
+PAGE = "https://app.example.com/filings/0000320193-26-000001"
+
+
+def test_with_a_website_the_title_links_its_page_and_the_original_is_beside_it(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    alert = replace(ALERT, page_url=PAGE)
+    transport, requests = recorder(httpx2.Response(204), httpx2.Response(200, text="ok"))
+    DiscordSender(transport=transport).send(DISCORD, alert)
+    SlackSender(transport=transport).send(SLACK, alert)
+    discord, slack = (json.loads(r.content) for r in requests)
+    embed = discord["embeds"][0]
+    assert embed["url"] == PAGE
+    assert {"name": "Original filing", "value": ALERT.url, "inline": False} in embed["fields"]
+    assert slack["blocks"][0]["text"]["text"].startswith(f"*<{PAGE}|")
+    assert slack["blocks"][1]["elements"][1] == {
+        "type": "mrkdwn",
+        "text": f"<{ALERT.url}|Original filing>",
+    }
+    assert slack["text"].endswith(PAGE)
+    monkeypatch.setattr(smtplib, "SMTP", FakeSmtp)
+    FakeSmtp.sent, FakeSmtp.refuse = [], False
+    SmtpEmailSender(host="smtp", port=587, username="u", password="p", sender="a@example.com").send(
+        "ops@example.com", alert
+    )
+    body = FakeSmtp.sent[0].get_content()
+    assert f"On the website: {PAGE}\nApple Inc. (AAPL), Form 8-K" in body
+    assert f"Original filing: {ALERT.url}" in body
+
+
+def test_a_call_alerts_original_is_the_transcript() -> None:
+    page = "https://app.example.com/calls/qa/7"
+    transport, requests = recorder(httpx2.Response(204))
+    DiscordSender(transport=transport).send(DISCORD, replace(CALL_ALERT, page_url=page))
+    embed = json.loads(requests[0].content)["embeds"][0]
+    assert embed["url"] == page
+    assert {"name": "Full transcript", "value": CALL_SOURCE, "inline": False} in embed["fields"]
+
+
+def test_without_a_website_nothing_extra_is_linked() -> None:
+    transport, requests = recorder(httpx2.Response(204))
+    DiscordSender(transport=transport).send(DISCORD, ALERT)
+    fields = json.loads(requests[0].content)["embeds"][0]["fields"]
+    assert not any(field["name"] == "Original filing" for field in fields)

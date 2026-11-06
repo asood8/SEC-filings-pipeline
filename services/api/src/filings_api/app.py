@@ -35,6 +35,7 @@ from filings_api.routes import (
     auth,
     calls,
     companies,
+    company_requests,
     feeds,
     filings,
     insider_trades,
@@ -246,6 +247,7 @@ def create_app(
     app.include_router(auth.router)
     app.include_router(subscriptions.router)
     app.include_router(unsubscribe.router)
+    app.include_router(company_requests.router)
     if telemetry.enabled:
         instrument(app)
     return app

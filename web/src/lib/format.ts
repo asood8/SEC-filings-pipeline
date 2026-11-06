@@ -15,6 +15,13 @@ export function formatDate(isoDate: string): string {
   return dateFormat.format(new Date(`${isoDate}T00:00:00Z`))
 }
 
+const dayFormat = new Intl.DateTimeFormat('en-US', { dateStyle: 'medium' })
+
+/** The day of a timestamp, in the reader's time zone: "Nov 6, 2026". */
+export function formatDayOf(isoDateTime: string): string {
+  return dayFormat.format(new Date(isoDateTime))
+}
+
 /** The date `days` before today, in the reader's time zone, like "2026-09-28". */
 export function isoDateDaysAgo(days: number, now = new Date()): string {
   const day = new Date(now.getFullYear(), now.getMonth(), now.getDate() - days)

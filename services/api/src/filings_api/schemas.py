@@ -424,6 +424,9 @@ class UserOut(BaseModel):
     id: int
     email: str
     created_at: datetime
+    is_admin: bool = Field(
+        default=False, description="Reviews company suggestions (GET /admin/company-requests)."
+    )
 
 
 def _sorted_unique(forms: list[AlertFormType]) -> list[AlertFormType]:
@@ -662,4 +665,63 @@ class SubscriptionBatchOut(BaseModel):
     created: list[SubscriptionOut]
     existing: list[SubscriptionOut] = Field(
         description="Combinations you were already subscribed to, left unchanged."
+    )
+
+
+# --- Company suggestions -------------------------------------------------------------------------
+
+
+def _note(value: str | None) -> str | None:
+    if value is None:
+        return None
+    note = " ".join(value.split())
+    return note or None
+
+
+RequestStatusName = Literal["open", "added", "declined"]
+
+
+class CompanyRequestCreate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    ticker: str = Field(min_length=1, max_length=20, description="e.g. NOW, or BRK.B.")
+    note: Annotated[str | None, AfterValidator(_note)] = Field(
+        default=None, max_length=500, description="Why it's worth following (optional)."
+    )
+
+
+class CompanyRequestOut(BaseModel):
+    id: int
+    company: CompanyRef
+    note: str | None
+    status: RequestStatusName = Field(
+        description="open: not decided yet; added: on the watchlist now; declined: not added."
+    )
+    created_at: datetime
+    decided_at: datetime | None
+
+
+class RequestNoteOut(BaseModel):
+    note: str
+    by: str = Field(description="Who wrote it, the email partly masked.")
+    at: datetime
+
+
+class CompanySuggestionOut(BaseModel):
+    """Every suggestion of one company, for the admin."""
+
+    company: CompanyRef
+    on_watchlist: bool
+    requests: int = Field(description="How many people asked for it.")
+    first_requested_at: datetime
+    last_requested_at: datetime
+    status: RequestStatusName
+    notes: list[RequestNoteOut] = Field(description="The notes people left, newest first.")
+
+
+class CompanyRequestDecision(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    status: RequestStatusName = Field(
+        description="added once it's on the watchlist, declined, or open to reconsider."
     )

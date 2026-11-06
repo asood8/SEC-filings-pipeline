@@ -43,9 +43,28 @@ describe('CompaniesPage', () => {
     )
 
     await userEvent.type(screen.getByLabelText('Filter companies'), 'z')
-    expect(screen.getByText('No companies match “microz”.')).toBeVisible()
+    expect(screen.getByText(/No companies match “microz”\./)).toBeVisible()
+    expect(screen.getByRole('link', { name: 'Suggest it' })).toHaveAttribute(
+      'href',
+      '/suggest',
+    )
     expect(screen.getByRole('status')).toHaveTextContent(
       '0 of 2 companies match.',
+    )
+  })
+
+  it('offers to suggest a company it does not follow', async () => {
+    mockApi({ '/companies': () => WATCHLIST })
+    renderRoute('/companies')
+
+    expect(
+      await screen.findByRole('link', { name: 'Suggest a company' }),
+    ).toHaveAttribute('href', '/suggest')
+    await userEvent.type(screen.getByLabelText('Filter companies'), 'uber')
+    // It looks like a ticker, so the form starts with it.
+    expect(screen.getByRole('link', { name: 'Suggest it' })).toHaveAttribute(
+      'href',
+      '/suggest?ticker=UBER',
     )
   })
 

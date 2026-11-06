@@ -1,0 +1,65 @@
+.form {
+  display: grid;
+  gap: 0.9rem;
+  max-width: 36rem;
+}
+
+.form label {
+  display: grid;
+  gap: 0.3rem;
+}
+
+.form .hint {
+  margin: 0;
+  font-size: 0.85rem;
+}
+
+.form button {
+  justify-self: start;
+}
+
+.list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.item {
+  padding: 0.75rem 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem 1rem;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.ticker {
+  font-family: var(--mono);
+  font-weight: 600;
+}
+
+.status {
+  margin: 0.2rem 0 0;
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+
+.actions {
+  display: flex;
+  gap: 0.4rem;
+}
+
+.notes {
+  display: grid;
+  gap: 0.35rem;
+  margin: 0.5rem 0 0;
+  padding-left: 1.25rem;
+}
+
+.notes p {
+  margin: 0;
+}

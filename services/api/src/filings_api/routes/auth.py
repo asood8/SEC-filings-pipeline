@@ -23,7 +23,9 @@ router = APIRouter(tags=["auth"])
 
 
 def _user_out(user: User) -> UserOut:
-    return UserOut(id=user.id, email=user.email, created_at=user.created_at)
+    return UserOut(
+        id=user.id, email=user.email, created_at=user.created_at, is_admin=bool(user.is_admin)
+    )
 
 
 @router.post("/auth/google", summary="Sign in with a Google ID token")

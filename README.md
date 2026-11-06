@@ -183,6 +183,10 @@ worth a look:
 - **Sign-in without handling passwords**: Google's ID token is verified against Google's
   published keys, then exchanged for the API's own HttpOnly session cookie; only a hash of each
   session token is stored. ([ADR-0013](docs/adr/0013-sign-in-and-sessions.md))
+- **Company suggestions**: signed-in visitors ask for companies the watchlist lacks (one each per
+  company, 10 open at a time); the admin, made one with a command rather than a setting in this
+  public repository, reviews them by demand and marks each added or declined, which the people
+  who asked then see. ([ADR-0013](docs/adr/0013-sign-in-and-sessions.md))
 - **One trace per filing**: the outbox stores each event's trace context and Kafka headers carry
   it, so a single OpenTelemetry trace follows a filing from discovery through every service to
   its alert. ([ADR-0016](docs/adr/0016-observability.md))
@@ -316,6 +320,7 @@ uv run filings-rebuild-key-fields --form-type 4  # refill Form 4 key fields from
 | `uv run filings-rebuild-key-fields --form-type 4` | Rewrite parsed filings' Postgres key fields (Form 4 owner CIKs and transaction lines too) from their MongoDB payloads, after a key-field change; no SEC calls, no events |
 | `uv run python scripts/synthetic_data.py --create --database-url <throwaway>` | Fill a throwaway database with years of synthetic, production-shaped data (resumes if interrupted; `--drop` deletes it) |
 | `uv run python scripts/measure_queries.py --database-url <throwaway>` | Time and explain every regular query on it, flagging sequential scans of large tables |
+| `uv run filings-admin grant <email>` | Make a signed-in account the admin who reviews company suggestions (`revoke` undoes it) |
 | `uv run filings-healthcheck <process>` | The workers' liveness check (e.g. `filings-parser`): exits 1 if its loop stopped beating |
 
 ## Local services

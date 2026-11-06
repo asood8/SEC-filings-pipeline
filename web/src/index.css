@@ -72,13 +72,15 @@ h3 {
 
 input,
 select,
+textarea,
 button {
   font: inherit;
   color: inherit;
 }
 
 input,
-select {
+select,
+textarea {
   padding: 0.45rem 0.6rem;
   border: 1px solid var(--control-border);
   border-radius: var(--radius);

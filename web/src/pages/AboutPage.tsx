@@ -44,7 +44,8 @@ export function AboutPage() {
       <p>
         Other forms, such as annual and quarterly reports, aren't collected yet.
         When a company joins the watchlist, its filings from the previous 30
-        days are collected; older ones aren't.
+        days are collected; older ones aren't. Missing a company? Signed-in
+        visitors can <Link to="/suggest">suggest one</Link>.
       </p>
 
       <h2>Where the data comes from</h2>

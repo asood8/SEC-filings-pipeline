@@ -323,11 +323,21 @@ class Candidate:
     call_date: date | None  # when the address or link gives it
 
 
+# Links in href attributes, and in the JSON some sites embed for their document lists (Q4's:
+# {"text":"Q2","link":"//s205.q4cdn.com/.../Ford-Q2-2026-Earnings-Call-Transcript.pdf"}).
+_LINKS = re.compile(
+    r"""href\s*=\s*["'](?P<href>[^"']+)["']"""
+    r'''|"(?:link|url|href)"\s*:\s*"(?P<json>[^"]+)"''',
+    re.IGNORECASE,
+)
+
+
 def listing_candidates(page: str, base_url: str, source: Source) -> list[Candidate]:
     """The newest `source.keep` transcript links on a listing page."""
     assert source.link is not None
     found: dict[str, tuple[tuple[int, ...], date | None]] = {}
-    for href in re.findall(r"""href\s*=\s*["']([^"']+)["']""", page, re.IGNORECASE):
+    for found_link in _LINKS.finditer(page):
+        href = (found_link["href"] or found_link["json"]).replace("\\/", "/")
         url = urljoin(base_url, href.strip())
         if url in found or (match := source.link.search(url)) is None:
             continue
@@ -461,7 +471,7 @@ def _fetch_company(
         document = client.get(candidate.url)
         if document is None:
             continue  # not posted (yet)
-        stored_day = _store(sessions, store, source, company, candidate, document, done)
+        stored_day = _store(sessions, store, source, company, candidate, document, done, since)
         if stored_day is not None:
             known.add(candidate.url)
             done.add(reported_period(stored_day, source.fiscal_year_start_month))
@@ -477,6 +487,7 @@ def _store(
     candidate: Candidate,
     document: Document,
     done: set[Period],
+    since: date,
 ) -> date | None:
     text = document_text(document, source)
     if text is None:
@@ -498,6 +509,10 @@ def _store(
             exchanges,
             day,
         )
+        return None
+    if day < since:
+        # A listing link dated only by its quarter is fetched before its date is known.
+        logger.info("%s: the call of %s is older than the lookback; not stored", candidate.url, day)
         return None
     if reported_period(day, source.fiscal_year_start_month) in done:
         # The same call under another address (a listing's links moved): stored once.

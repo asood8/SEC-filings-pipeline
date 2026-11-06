@@ -83,6 +83,13 @@ def test_factset_style_transcripts_are_cleaned_and_split() -> None:
             "Goldman Sachs",
         ),
         ("Operator\nJoanne Wuensch, Citi.", "Joanne Wuensch", "Citi"),
+        # Dell: a firm written with initials
+        (
+            "Operator: And our next question will come from Joseph Cardoso with J.P. Morgan.",
+            "Joseph Cardoso",
+            "J.P. Morgan",
+        ),
+        ("Operator\nAsad Haider, J.P. Morgan.", "Asad Haider", "J.P. Morgan"),
         # Microsoft
         (
             "OPERATOR: The next question will come from the line of Tal Liani with Bank of "

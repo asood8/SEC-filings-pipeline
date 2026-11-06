@@ -92,7 +92,10 @@ def call_lines(company: str = "Example Corp", day: str = "October 13, 2026") -> 
 
 def test_the_source_file_is_valid() -> None:
     sources = load_sources(CONFIG)
-    assert {s.ticker for s in sources} == {"MSFT", "GOOGL", "JPM", "BAC", "JNJ", "PEP", "NKE"}
+    assert {s.ticker for s in sources} == {
+        *("MSFT", "GOOGL", "JPM", "BAC", "JNJ", "PEP", "NKE"),  # the first survey
+        *("F", "DELL", "SNX"),  # the second
+    }
 
 
 @pytest.mark.parametrize(
@@ -184,6 +187,24 @@ def test_a_listing_gives_its_newest_transcript_links() -> None:
     assert listing_candidates(LISTING, "https://x.example/earnings", by_date) == [
         Candidate("https://x.example/docs/2026-10-14+Call.pdf", date(2026, 10, 14))
     ]
+
+
+def test_a_listing_reads_links_from_the_json_a_page_embeds() -> None:
+    page = (
+        'documentCategoryData: [{"category":"Earnings Transcript","data":[{"year":2026,'
+        '"documents":[{"text":"Q1","link":"//cdn.example/files/2026/q1/X-Q1-2026-Transcript.pdf"},'
+        '{"text":"Q2","link":"\\/\\/cdn.example\\/files\\/2026\\/q2\\/X-Q2-2026-Transcript.pdf"},'
+        '{"text":"Q3","link":"//cdn.example/files/X-Q3-Transcript.pdf"}]}]}]'
+    )
+    source = Source(
+        ticker="X",
+        listing="https://x.example/financials",
+        link=r"files/(?P<year>\d{4})/q(?P<quarter>[1-4])/X-Q[1-4]-\d{4}-Transcript\.pdf$",
+    )
+    assert listing_candidates(page, "https://x.example/financials", source) == [
+        Candidate("https://cdn.example/files/2026/q2/X-Q2-2026-Transcript.pdf", None),
+        Candidate("https://cdn.example/files/2026/q1/X-Q1-2026-Transcript.pdf", None),
+    ]  # not the Q3 file, whose name gives no year
 
 
 # --- Reading sites --------------------------------------------------------------------------------
@@ -461,6 +482,30 @@ def test_unusable_documents_old_calls_and_broken_sources(
     assert report.failed == ["OTHR"]  # one broken site stops no other
     assert stored(clean_db) == []  # too short, no questions: not a transcript yet
     assert not any("2025q4" in url or "2026-03" in url for url in site.requests)
+
+
+@pytest.mark.integration
+def test_a_listed_transcript_older_than_the_lookback_is_not_stored(
+    clean_db: Engine, mongo_db: Database[dict[str, Any]]
+) -> None:
+    seed(clean_db)
+    site = FakeSite(
+        {
+            "https://other.example/earnings": ok(
+                '<a href="/q3-2026.pdf">Q3</a> <a href="/q1-2026.pdf">Q1</a>'
+            ),
+            "https://other.example/q3-2026.pdf": ok(
+                pdf(call_lines("Other", "October 8, 2026")), "application/pdf"
+            ),
+            "https://other.example/q1-2026.pdf": ok(
+                pdf(call_lines("Other", "April 29, 2026")), "application/pdf"
+            ),
+        }
+    )
+    report = run(clean_db, mongo_db, site, [OTHER])
+    assert report.stored == ["OTHR"]
+    # The links give only quarters; April's call is past the 120 days once its text is read.
+    assert [day for _, day, _ in stored(clean_db)] == [date(2026, 10, 8)]
 
 
 @pytest.mark.integration

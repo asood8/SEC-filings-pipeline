@@ -1,6 +1,7 @@
 # Where watchlist companies publish their own earnings-call transcripts (ADR-0022). Only companies
 # whose sites' terms don't bar automated downloads, and whose transcripts a plain page links to or
-# an address built from the call's date reaches. Checked 2026-11-04; the survey is in the ADR.
+# an address built from the call's date reaches. Checked 2026-11-04 (the first 35 companies) and
+# 2026-11-06 (the 64 added then); the surveys are in the ADR.
 #
 # A source gives either:
 #   listing + link: a page linking every transcript, and a regular expression for those links
@@ -52,3 +53,21 @@ link = '/investors/q(?P<quarter>[1-4])-(?P<year>\d{4})-pep[-_]transcript\.pdf$'
 ticker = "NKE"
 listing = "https://investors.nike.com/financial-information/financial-results"
 link = 'webcast_transcript/NIKE[-+]Inc\.?[-+]Q(?P<quarter>[1-4])FY(?P<year>\d{2})[-+]OFFICIAL[-+]Transcript[^/]*\.pdf$'
+
+[[source]]
+ticker = "F"
+# The links are in the JSON the page embeds for its document lists. A new transcript can first
+# appear under a name without its year (content_files/Ford-Q3-Earnings-Transcript.pdf), which
+# can't be dated, so it's read once it moves under doc_financials/<year>/q<quarter>/.
+listing = "https://shareholder.ford.com/financials/default.aspx"
+link = 'doc_financials/(?P<year>\d{4})/q(?P<quarter>[1-4])/Ford-[^/]*Transcript[^/]*\.pdf$'
+
+[[source]]
+ticker = "DELL"
+listing = "https://investors.delltechnologies.com"
+link = 'webcast_transcript/(?:DELL_)?Q(?P<quarter>[1-4])_?FY(?P<year>\d{2})_(?:Earnings_)?Transcript\.pdf$'
+
+[[source]]
+ticker = "SNX"
+listing = "https://ir.tdsynnex.com/overview/default.aspx"
+link = 'content_files/TD-SYNNEX-Corporation-Q(?P<quarter>[1-4])-(?P<year>\d{4})-Earnings-Call[^/]*\.pdf$'

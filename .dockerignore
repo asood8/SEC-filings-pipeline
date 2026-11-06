@@ -4,7 +4,7 @@
 *
 
 # What the build uses: the workspace manifests and lockfile, each package's source, and the
-# discovery watchlist (public configuration baked into that image).
+# discovery image's public configuration: the watchlist and the transcript sources.
 !pyproject.toml
 !uv.lock
 !libs/*/pyproject.toml
@@ -12,6 +12,7 @@
 !services/*/pyproject.toml
 !services/*/src
 !config/watchlist.toml
+!config/transcript_sources.toml
 
 # Never sent, even from inside the paths allowed above. Most are already excluded by `*`; they are
 # listed so they stay excluded if the allowlist above ever widens.

@@ -736,3 +736,24 @@ def test_a_production_branch_pushed_by_hand_is_compared_as_it_is(repo: Repo) -> 
     c = repo.push(CONFIG, "LOG_LEVEL=DEBUG\n", "Change a setting")
     assert repo.run().failed is None
     _assert_deploys(repo, c, b)
+
+
+def test_every_file_the_dockerfile_copies_is_in_the_build_context() -> None:
+    # .dockerignore sends an allowlist; a COPY of a file left off it fails only when the image is
+    # built, which happens on main, not on pull requests (the transcript sources, 2026-11-04).
+
+    allowed = [
+        line[1:].strip()
+        for line in (ROOT / ".dockerignore").read_text().splitlines()
+        if line.startswith("!")
+    ]
+    copied = []
+    for line in (ROOT / "docker" / "service.Dockerfile").read_text().splitlines():
+        parts = line.split()
+        if not parts or parts[0] != "COPY" or any(p.startswith("--from") for p in parts):
+            continue
+        sources = [p for p in parts[1:-1] if not p.startswith("--")]
+        copied += [s for s in sources if "$" not in s and not s.endswith("/")]
+    assert copied, "no COPY sources found"
+    missing = [s for s in copied if not any(fnmatch(s, pattern) for pattern in allowed)]
+    assert missing == []

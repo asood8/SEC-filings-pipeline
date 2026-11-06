@@ -13,7 +13,7 @@ from filings_common.config import (
 
 def test_user_agent_names_the_app_and_contact() -> None:
     settings = EdgarSettings(_env_file=None, contact_email="ops@example.com")
-    assert settings.user_agent == "sec-filings-pipeline ops@example.com"
+    assert settings.user_agent == "Filingwire ops@example.com"
 
 
 def test_contact_email_is_required(monkeypatch: pytest.MonkeyPatch) -> None:

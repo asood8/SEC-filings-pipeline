@@ -44,7 +44,7 @@ describe('CallsPage', () => {
     expect(
       await screen.findByRole('heading', { level: 1, name: 'Upcoming calls' }),
     ).toBeInTheDocument()
-    expect(document.title).toBe('Upcoming calls · SEC Filings')
+    expect(document.title).toBe('Upcoming calls · Filingwire')
     const days = await screen.findAllByRole('heading', { level: 2 })
     expect(days.map((h) => h.textContent)).toEqual([
       'Wednesday, October 28',

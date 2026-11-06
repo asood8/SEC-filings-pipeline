@@ -27,7 +27,7 @@ describe('FeedPage', () => {
     expect(
       await screen.findByRole('link', { name: /Kevan Parekh/ }),
     ).toHaveAttribute('href', '/filings/a')
-    expect(document.title).toBe('Latest filings · SEC Filings')
+    expect(document.title).toBe('Latest filings · Filingwire')
     expect(
       screen.getByText('Form 4 filing, summary pending'),
     ).toBeInTheDocument()

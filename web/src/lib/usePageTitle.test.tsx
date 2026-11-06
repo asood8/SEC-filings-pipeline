@@ -8,15 +8,15 @@ describe('usePageTitle', () => {
       ({ title }: { title?: string }) => usePageTitle(title),
       { initialProps: { title: 'Apple Inc. (AAPL)' } },
     )
-    expect(document.title).toBe('Apple Inc. (AAPL) · SEC Filings')
+    expect(document.title).toBe('Apple Inc. (AAPL) · Filingwire')
 
     rerender({ title: 'Search: buyback' })
-    expect(document.title).toBe('Search: buyback · SEC Filings')
+    expect(document.title).toBe('Search: buyback · Filingwire')
   })
 
   it("shows the site's name alone while the page is loading", () => {
     renderHook(() => usePageTitle(undefined))
-    expect(document.title).toBe('SEC Filings')
-    expect(pageTitle('')).toBe('SEC Filings')
+    expect(document.title).toBe('Filingwire')
+    expect(pageTitle('')).toBe('Filingwire')
   })
 })

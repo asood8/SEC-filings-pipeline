@@ -7,7 +7,7 @@ metadata:
   name: filings
   namespace: argocd
 spec:
-  description: SEC filings pipeline and the cluster add-ons it needs
+  description: Filingwire (the SEC filings pipeline) and the cluster add-ons it needs
   sourceRepos:
     - https://github.com/asood8/SEC-filings-pipeline.git
   destinations:

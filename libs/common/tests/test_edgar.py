@@ -53,7 +53,7 @@ def test_every_request_declares_user_agent_and_takes_a_token() -> None:
     h.client.get_json("https://www.sec.gov/a")
     h.client.get_json("https://www.sec.gov/b")
     user_agents = {r.headers["User-Agent"] for r in h.requests}
-    assert user_agents == {"sec-filings-pipeline ops@example.com"}
+    assert user_agents == {"Filingwire ops@example.com"}
     assert h.limiter.calls == 2
 
 

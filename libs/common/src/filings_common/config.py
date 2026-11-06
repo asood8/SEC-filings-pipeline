@@ -22,7 +22,7 @@ class EdgarSettings(BaseSettings):
     model_config = _config("SEC_")
 
     contact_email: str
-    app_name: str = "sec-filings-pipeline"
+    app_name: str = "Filingwire"
     # Shared by every worker through Redis. SEC's documented maximum is 10 requests/second.
     rate_limit_per_second: float = Field(default=5.0, gt=0, le=10)
     rate_limit_burst: int = Field(default=1, ge=1, le=5)

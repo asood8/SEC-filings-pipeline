@@ -102,7 +102,7 @@ class DiscordSender:
         if not target_is_valid(Channel.DISCORD, target):
             raise PermanentDeliveryError("not a Discord webhook URL")
         payload = {
-            "username": "SEC Filings",
+            "username": "Filingwire",
             # Never let summary text mention @everyone, roles, or users.
             "allowed_mentions": {"parse": []},
             "embeds": [

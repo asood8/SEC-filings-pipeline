@@ -21,7 +21,7 @@ describe('FilingPage', () => {
       await screen.findByRole('heading', { level: 1, name: /Kevan Parekh/ }),
     ).toBeInTheDocument()
     expect(document.title).toBe(
-      'Apple names Kevan Parekh chief financial officer · SEC Filings',
+      'Apple names Kevan Parekh chief financial officer · Filingwire',
     )
     expect(screen.getByText('Effective January 1, 2027')).toBeInTheDocument()
     expect(screen.getByText(/Director or officer change/)).toBeInTheDocument()
@@ -442,6 +442,6 @@ describe('FilingPage', () => {
     expect(
       await screen.findByRole('heading', { name: 'Not found' }),
     ).toBeInTheDocument()
-    expect(document.title).toBe('Filing not found · SEC Filings')
+    expect(document.title).toBe('Filing not found · Filingwire')
   })
 })

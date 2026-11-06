@@ -50,7 +50,7 @@ def feed(
     _add(root, "title", title)
     _add(root, "updated", _time(updated))
     _add(root, "link", rel="self", type="application/atom+xml", href=self_url)
-    _add(root, "generator", "SEC filings pipeline")
+    _add(root, "generator", "Filingwire")
     for entry in entries:
         element = _add(root, "entry")
         _add(element, "id", entry.id)

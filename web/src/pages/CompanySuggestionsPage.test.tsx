@@ -70,7 +70,7 @@ describe('CompanySuggestionsPage', () => {
         name: 'Waiting for a decision (2)',
       }),
     ).toBeInTheDocument()
-    expect(document.title).toBe('Company suggestions · SEC Filings')
+    expect(document.title).toBe('Company suggestions · Filingwire')
     const list = screen.getByRole('list', {
       name: 'Waiting for a decision (2)',
     })

@@ -59,7 +59,7 @@ def calendar(events: Iterable[Event], *, name: str, now: datetime) -> str:
     lines = [
         "BEGIN:VCALENDAR",
         "VERSION:2.0",
-        "PRODID:-//SEC Filings//Investor calls//EN",
+        "PRODID:-//Filingwire//Investor calls//EN",
         "CALSCALE:GREGORIAN",
         "METHOD:PUBLISH",
         f"X-WR-CALNAME:{_escape(name)}",

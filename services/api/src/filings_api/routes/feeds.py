@@ -71,7 +71,7 @@ def filings_feed(
         parts.append(f"8-K item {item}")
     elif form_type is not None:
         parts.append(f"{_form_label(form_type)}s")
-    title = "SEC filings" + (f": {', '.join(parts)}" if parts else "")
+    title = "Filingwire" + (f": {', '.join(parts)}" if parts else "")
 
     current = (
         sa.select(Summary.summary, Summary.created_at)

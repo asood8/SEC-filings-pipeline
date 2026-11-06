@@ -160,9 +160,9 @@ def calls_calendar(session: SessionDep, request: Request, ticker: TickerFilter =
         )
         for call in calls
     ]
-    name = "SEC filings: investor calls"
+    name = "Filingwire: investor calls"
     if company is not None:
-        name = f"SEC filings: {company.ticker} investor calls"
+        name = f"Filingwire: {company.ticker} investor calls"
     body = ical.calendar(events, name=name, now=datetime.now(EASTERN)).encode()
     return conditional_response(
         request,

@@ -179,7 +179,7 @@ def create_app(
         telemetry.shutdown()
 
     app = FastAPI(
-        title="SEC Filings API", version="0.2.0", description=DESCRIPTION, lifespan=lifespan
+        title="Filingwire API", version="0.2.0", description=DESCRIPTION, lifespan=lifespan
     )
     app.state.sessions = None
     app.state.embedder = None

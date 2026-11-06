@@ -156,6 +156,23 @@ beside it: "Original filing" (sec.gov) or "Full transcript" (the company's site)
 field, a Slack context link, and a line of the email. Unset, as before the domain, alerts link
 the original only.
 
+### One-click unsubscribe from email alerts (added 2026-11-05)
+
+Each email alert carries a link that stops it without signing in: a token naming the
+subscription and signed with `UNSUBSCRIBE_SECRET` (HMAC-SHA256, filings_common.unsubscribe),
+which the notifier adds and the API checks. Two links, the same token:
+
+- the `List-Unsubscribe` header, `https://api.<domain>/unsubscribe?token=...`, with
+  `List-Unsubscribe-Post: List-Unsubscribe=One-Click` (RFC 8058): mail apps show an Unsubscribe
+  button that POSTs there;
+- a "Stop these alerts" link in the body, to the website's `/unsubscribe` page, which shows which
+  alert it is (the address masked: the link can be forwarded) and stops it on a button press.
+  A GET never changes anything, so mail scanners that follow links can't unsubscribe anyone.
+
+Email only: a Discord or Slack alert goes to a channel others can read, and a link there would
+let any of them stop the owner's alert. Tokens don't expire; changing the secret voids them.
+Without the secret (or `ALERTS_API_URL`), emails carry no links and `/unsubscribe` answers 404.
+
 ## Alternatives considered
 
 - **Dedupe in Redis.** It's lost on eviction or restart, and can't show what was delivered. The

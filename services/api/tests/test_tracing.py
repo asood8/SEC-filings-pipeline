@@ -9,6 +9,7 @@ from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanE
 from opentelemetry.trace import SpanKind
 
 from filings_api.auth import SESSION_COOKIE
+from filings_common.unsubscribe import token
 
 ClientFactory = Callable[..., TestClient]
 
@@ -76,3 +77,21 @@ def test_requests_are_measured_by_route_and_status_but_never_by_host_or_size(
     assert not {"http.server.request.body.size", "http.server.response.body.size"} & (
         measured.names()
     )
+
+
+def test_unsubscribe_spans_hold_no_token(
+    make_client: ClientFactory, spans: InMemorySpanExporter
+) -> None:
+    secret = "u" * 64
+    client = make_client(traced=True, unsubscribe_secret=secret)
+    signed = token(99, secret)
+    client.get("/unsubscribe", params={"token": signed})
+    client.post("/unsubscribe", params={"token": signed})
+    client.get("/search", params={"q": "buyback"})
+
+    finished = {s.name: s for s in spans.get_finished_spans()}
+    for name in ("GET /unsubscribe", "POST /unsubscribe"):
+        assert signed not in finished[name].to_json()
+        assert (finished[name].attributes or {})["url.query"] == "token=REDACTED"
+    # Other routes' query strings (search terms, filters) are recorded as before.
+    assert "buyback" in str((finished["GET /search"].attributes or {})["url.query"])

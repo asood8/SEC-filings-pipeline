@@ -1,0 +1,14 @@
+# EXAMPLE ONLY: placeholder values. Never commit a filled-in copy; seal it instead
+# (deploy/k8s/README.md, "Secrets").
+#
+# Signs email alerts' one-click unsubscribe links (ADR-0012): `openssl rand -hex 32`. The notifier
+# signs, the API checks; without it, emails carry no unsubscribe link. Changing it voids the links
+# in emails already sent. Used by: notifier, api.
+apiVersion: v1
+kind: Secret
+metadata:
+  name: unsubscribe
+  namespace: filings
+type: Opaque
+stringData:
+  UNSUBSCRIBE_SECRET: replace-me-with-64-hex-characters

@@ -6,12 +6,14 @@ import os
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from datetime import timedelta
+from typing import Any
 
 import redis
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor
+from opentelemetry.trace import Span
 from redis.backoff import NoBackoff
 from redis.retry import Retry
 from sqlalchemy.orm import Session, sessionmaker
@@ -20,6 +22,7 @@ from filings_api.embedding_cache import QueryEmbeddingCache
 from filings_api.google import GoogleIdTokenVerifier, GoogleSigningKeys
 from filings_api.middleware import (
     PROBE_PATHS,
+    TOKEN_PATHS,
     BodySizeLimitMiddleware,
     CacheMiddleware,
     CsrfMiddleware,
@@ -37,6 +40,7 @@ from filings_api.routes import (
     insider_trades,
     search,
     subscriptions,
+    unsubscribe,
 )
 from filings_common.config import (
     ApiSettings,
@@ -44,6 +48,7 @@ from filings_common.config import (
     EmbeddingSettings,
     GoogleSignInSettings,
     RedisSettings,
+    UnsubscribeSettings,
 )
 from filings_common.db import create_engine, session_factory
 from filings_common.embeddings import Embedder, embedder_from_settings
@@ -77,8 +82,10 @@ def instrument(app: FastAPI) -> None:
 
     The span records the method, route, URL, and status, never request headers or bodies, which
     carry the session cookie, Google ID tokens, and webhook URLs. Query strings hold only search
-    terms and filters. Should header capture ever be turned on (OTEL_INSTRUMENTATION_HTTP_CAPTURE_
-    HEADERS_*), cookie and authorization values are still redacted.
+    terms and filters, except /unsubscribe's, a signed token that works as a credential: that
+    route's query is recorded as redacted. Should header capture ever be turned on
+    (OTEL_INSTRUMENTATION_HTTP_CAPTURE_HEADERS_*), cookie and authorization values are still
+    redacted.
 
     Metrics: `http.server.request.duration` by method, route, and status, and
     `http.server.active_requests`. They follow the stable HTTP semantic conventions, which the
@@ -91,7 +98,14 @@ def instrument(app: FastAPI) -> None:
         excluded_urls=",".join(sorted(PROBE_PATHS)),
         exclude_spans=["receive", "send"],
         http_capture_headers_sanitize_fields=["cookie", "authorization"],
+        server_request_hook=_redact_tokens,
     )
+
+
+def _redact_tokens(span: Span, scope: dict[str, Any]) -> None:
+    """A signed unsubscribe token in the query works as a credential: keep it out of traces."""
+    if scope.get("path") in TOKEN_PATHS and span.is_recording():
+        span.set_attribute("url.query", "token=REDACTED")
 
 
 def create_app(
@@ -101,6 +115,7 @@ def create_app(
     embedder: Embedder | None = None,
     settings: ApiSettings | None = None,
     google_verifier: GoogleIdTokenVerifier | None = None,
+    unsubscribe_secret: str | None = None,
 ) -> FastAPI:
     """Build the app. Given `sessions` (tests), it uses exactly the dependencies passed in;
     otherwise it connects to everything from the environment on startup, and sets up logging and
@@ -178,6 +193,11 @@ def create_app(
     app.state.session_lifetime = timedelta(days=settings.session_lifetime_days)
     app.state.cookie_secure = settings.cookie_secure
     app.state.allowed_origins = frozenset(settings.cors_origins)
+    # Signs the email alerts' unsubscribe links (routes/unsubscribe); tests pass their own.
+    if sessions is None:
+        configured = UnsubscribeSettings().secret
+        unsubscribe_secret = configured.get_secret_value() if configured is not None else None
+    app.state.unsubscribe_secret = unsubscribe_secret
     # Starlette runs the last-added middleware first, so requests pass through these bottom-up:
     # CORS, then the rate limit, the body size limit, the CSRF check, and the cache. An oversized
     # body still spends the client's rate limit.
@@ -225,6 +245,7 @@ def create_app(
     app.include_router(search.router)
     app.include_router(auth.router)
     app.include_router(subscriptions.router)
+    app.include_router(unsubscribe.router)
     if telemetry.enabled:
         instrument(app)
     return app

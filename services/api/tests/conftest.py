@@ -330,6 +330,7 @@ def make_client(
             embedder=overrides.pop("embedder", WordHashEmbedder()),
             settings=settings,
             google_verifier=overrides.pop("google_verifier", GoogleTokens(google_key).verifier()),
+            unsubscribe_secret=overrides.pop("unsubscribe_secret", None),
         )
         if overrides.pop("traced", False):
             instrument(app)

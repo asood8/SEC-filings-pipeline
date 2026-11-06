@@ -53,6 +53,10 @@ spec:
                 name: filings-config
             - secretRef:
                 name: postgres
+            # Checks email alerts' unsubscribe links; without it, /unsubscribe answers 404.
+            - secretRef:
+                name: unsubscribe
+                optional: true
           env:
             # Assembled from the postgres Secret and the config, so the password has one source.
             - name: DATABASE_URL

@@ -85,7 +85,10 @@ The constraints:
     website or the API itself get a 403. Browsers always send `Origin` on such cross-origin
     requests; non-browser clients aren't affected.
   - Request bodies must be JSON (415 otherwise). HTML forms can only send form or text bodies,
-    and cross-origin JSON requires a preflight that only allowed origins pass.
+    and cross-origin JSON requires a preflight that only allowed origins pass. The one exception
+    is `POST /unsubscribe` (added 2026-11-05): mail apps' one-click unsubscribe sends a form body
+    (RFC 8058), and the route is authorized by a signed token in its URL, never by the cookie,
+    so there is nothing for another site to forge (ADR-0012). The Origin check still applies.
 - **Request bodies are capped at 64 KiB** (413 otherwise; added 2026-10-22), before the app
   reads them. The largest real body, a batch of alerts, is a few KB; without a cap, one
   unauthenticated request as large as Cloudflare passes (100 MB) would be held in memory and

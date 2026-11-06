@@ -8,7 +8,7 @@ from typing import Literal
 from pydantic import AnyHttpUrl, SecretStr, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
-from filings_common.config import DatabaseSettings, KafkaSettings
+from filings_common.config import DatabaseSettings, KafkaSettings, UnsubscribeSettings
 from filings_common.consumer import make_consumer, run_consumer
 from filings_common.db import Channel, create_engine, session_factory
 from filings_common.events import Topic
@@ -40,8 +40,11 @@ class AlertSettings(BaseSettings):
     # then links the filing's or call's page there, with the original beside it. Unset, alerts
     # link the original only.
     site_url: AnyHttpUrl | None = None
+    # The API's public address (https://api.<domain>): email alerts' one-click unsubscribe links
+    # point there, signed with UNSUBSCRIBE_SECRET. Unset (or no secret): no links.
+    api_url: AnyHttpUrl | None = None
 
-    @field_validator("site_url", mode="before")
+    @field_validator("site_url", "api_url", mode="before")
     @classmethod
     def _blank_is_unset(cls, value: object) -> object:
         return None if value == "" else value  # ALERTS_SITE_URL= in config.env until the domain
@@ -96,17 +99,20 @@ def main() -> int:
     dead_letters = KafkaPublisher(kafka.bootstrap_servers)
     try:
         sessions = session_factory(engine)
-        site_url = AlertSettings().site_url
-        site = str(site_url) if site_url is not None else None
+        alerts = AlertSettings()
+        secret = UnsubscribeSettings().secret
+        links: dict[str, str | None] = {
+            "site_url": str(alerts.site_url) if alerts.site_url is not None else None,
+            "api_url": str(alerts.api_url) if alerts.api_url is not None else None,
+            "unsubscribe_secret": secret.get_secret_value() if secret is not None else None,
+        }
         run_consumer(
             make_consumer(kafka.bootstrap_servers, CONSUMER_GROUP),
             [Topic.FILINGS_READY, Topic.CALLS_SUMMARIZED],
             TopicHandler(
                 {
-                    Topic.FILINGS_READY: NotificationHandler(sessions, senders, site_url=site),
-                    Topic.CALLS_SUMMARIZED: CallNotificationHandler(
-                        sessions, senders, site_url=site
-                    ),
+                    Topic.FILINGS_READY: NotificationHandler(sessions, senders, **links),
+                    Topic.CALLS_SUMMARIZED: CallNotificationHandler(sessions, senders, **links),
                 }
             ),
             dead_letters,

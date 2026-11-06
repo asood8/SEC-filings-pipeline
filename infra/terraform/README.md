@@ -208,13 +208,14 @@ terraform output -raw mongodb_url \
 | `r2-raw-filings`, `r2-backups` | endpoint: `terraform output r2_endpoint_url`; keys: the R2 API tokens made by hand, one per bucket |
 | `grafana-cloud` | the Grafana Cloud portal (OTLP endpoint, instance ID, access policy token) |
 | `cloudflare-analytics` | the account ID, and a token made by hand with only **Account Analytics: Read** (the daily R2 free-tier check) |
-| `postgres` | generate: `openssl rand -hex 32` |
+| `postgres`, `unsubscribe` | generate: `openssl rand -hex 32` |
 | `gemini`, `sec-edgar`, `smtp` | your own values |
 
 Then the non-secret settings in `deploy/k8s/overlays/production/config.env`: `API_CORS_ORIGINS`
 is `terraform output -raw api_cors_origins`, `GOOGLE_CLIENT_ID` is the same public ID as the
-`google_client_id` variable, and `ALERTS_SITE_URL` is `terraform output -raw web_url` (alerts
-link the website's pages). List the sealed files in the overlay's `kustomization.yaml`, commit,
+`google_client_id` variable, `ALERTS_SITE_URL` is `terraform output -raw web_url` (alerts
+link the website's pages), and `ALERTS_API_URL` is `terraform output -raw api_url` (email
+alerts' one-click unsubscribe, with the `unsubscribe` Secret). List the sealed files in the overlay's `kustomization.yaml`, commit,
 and push to `main`; once CI passes, the image workflow deploys them to `production`, and Argo CD
 does the rest.
 

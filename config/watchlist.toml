@@ -1,16 +1,30 @@
-# Companies discovery polls on EDGAR. Large, well-known US companies across sectors: they file
-# Form 4s (insider trades) and 8-Ks (major events) often, so the pipeline always has activity.
+# Companies discovery polls on EDGAR: the Fortune 100 (the 2026 list, ranked by 2025 revenue)
+# that trade on a market, plus 7 widely followed companies below the top 100 (Adobe, AMD,
+# Mastercard, McDonald's, Netflix, Salesforce, Visa). They file Form 4s (insider trades) and 8-Ks
+# (major events) often, so the pipeline always has activity.
+#
+# Not here: the 7 customer-owned insurers on the list (State Farm, New York Life, Nationwide,
+# USAA, TIAA, Liberty Mutual, MassMutual), which have no stock and so no insider trades, and
+# Publix, which has stock but no ticker.
+#
 # After editing, run `uv run filings-discovery load-companies`; it reports any unknown ticker.
+# New companies' filings from the previous 30 days are collected on the next discovery run.
 tickers = [
     # Technology and communication
     "AAPL", "MSFT", "NVDA", "GOOGL", "AMZN", "META", "TSLA", "AVGO", "ORCL", "CRM",
-    "AMD", "ADBE", "INTC", "NFLX",
+    "AMD", "ADBE", "INTC", "NFLX", "CSCO", "IBM", "DELL", "HPQ", "SNX", "INGM",
+    "VZ", "T", "CMCSA", "CHTR", "UBER",
     # Financials
-    "JPM", "BAC", "GS", "V", "MA", "BRK-B",
+    "JPM", "BAC", "GS", "V", "MA", "BRK-B", "C", "WFC", "MS", "AXP",
+    "COF", "PGR", "ALL", "MET", "PRU", "TRV", "FNMA", "FMCC", "SNEX", "GLXY",
     # Health care
-    "UNH", "JNJ", "LLY", "PFE",
+    "UNH", "JNJ", "LLY", "PFE", "CVS", "MCK", "COR", "CI", "CAH", "ELV",
+    "CNC", "HUM", "HCA", "MRK", "ABBV", "BMY",
     # Consumer
-    "WMT", "COST", "KO", "PEP", "MCD", "NKE", "DIS",
-    # Energy and industrials
-    "XOM", "CVX", "BA", "CAT",
+    "WMT", "COST", "KO", "PEP", "MCD", "NKE", "DIS", "HD", "KR", "TGT",
+    "LOW", "PG", "SYY", "ACI", "TJX", "PFGC", "TSN", "ADM", "F", "GM",
+    # Energy
+    "XOM", "CVX", "PSX", "MPC", "VLO", "COP", "ET", "EPD",
+    # Industrials and transport
+    "BA", "CAT", "UPS", "FDX", "RTX", "LMT", "GD", "DAL", "UAL", "AAL",
 ]

@@ -11,11 +11,12 @@ export function AboutPage() {
       <h1>About {SITE_NAME}</h1>
       <p>
         This site follows new SEC filings from a{' '}
-        <Link to="/companies">watchlist of large US companies</Link>. It
-        summarizes each filing in plain English, lets you{' '}
-        <Link to="/search">search them</Link> by keyword or by meaning, and can{' '}
-        <Link to="/alerts">alert you</Link> on Discord, Slack, or email when a
-        company you follow files.
+        <Link to="/companies">watchlist of large US companies</Link>: the
+        Fortune 100 companies whose shares trade on a market, plus a few other
+        widely followed names. It summarizes each filing in plain English, lets
+        you <Link to="/search">search them</Link> by keyword or by meaning, and
+        can <Link to="/alerts">alert you</Link> on Discord, Slack, or email when
+        a company you follow files.
       </p>
 
       <h2>What it covers</h2>

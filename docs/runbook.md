@@ -168,8 +168,8 @@ kubectl -n filings logs job/$(kubectl -n filings get jobs -l app.kubernetes.io/n
 ```
 
 - **Storage:** usually backups. Their bucket expires them after `backup_retention_days`
-  (Terraform, 30 by default): lower it and apply. Raw filings grow with the watchlist, a few MB
-  a month at 35 companies.
+  (Terraform, 30 by default): lower it and apply. Raw filings grow with the watchlist, about
+  20 MB a month at 99 companies.
 - **Class A** (writes): normal use is a few thousand a month (one write per new filing and
   exhibit, one per nightly backup). Far more means something writes in a loop: check the
   discovery and backup jobs' logs and recent replays. Lists count too.
@@ -533,8 +533,8 @@ How the pipeline keeps to them (ADR-0004, `filings_common.edgar`):
   10 and 5). If Valkey is down, discovery fails instead of going unthrottled.
 - 429, 500, 502, 503, and 504 answers and connection errors are retried with exponential backoff,
   honoring `Retry-After`, up to 5 attempts (`SEC_MAX_ATTEMPTS`). A 403 is not retried.
-- The load: one submissions request per watchlist company per run (35 every 10 minutes, about
-  7 s at 5 per second), plus each new filing's documents.
+- The load: one submissions request per watchlist company per run (99 every 10 minutes, about
+  20 s at 5 per second), plus each new filing's documents.
 
 When 429s show up (the "SEC 429s" and "SEC responses per hour" panels on the Pipeline dashboard,
 or `SEC returned 429` in discovery's log):
@@ -948,7 +948,9 @@ the tested path.
 ## Capacity planning
 
 Measured with the watchlist of **35 companies, about 3,500 filings a year** (mostly Form 4s;
-about 7% are 8-Ks, which is roughly 250 a year):
+about 7% are 8-Ks, which is roughly 250 a year). Since 2026-11-06 the watchlist has **99
+companies**, so expect about 2.8 times every rate below: about 10,000 filings and 700 8-Ks a
+year.
 
 | Store | Growth per year | Free limit | Room at this rate |
 |---|---|---|---|
@@ -965,11 +967,11 @@ about 7% are 8-Ks, which is roughly 250 a year):
 - **More companies** scale these linearly. Per company and year: MongoDB ~0.31 MB, R2 raw
   ~2.3 MB, Postgres ~0.9 MB. Atlas fills first: at 80% of 512 MB, 100 companies last about
   13 years and 500 about 2.5.
-- **SEC:** discovery's run takes about 7 s at 5 requests/s; within its 9-minute deadline one run
-  could poll about 2,500 companies.
+- **SEC:** discovery's run takes about 7 s for 35 companies at 5 requests/s (about 20 s for 99);
+  within its 9-minute deadline one run could poll about 2,500 companies.
 - **The local LLM:** up to about 5 minutes per 8-K on two laptop cores (the A1 is measured by the
-  benchmark), so at most about 21 hours of both cores a year; re-summarizing a year of 8-Ks takes
-  up to about a day.
+  benchmark), so at most about 60 hours of both cores a year at 99 companies; re-summarizing a
+  year of 8-Ks takes up to about 2.5 days.
 - **Gemini** is only the fallback, so its free daily cap matters only during a long local-model
   outage or a replay with the local model down; the queue absorbs the wait.
 - **Grafana Cloud:** about 400 to 1,500 active series of the 10,000 free (ADR-0016). Series grow

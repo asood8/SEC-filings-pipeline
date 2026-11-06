@@ -154,7 +154,8 @@ On the laptop, against the real sites and the local model only (no Gemini):
 ## Consequences
 
 - Coverage is 7 of 35 companies (20%), mostly technology, banks and consumer names. Adding one
-  means reading its terms first (runbook, "Earnings-call transcripts").
+  means reading its terms first (runbook, "Earnings-call transcripts"). The 64 companies added
+  to the watchlist on 2026-11-06 (99 in all) haven't been surveyed yet.
 - Sources are per-site and will break when a site changes; the overdue alert says when.
 - The small model's known weakness (who did what) matters more in Q&A, which is mostly who said
   what. The labels make that measurable.

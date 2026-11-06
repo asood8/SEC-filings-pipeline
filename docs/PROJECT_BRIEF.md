@@ -223,7 +223,7 @@ CLAUDE.md
 
 ## 12. Open decisions (ask before choosing)
 
-- ~~Watchlist: which companies and how many to start with~~ Decided 2026-10-05: 35 large, well-known US companies across sectors (`config/watchlist.toml`)
+- ~~Watchlist: which companies and how many to start with~~ Decided 2026-10-05: 35 large, well-known US companies across sectors (`config/watchlist.toml`). Grown 2026-11-06 to 99: the Fortune 100 (2026 list) companies that trade on a market, plus the 7 original companies below the top 100; visitors can suggest more
 - ~~Kustomize vs Helm; Sealed Secrets vs SOPS for production secrets~~ Decided 2026-10-07: Kustomize and Sealed Secrets ([ADR-0017](adr/0017-kubernetes-manifests.md))
 - ~~Local observability viewer~~ Decided 2026-10-07: an optional grafana/otel-lgtm container (Compose profile); production uses Grafana Cloud ([ADR-0016](adr/0016-observability.md))
 - Which local LLM and embedding model (pick a reasonable default in Phase 2; decide properly with the Phase 8 benchmark). Defaults so far: Llama 3.2 3B ([ADR-0010](adr/0010-local-llm-in-compose-and-default-model.md)) and nomic-embed-text v1.5 ([ADR-0011](adr/0011-search-and-public-api.md)); `filings-benchmark` is ready, the run on the A1 VM is pending.

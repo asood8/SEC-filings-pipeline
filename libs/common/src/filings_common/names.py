@@ -106,15 +106,31 @@ _AMPERSAND_WORD = re.compile(r"[A-Z]+&[A-Z]+")
 _SPELLINGS = {
     "ABBVIE": "AbbVie",
     "BLACKROCK": "BlackRock",
+    "CONOCOPHILLIPS": "ConocoPhillips",
     "EXXONMOBIL": "ExxonMobil",
     "FEDEX": "FedEx",
+    "HP": "HP",
     "JPMORGAN": "JPMorgan",
     "MCDONALDS": "McDonald's",
+    "METLIFE": "MetLife",
     "NVIDIA": "NVIDIA",
     "PAYPAL": "PayPal",
     "PEPSICO": "PepsiCo",
     "SAP": "SAP",
+    "SYNNEX": "SYNNEX",
+    "TD": "TD",
+    "TJX": "TJX",
     "UNITEDHEALTH": "UnitedHealth",
+}
+# Whole company names that word rules can't fix, keyed as EDGAR writes them (without a state tag):
+# a brand inside a name not all in capitals, a brand that is also a surname (a reporting owner
+# named Lowes keeps his spelling), and two companies better known by their nicknames, which their
+# own filings use.
+_COMPANY_NAMES = {
+    "CVS HEALTH Corp": "CVS Health Corp",
+    "LOWES COMPANIES INC": "Lowe's Companies Inc",
+    "FEDERAL NATIONAL MORTGAGE ASSOCIATION FANNIE MAE": "Fannie Mae",
+    "FEDERAL HOME LOAN MORTGAGE CORP": "Freddie Mac",
 }
 # Officer titles shown as the abbreviations people know them by, and what they stand for. The
 # search index treats each pair as synonyms (filings_common.search.ABBREVIATIONS starts with
@@ -149,6 +165,8 @@ _TITLE_SMALL_WORDS = _SMALL_WORDS | {"to", "in", "on", "at"}
 def company_name(name: str) -> str:
     """A company's name for display: without a state tag, and title-cased if in capitals."""
     cleaned = _strip_state_tag(name)
+    if cleaned in _COMPANY_NAMES:
+        return _COMPANY_NAMES[cleaned]
     return _title_case(cleaned.split()) if _in_capitals(cleaned) else cleaned
 
 

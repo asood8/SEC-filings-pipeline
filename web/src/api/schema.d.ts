@@ -430,6 +430,64 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/company-requests": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Your company suggestions */
+        get: operations["my_suggestions_company_requests_get"];
+        put?: never;
+        /** Suggest a company for the watchlist */
+        post: operations["suggest_company_company_requests_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/company-requests": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Every company suggestion (admins)
+         * @description Suggestions grouped by company, the most asked-for first.
+         */
+        get: operations["review_suggestions_admin_company_requests_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/company-requests/{ticker}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /**
+         * Decide on a suggested company (admins)
+         * @description Marks every suggestion of the company added, declined, or open again.
+         */
+        patch: operations["decide_admin_company_requests__ticker__patch"];
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -635,6 +693,83 @@ export interface components {
             ticker: string;
             /** Name */
             name: string;
+        };
+        /** CompanyRequestCreate */
+        CompanyRequestCreate: {
+            /**
+             * Ticker
+             * @description e.g. NOW, or BRK.B.
+             */
+            ticker: string;
+            /**
+             * Note
+             * @description Why it's worth following (optional).
+             */
+            note?: string | null;
+        };
+        /** CompanyRequestDecision */
+        CompanyRequestDecision: {
+            /**
+             * Status
+             * @description added once it's on the watchlist, declined, or open to reconsider.
+             * @enum {string}
+             */
+            status: "open" | "added" | "declined";
+        };
+        /** CompanyRequestOut */
+        CompanyRequestOut: {
+            /** Id */
+            id: number;
+            company: components["schemas"]["CompanyRef"];
+            /** Note */
+            note: string | null;
+            /**
+             * Status
+             * @description open: not decided yet; added: on the watchlist now; declined: not added.
+             * @enum {string}
+             */
+            status: "open" | "added" | "declined";
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Decided At */
+            decided_at: string | null;
+        };
+        /**
+         * CompanySuggestionOut
+         * @description Every suggestion of one company, for the admin.
+         */
+        CompanySuggestionOut: {
+            company: components["schemas"]["CompanyRef"];
+            /** On Watchlist */
+            on_watchlist: boolean;
+            /**
+             * Requests
+             * @description How many people asked for it.
+             */
+            requests: number;
+            /**
+             * First Requested At
+             * Format: date-time
+             */
+            first_requested_at: string;
+            /**
+             * Last Requested At
+             * Format: date-time
+             */
+            last_requested_at: string;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "open" | "added" | "declined";
+            /**
+             * Notes
+             * @description The notes people left, newest first.
+             */
+            notes: components["schemas"]["RequestNoteOut"][];
         };
         /** DeliveryOut */
         DeliveryOut: {
@@ -1141,6 +1276,21 @@ export interface components {
              */
             other_text: string | null;
         };
+        /** RequestNoteOut */
+        RequestNoteOut: {
+            /** Note */
+            note: string;
+            /**
+             * By
+             * @description Who wrote it, the email partly masked.
+             */
+            by: string;
+            /**
+             * At
+             * Format: date-time
+             */
+            at: string;
+        };
         /** SearchResponse */
         SearchResponse: {
             /** Query */
@@ -1531,6 +1681,12 @@ export interface components {
              * Format: date-time
              */
             created_at: string;
+            /**
+             * Is Admin
+             * @description Reviews company suggestions (GET /admin/company-requests).
+             * @default false
+             */
+            is_admin: boolean;
         };
         /** ValidationError */
         ValidationError: {
@@ -2338,6 +2494,145 @@ export interface operations {
             };
             /** @description Not a valid link. */
             400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    my_suggestions_company_requests_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CompanyRequestOut"][];
+                };
+            };
+        };
+    };
+    suggest_company_company_requests_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CompanyRequestCreate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CompanyRequestOut"];
+                };
+            };
+            /** @description Already followed, already suggested, or too many open. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description SEC knows no company by that ticker. */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    review_suggestions_admin_company_requests_get: {
+        parameters: {
+            query?: {
+                /** @description Which to list. */
+                status?: "open" | "added" | "declined";
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CompanySuggestionOut"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    decide_admin_company_requests__ticker__patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                ticker: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CompanyRequestDecision"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CompanySuggestionOut"];
+                };
+            };
+            /** @description Nobody suggested it. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Marked added while it isn't on the watchlist. */
+            409: {
                 headers: {
                     [name: string]: unknown;
                 };

@@ -448,7 +448,40 @@ class User(Base):
     email: Mapped[str]
     # Google's stable account ID (the ID token's `sub`); emails can change.
     google_sub: Mapped[str] = mapped_column(unique=True)
+    # Reviews company suggestions (filings-admin grant <email>); never set through the API.
+    is_admin: Mapped[bool] = mapped_column(default=False, server_default=sa.false())
     created_at: Mapped[datetime] = mapped_column(server_default=sa.func.now())
+
+
+class RequestStatus(StrEnum):
+    OPEN = "open"
+    ADDED = "added"  # the company is on the watchlist now
+    DECLINED = "declined"
+
+
+class CompanyRequest(Base):
+    """A signed-in user's suggestion to add a company to the watchlist. One per user and company;
+    the admin decides per company (every request for it gets the decision)."""
+
+    __tablename__ = "company_requests"
+    __table_args__ = (
+        sa.UniqueConstraint("user_id", "cik"),
+        sa.Index("ix_company_requests_cik", "cik"),
+    )
+
+    id: Mapped[int] = mapped_column(sa.BigInteger, sa.Identity(always=True), primary_key=True)
+    user_id: Mapped[int] = mapped_column(
+        sa.BigInteger, sa.ForeignKey("users.id", ondelete="CASCADE")
+    )
+    cik: Mapped[int] = mapped_column(sa.BigInteger, sa.ForeignKey("companies.cik"))
+    note: Mapped[str | None]  # why, in the user's words (shown only to the admin)
+    status: Mapped[RequestStatus] = mapped_column(
+        _text_enum(RequestStatus, "status"),
+        default=RequestStatus.OPEN,
+        server_default=RequestStatus.OPEN.value,
+    )
+    created_at: Mapped[datetime] = mapped_column(server_default=sa.func.now())
+    decided_at: Mapped[datetime | None]
 
 
 class UserSession(Base):

@@ -11,6 +11,9 @@ dependencies = [
     "uvicorn[standard]>=0.38",
 ]
 
+[project.scripts]
+filings-admin = "filings_api.admin_cli:main"
+
 [tool.uv.sources]
 filings-common = { workspace = true }
 

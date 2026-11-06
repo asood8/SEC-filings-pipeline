@@ -5,6 +5,7 @@ import { AboutPage } from './pages/AboutPage'
 import { AlertsPage } from './pages/AlertsPage'
 import { ErrorPage } from './pages/ErrorPage'
 import { CompaniesPage } from './pages/CompaniesPage'
+import { CompanySuggestionsPage } from './pages/CompanySuggestionsPage'
 import { CompanyPage } from './pages/CompanyPage'
 import { EarningsCallPage } from './pages/EarningsCallPage'
 import { FeedPage } from './pages/FeedPage'
@@ -12,6 +13,7 @@ import { FilingPage } from './pages/FilingPage'
 import { InsiderTradesPage } from './pages/InsiderTradesPage'
 import { NotFoundPage } from './pages/NotFoundPage'
 import { SearchPage } from './pages/SearchPage'
+import { SuggestCompanyPage } from './pages/SuggestCompanyPage'
 import { UnsubscribePage } from './pages/UnsubscribePage'
 
 export const routes: RouteObject[] = [
@@ -26,6 +28,8 @@ export const routes: RouteObject[] = [
       { path: 'search', element: <SearchPage /> },
       { path: 'companies', element: <CompaniesPage /> },
       { path: 'companies/:ticker', element: <CompanyPage /> },
+      { path: 'suggest', element: <SuggestCompanyPage /> },
+      { path: 'admin/suggestions', element: <CompanySuggestionsPage /> },
       { path: 'filings/:accessionNo', element: <FilingPage /> },
       { path: 'alerts', element: <AlertsPage /> },
       { path: 'unsubscribe', element: <UnsubscribePage /> },

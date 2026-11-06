@@ -3,6 +3,7 @@ import {
   formatHoldingChange,
   isoDateDaysAgo,
   formatDate,
+  formatDayOf,
   formatMoney,
   formatPrice,
   formatShares,
@@ -27,6 +28,10 @@ describe('format', () => {
 
   it('formats date-only values without shifting the day', () => {
     expect(formatDate('2026-09-28')).toBe('Sep 28, 2026')
+  })
+
+  it("shows a timestamp's day", () => {
+    expect(formatDayOf('2026-11-06T12:00:00Z')).toBe('Nov 6, 2026')
   })
 
   it('formats share counts, prices, and amounts', () => {

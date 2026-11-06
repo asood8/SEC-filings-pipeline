@@ -30,7 +30,14 @@ PROBE_PATHS = frozenset({"/healthz", "/readyz"})
 UNLIMITED_PATHS = PROBE_PATHS
 UNCACHED_PATHS = PROBE_PATHS | {"/openapi.json", "/docs", "/redoc"}
 # Per-user responses: never cached here, and marked no-store so browsers and proxies don't either.
-PRIVATE_PATH_PREFIXES = ("/auth", "/me", "/subscriptions", "/unsubscribe")
+PRIVATE_PATH_PREFIXES = (
+    "/auth",
+    "/me",
+    "/subscriptions",
+    "/unsubscribe",
+    "/company-requests",
+    "/admin",
+)
 # Authorized by a signed token in the URL, never by the session cookie, so a form body from a
 # mail app's one-click unsubscribe (RFC 8058) is fine: there is nothing for another site to forge.
 TOKEN_PATHS = frozenset({"/unsubscribe"})

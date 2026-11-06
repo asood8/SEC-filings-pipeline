@@ -44,7 +44,8 @@ def test_sign_in_creates_the_account_and_sets_a_session_cookie(
     assert response.status_code == 200
     user = response.json()
     assert user["email"] == "ada@example.com"
-    assert set(user) == {"id", "email", "created_at"}
+    assert set(user) == {"id", "email", "created_at", "is_admin"}
+    assert user["is_admin"] is False
     assert response.headers["Cache-Control"] == "no-store"
 
     cookie = response.headers["set-cookie"]

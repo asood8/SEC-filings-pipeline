@@ -1,19 +1,19 @@
 import { useQuery } from '@tanstack/react-query'
-import { type RefObject, useEffect, useRef } from 'react'
+import { useRef } from 'react'
 import { useSearchParams } from 'react-router'
 import {
   meQuery,
   subscriptionsQuery,
   useDeleteAccount,
-  useSignIn,
   useSignOut,
 } from '../api/account'
 import type { User } from '../api/client'
-import { GoogleSignInButton } from '../components/GoogleSignInButton'
 import { ErrorMessage, Loading } from '../components/QueryStatus'
+import { SignInPrompt } from '../components/SignInPrompt'
 import { SubscriptionForm } from '../components/SubscriptionForm'
 import { SubscriptionList } from '../components/SubscriptionList'
 import { loadGoogleSignIn } from '../lib/googleSignIn'
+import { useFocusWhenSignedInOrOut } from '../lib/useFocusWhenSignedInOrOut'
 import { usePageTitle } from '../lib/usePageTitle'
 
 export function AlertsPage() {
@@ -39,41 +39,11 @@ export function AlertsPage() {
       ) : me.data ? (
         <SignedIn user={me.data} />
       ) : (
-        <SignedOut />
+        <SignInPrompt>
+          Sign in with your Google account to set up alerts.
+        </SignInPrompt>
       )}
     </>
-  )
-}
-
-/**
- * Signing in or out replaces most of the page, including the button that was used, so focus
- * moves to the page's heading instead of being lost.
- */
-function useFocusWhenSignedInOrOut(
-  user: User | null | undefined,
-  heading: RefObject<HTMLHeadingElement | null>,
-) {
-  const signedIn = user === undefined ? undefined : user !== null
-  const previous = useRef(signedIn)
-  useEffect(() => {
-    if (signedIn === undefined) return
-    if (previous.current !== undefined && previous.current !== signedIn)
-      heading.current?.focus()
-    previous.current = signedIn
-  }, [signedIn, heading])
-}
-
-function SignedOut() {
-  const signIn = useSignIn()
-  return (
-    <section>
-      <p>Sign in with your Google account to set up alerts.</p>
-      <GoogleSignInButton
-        onCredential={(credential) => signIn.mutate(credential)}
-      />
-      {signIn.isPending && <Loading label="Signing in…" />}
-      {signIn.isError && <ErrorMessage error={signIn.error} />}
-    </section>
   )
 }
 

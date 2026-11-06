@@ -6,6 +6,9 @@ import { ErrorMessage, Loading } from '../components/QueryStatus'
 import styles from './CompaniesPage.module.css'
 import { usePageTitle } from '../lib/usePageTitle'
 
+/** Looks like a stock ticker (AAPL, BRK.B), so the suggestion form can start with it. */
+const TICKER = /^[A-Za-z]{1,5}([.-][A-Za-z]{1,2})?$/
+
 export function CompaniesPage() {
   const query = useQuery(watchlistQuery())
   const [filter, setFilter] = useState('')
@@ -24,7 +27,7 @@ export function CompaniesPage() {
       <h1>Companies</h1>
       <p className="muted">
         The watchlist: every new filing from these companies is collected and
-        summarized.
+        summarized. Missing one? <Link to="/suggest">Suggest a company</Link>.
       </p>
       <p>
         <label htmlFor="company-filter" className="visually-hidden">
@@ -49,7 +52,19 @@ export function CompaniesPage() {
       ) : query.isError ? (
         <ErrorMessage error={query.error} />
       ) : companies.length === 0 ? (
-        <p className="muted">No companies match “{filter}”.</p>
+        <p className="muted">
+          No companies match “{filter}”.{' '}
+          <Link
+            to={
+              TICKER.test(filter.trim())
+                ? `/suggest?ticker=${encodeURIComponent(filter.trim().toUpperCase())}`
+                : '/suggest'
+            }
+          >
+            Suggest it
+          </Link>
+          .
+        </p>
       ) : (
         <ul className={styles.grid}>
           {companies.map((company) => (

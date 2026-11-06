@@ -33,6 +33,7 @@ applying, reaching the cluster, Terraform state).
 - [Changing search ranking or the embedding model](#changing-search-ranking-or-the-embedding-model)
 - [Amended filings: checking a link](#amended-filings-checking-a-link)
 - [Earnings-call transcripts: checking and fixing a source](#earnings-call-transcripts-checking-and-fixing-a-source)
+- [Company suggestions: the admin, and adding a company](#company-suggestions-the-admin-and-adding-a-company)
 - [Oracle idle reclamation and capacity errors](#oracle-idle-reclamation-and-capacity-errors)
 - [Backups and restores](#backups-and-restores)
 - [Capacity planning](#capacity-planning)
@@ -701,6 +702,39 @@ then the takeaways, newest calls first, for up to 3 hours a night. A call whose 
 which. After changing the prompts in `filings_summarizer/calls.py`, bump `CALL_PROMPT_VERSION`
 (every call is summarized again, newest first) and compare with `filings-call-benchmark` first:
 read the summaries behind any score change, as for the 8-K benchmark.
+
+## Company suggestions: the admin, and adding a company
+
+Signed-in visitors suggest companies on the website's `/suggest` page (one suggestion per person
+per company, 10 open at a time). The admin reviews them on `/admin/suggestions`: grouped by
+company, most asked-for first, with the notes people left (their emails partly hidden).
+
+**Becoming the admin.** Sign in on the website once (that creates the account), then:
+
+```
+kubectl -n filings exec deploy/api -- filings-admin grant you@example.com
+kubectl -n filings exec deploy/api -- filings-admin revoke you@example.com   # undo
+```
+
+The address isn't stored anywhere in the repository; the flag is a column on the account
+(`users.is_admin`), and nothing in the API can set it. Locally: `uv run filings-admin grant ...`.
+Reload the website afterwards: "Review everyone's suggestions" appears on `/suggest`.
+
+**Adding a suggested company.**
+
+1. Add its ticker to `config/watchlist.toml` (keep the companies already there) in a pull
+   request. Locally, `uv run filings-discovery load-companies` reports an unknown ticker.
+2. Merge. The Images workflow bakes the watchlist into the discovery image and moves the
+   `production` branch; Argo CD syncs it ([Deploys and rollbacks](#deploys-and-rollbacks)).
+3. Load the new watchlist now instead of at 05:17 UTC:
+   `kubectl -n filings create job --from=cronjob/load-companies load-companies-now`.
+   The next discovery run collects the company's filings from the previous 30 days.
+4. On `/admin/suggestions`, press "Mark ... added". It's refused until the company is on the
+   watchlist, since everyone who suggested it then reads "Added" with a link to its page.
+
+Declining needs no change anywhere; "Reopen" puts a decided company back in the waiting list.
+More companies mean more SEC requests per discovery run and more summaries on busy days: check
+[Capacity planning](#capacity-planning) past about 100 companies.
 
 ## Oracle idle reclamation and capacity errors
 

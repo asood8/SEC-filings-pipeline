@@ -22,6 +22,10 @@ export type SubscriptionBatch = Schemas['SubscriptionBatch']
 export type Destination = Schemas['Destination']
 export type SubscriptionUpdate = Schemas['SubscriptionUpdate']
 export type Channel = Schemas['Channel']
+export type CompanyRequest = Schemas['CompanyRequestOut']
+export type NewCompanyRequest = Schemas['CompanyRequestCreate']
+export type CompanySuggestion = Schemas['CompanySuggestionOut']
+export type RequestStatus = Schemas['CompanyRequestOut']['status']
 
 export const API_BASE_URL: string =
   import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:8000'

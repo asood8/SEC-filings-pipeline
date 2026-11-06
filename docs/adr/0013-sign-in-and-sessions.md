@@ -100,6 +100,32 @@ A unique constraint on `subscriptions (user_id, cik, channel, target)` stops one
 subscribing the same target twice, which would double every alert. It was added in the same
 migration as `sessions`.
 
+### Company suggestions and the admin (added 2026-11-06)
+
+Visitors can ask for companies the watchlist lacks (`POST /company-requests`, the website's
+`/suggest`), and one admin reviews them (`/admin/company-requests`, the website's
+`/admin/suggestions`). Nothing changes the watchlist automatically: adding a company is still an
+edit to `config/watchlist.toml` (runbook, "Company suggestions").
+
+- **Signed-in only.** A suggestion needs an account, so a count of suggestions is a count of
+  people: `company_requests (user_id, cik)` is unique, and each user has at most 10 open
+  suggestions (checked with the user's row locked, so two requests at once can't both pass).
+  Anonymous suggestions would need a captcha or a moderation queue to mean anything.
+- **The admin is a flag on the account, set by a command.** `users.is_admin`, changed only by
+  `filings-admin grant|revoke <email>` run beside the database (`kubectl exec` into the API
+  pod). A configured admin email would put a personal address in this public repository or
+  need another secret; the API has no endpoint that sets the flag, so a bug in one can't grant
+  it. `GET /me` reports it so the website can show the review link; the admin routes check it
+  on every request (403 otherwise).
+- **Decisions are per company.** Marking a company added, declined, or open again updates every
+  suggestion of it at once, and each user sees the status on `/suggest`. "Added" is refused
+  until the company is on the watchlist, so it never tells anyone a company is followed when it
+  isn't.
+- **Little personal data.** The admin sees notes with the author's email partly masked
+  (`filings_common.targets.mask_email`), never the full address. Suggestions go with the account
+  (`ON DELETE CASCADE`). Both route prefixes are in the API's private paths, so responses carry
+  `Cache-Control: no-store` and skip the shared cache.
+
 ## Alternatives considered
 
 - **A stateless signed session cookie (a JWT we issue).** No database lookup per request, but a

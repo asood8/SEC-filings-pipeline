@@ -607,7 +607,7 @@ requires-dist = [
     { name = "fastapi", specifier = ">=0.162.0" },
     { name = "filings-common", editable = "libs/common" },
     { name = "opentelemetry-instrumentation-fastapi", specifier = ">=0.66b1" },
-    { name = "pyjwt", extras = ["crypto"], specifier = ">=2.15" },
+    { name = "pyjwt", extras = ["crypto"], specifier = ">=2.15.1" },
     { name = "uvicorn", extras = ["standard"], specifier = ">=0.38" },
 ]
 

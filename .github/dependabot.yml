@@ -35,6 +35,15 @@ updates:
     groups:
       website:
         update-types: [minor, patch]
+    ignore:
+      # Node's type definitions follow the Node version the website is built with (24).
+      - dependency-name: "@types/node"
+        update-types: ["version-update:semver-major"]
+      # TypeScript 7 (the native compiler) has no JavaScript API yet, which openapi-typescript
+      # needs (`make web-types` failed: "Cannot read properties of undefined (reading
+      # 'createKeywordTypeNode')", #66). Remove this once openapi-typescript supports it.
+      - dependency-name: typescript
+        update-types: ["version-update:semver-major"]
     open-pull-requests-limit: 5
 
   # Workflow actions, pinned to commit SHAs with the version in a comment: both are updated.

@@ -23,8 +23,8 @@ run "provisions_every_dashboard_into_the_shared_folder" {
 
   assert {
     # The same folder UID as the local viewer's provisioning (deploy/grafana/local).
-    condition     = grafana_folder.this["SEC Filings"].uid == "sec-filings"
-    error_message = "The folder UID is derived from its title."
+    condition     = grafana_folder.this["Filingwire"].uid == "sec-filings"
+    error_message = "The folder keeps its first UID through the rename, as the local viewer's provisioning does."
   }
 
   assert {
@@ -59,30 +59,30 @@ run "translates_alert_rules_from_the_provisioning_format" {
   }
 
   assert {
-    condition     = toset(keys(grafana_rule_group.this)) == toset(["SEC Filings/pipeline", "Operations/slow-checks"])
+    condition     = toset(keys(grafana_rule_group.this)) == toset(["Filingwire/pipeline", "Operations/slow-checks"])
     error_message = "Each group in each file becomes one rule group, keyed by folder and name."
   }
 
   assert {
-    condition     = grafana_rule_group.this["SEC Filings/pipeline"].interval_seconds == 60 && grafana_rule_group.this["Operations/slow-checks"].interval_seconds == 300
+    condition     = grafana_rule_group.this["Filingwire/pipeline"].interval_seconds == 60 && grafana_rule_group.this["Operations/slow-checks"].interval_seconds == 300
     error_message = "Group intervals such as 1m and 5m must become seconds."
   }
 
   assert {
-    condition     = grafana_rule_group.this["SEC Filings/pipeline"].rule[0].data[0].datasource_uid == "grafanacloud-prom"
+    condition     = grafana_rule_group.this["Filingwire/pipeline"].rule[0].data[0].datasource_uid == "grafanacloud-prom"
     error_message = "The local viewer's Prometheus must be replaced by the stack's."
   }
 
   assert {
-    condition     = grafana_rule_group.this["SEC Filings/pipeline"].rule[0].data[1].datasource_uid == "__expr__"
+    condition     = grafana_rule_group.this["Filingwire/pipeline"].rule[0].data[1].datasource_uid == "__expr__"
     error_message = "Expressions (__expr__) are not a data source and must stay as they are."
   }
 
   assert {
     condition = (
-      grafana_rule_group.this["SEC Filings/pipeline"].rule[0].annotations["__dashboardUid__"] == "sample-dashboard" &&
-      grafana_rule_group.this["SEC Filings/pipeline"].rule[0].annotations["__panelId__"] == "2" &&
-      startswith(grafana_rule_group.this["SEC Filings/pipeline"].rule[0].annotations["summary"], "{{ .Labels.")
+      grafana_rule_group.this["Filingwire/pipeline"].rule[0].annotations["__dashboardUid__"] == "sample-dashboard" &&
+      grafana_rule_group.this["Filingwire/pipeline"].rule[0].annotations["__panelId__"] == "2" &&
+      startswith(grafana_rule_group.this["Filingwire/pipeline"].rule[0].annotations["summary"], "{{ .Labels.")
     )
     error_message = "dashboardUid and panelId must become the panel-link annotations, beside the file's own."
   }
@@ -93,13 +93,13 @@ run "translates_alert_rules_from_the_provisioning_format" {
   }
 
   assert {
-    condition     = jsondecode(grafana_rule_group.this["SEC Filings/pipeline"].rule[0].data[0].model).expr == "max by (messaging_destination_name) (filings_dlq_depth)"
+    condition     = jsondecode(grafana_rule_group.this["Filingwire/pipeline"].rule[0].data[0].model).expr == "max by (messaging_destination_name) (filings_dlq_depth)"
     error_message = "The query model must be passed through unchanged."
   }
 
   assert {
     condition = (
-      grafana_rule_group.this["SEC Filings/pipeline"].rule[0].no_data_state == "OK" &&
+      grafana_rule_group.this["Filingwire/pipeline"].rule[0].no_data_state == "OK" &&
       grafana_rule_group.this["Operations/slow-checks"].rule[0].no_data_state == "NoData" &&
       grafana_rule_group.this["Operations/slow-checks"].rule[0].for == "10m"
     )
@@ -112,7 +112,7 @@ run "translates_alert_rules_from_the_provisioning_format" {
   }
 
   assert {
-    condition     = length(grafana_rule_group.this["SEC Filings/pipeline"].rule[0].notification_settings) == 0
+    condition     = length(grafana_rule_group.this["Filingwire/pipeline"].rule[0].notification_settings) == 0
     error_message = "A rule without notification settings follows the stack's notification policy."
   }
 }
@@ -129,7 +129,7 @@ run "uses_the_data_source_uids_given" {
   }
 
   assert {
-    condition     = grafana_rule_group.this["SEC Filings/pipeline"].rule[0].data[0].datasource_uid == "my-mimir"
+    condition     = grafana_rule_group.this["Filingwire/pipeline"].rule[0].data[0].datasource_uid == "my-mimir"
     error_message = "datasource_uids.prometheus must be used for the rules."
   }
 }

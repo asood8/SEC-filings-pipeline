@@ -17,7 +17,7 @@ apiVersion: 1
 groups:
   - orgId: 1
     name: pipeline
-    folder: SEC Filings
+    folder: Filingwire
     interval: 1m
     rules:
       # Discovery found nothing, or nothing made it through to a summary, in a day with SEC

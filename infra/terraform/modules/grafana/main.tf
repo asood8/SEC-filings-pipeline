@@ -52,6 +52,11 @@ locals {
     )
   }
 
+  # Folder UIDs kept through a rename, so the folder, and the dashboards and rules in it, are
+  # updated in place rather than replaced (which would also drop the rules' alert history). The
+  # project was "SEC Filings" until 2026-11-06.
+  folder_uids = { "Filingwire" = "sec-filings" }
+
   # One folder per name used by the dashboards or a rule group.
   folders = toset(concat(
     length(local.dashboards) > 0 ? [var.dashboard_folder] : [],
@@ -63,8 +68,10 @@ resource "grafana_folder" "this" {
   for_each = local.folders
 
   title = each.value
-  # "SEC Filings" -> "sec-filings" (folder UIDs allow at most 40 characters).
-  uid = substr(trim(replace(lower(each.value), "/[^a-z0-9]+/", "-"), "-"), 0, 40)
+  # "Pipeline Ops" -> "pipeline-ops" (folder UIDs allow at most 40 characters), unless kept.
+  uid = lookup(
+    local.folder_uids, each.value, substr(trim(replace(lower(each.value), "/[^a-z0-9]+/", "-"), "-"), 0, 40)
+  )
 }
 
 resource "grafana_dashboard" "this" {
@@ -140,4 +147,16 @@ resource "grafana_rule_group" "this" {
       }
     }
   }
+}
+
+# The rename of 2026-11-06 ("SEC Filings" to "Filingwire") changed these keys: the same folder and
+# rule group under their new names.
+moved {
+  from = grafana_folder.this["SEC Filings"]
+  to   = grafana_folder.this["Filingwire"]
+}
+
+moved {
+  from = grafana_rule_group.this["SEC Filings/pipeline"]
+  to   = grafana_rule_group.this["Filingwire/pipeline"]
 }

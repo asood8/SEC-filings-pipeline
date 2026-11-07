@@ -303,12 +303,12 @@ count those before enabling it.
 
 Two dashboards, as JSON in `deploy/grafana/dashboards/`:
 
-- **SEC Filings: Pipeline**: filings per hour by stage and by form type; consumer lag by group and
+- **Filingwire: Pipeline**: filings per hour by stage and by form type; consumer lag by group and
   by partition; events published and dead letters (held, and per hour); LLM latency (p50 and p95 of
   successful calls), calls by provider and outcome, failovers and breaker opens; SEC limiter wait
   and responses by status class, with 429s; alerts by channel and outcome with the success rate;
   and the latest filing traces from Tempo.
-- **SEC Filings: API**: requests, p95 latency, server-error ratio, and 429s over the selected
+- **Filingwire: API**: requests, p95 latency, server-error ratio, and 429s over the selected
   range; requests by route; responses by status class; p50/p95/p99 latency, p95 by route, and the
   slowest routes; requests in progress; and traces of slow requests.
 

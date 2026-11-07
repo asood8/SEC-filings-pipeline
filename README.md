@@ -239,7 +239,7 @@ Or run every stage at once, with discovery every 10 minutes: `make pipeline` (Ct
 
 To watch traces and metrics: `make obs-up`, set `OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4318`
 in `.env` (see `.env.example`), restart the services, and open http://localhost:3001 (dashboards
-"SEC Filings: Pipeline" and "SEC Filings: API"; traces under Explore, Tempo). With the endpoint
+"Filingwire: Pipeline" and "Filingwire: API"; traces under Explore, Tempo). With the endpoint
 unset, telemetry is off and costs nothing.
 
 Sign-in needs a Google OAuth client ID (Google Cloud console, APIs & Services, Credentials: a

@@ -4,7 +4,7 @@ version = "0.1.0"
 description = "Public read API, auth, and subscriptions (FastAPI)"
 requires-python = ">=3.12"
 dependencies = [
-    "fastapi>=0.120",
+    "fastapi>=0.162.0",
     "filings-common",
     "opentelemetry-instrumentation-fastapi>=0.66b1",
     "pyjwt[crypto]>=2.15",

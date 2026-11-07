@@ -4,7 +4,7 @@ version = "0.1.0"
 description = "Shared code: config, logging, event models, EDGAR client, ObjectStore, Kafka helpers"
 requires-python = ">=3.12"
 dependencies = [
-    "alembic>=1.16",
+    "alembic>=1.20.1",
     "boto3>=1.40",
     "confluent-kafka>=2.11",
     "httpx2>=2.13",

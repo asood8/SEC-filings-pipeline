@@ -15,7 +15,7 @@ variable "alerting_dir" {
 variable "dashboard_folder" {
   description = "Folder the dashboards go in (the local viewer uses the same name: deploy/grafana/local/dashboards.yaml)."
   type        = string
-  default     = "SEC Filings"
+  default     = "Filingwire"
 }
 
 variable "datasource_uids" {

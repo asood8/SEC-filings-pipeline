@@ -226,7 +226,7 @@ def test_dashboards_are_portable_and_well_formed(path: Path) -> None:
     # Grafana assigns numeric IDs itself; the UID is what links (and alert rules) point to.
     assert "id" not in dashboard
     assert re.fullmatch(r"[a-z0-9-]{1,40}", dashboard["uid"])
-    assert "sec-filings" in dashboard["tags"]
+    assert "filingwire" in dashboard["tags"]
     # Data sources are variables, so the same JSON works locally and on Grafana Cloud, whose
     # data sources have other UIDs.
     variables = {v["name"]: v for v in dashboard["templating"]["list"]}

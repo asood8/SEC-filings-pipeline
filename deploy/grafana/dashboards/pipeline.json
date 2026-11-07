@@ -1,9 +1,9 @@
 {
   "uid": "filings-pipeline",
-  "title": "SEC Filings: Pipeline",
+  "title": "Filingwire: Pipeline",
   "description": "Filings flowing from discovery to alerts: throughput, Kafka lag and dead letters, LLM summaries, SEC rate limiting, alert delivery, and traces. Metrics are defined in libs/common/src/filings_common/metrics.py; see docs/adr/0016-observability.md.",
   "tags": [
-    "sec-filings"
+    "filingwire"
   ],
   "timezone": "browser",
   "editable": true,
@@ -19,9 +19,9 @@
     {
       "type": "dashboards",
       "tags": [
-        "sec-filings"
+        "filingwire"
       ],
-      "title": "SEC Filings",
+      "title": "Filingwire",
       "asDropdown": false,
       "includeVars": false,
       "keepTime": true,

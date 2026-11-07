@@ -4,7 +4,7 @@ apiVersion: 1
 groups:
   - orgId: 1
     name: pipeline
-    folder: SEC Filings
+    folder: Filingwire
     interval: 1m
     rules:
       - uid: sample-dlq-not-empty

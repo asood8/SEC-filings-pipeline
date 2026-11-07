@@ -68,7 +68,7 @@ kubectl -n filings exec -it postgres-0 -- sh -c 'psql -U "$POSTGRES_USER" -d "$P
 - **Logs** stay in the cluster (only traces and metrics go to Grafana Cloud), and only the current
   and previous run of each container are kept. Lines logged while a filing or a request is being
   handled end with `trace_id=… span_id=…`; look the trace up in Grafana Cloud's Tempo.
-- **Dashboards:** "SEC Filings: Pipeline" and "SEC Filings: API", in the "SEC Filings" folder.
+- **Dashboards:** "Filingwire: Pipeline" and "Filingwire: API", in the "Filingwire" folder.
 - **Locally**, the same tools: `docker compose exec redpanda rpk ...`, `uv run filings-replay ...`.
 
 ## Alert: No new filings in 24 hours

@@ -7,9 +7,12 @@
 # can't do, and a data store's upgrade needs its own plan.
 version: 2
 updates:
-  # Python: uv.lock, for every package in the workspace.
+  # Python: uv.lock, for every package in the workspace. Only the lock file: the pyproject.toml
+  # ranges are left as written (raising their minimums on every release is noise, and a range's
+  # upper bound, like uv-build's, is moved by hand with what it depends on).
   - package-ecosystem: uv
     directory: /
+    versioning-strategy: lockfile-only
     schedule:
       interval: weekly
       day: monday

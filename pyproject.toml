@@ -6,7 +6,7 @@ members = ["libs/*", "services/*"]
 
 [dependency-groups]
 dev = [
-    "boto3-stubs[s3]>=1.43.108",
+    "boto3-stubs[s3]>=1.43.123",
     "mypy>=2.4.1",
     "pre-commit>=4.7.0",
     "pytest>=9.2.0",

@@ -18,7 +18,9 @@ Dependabot version updates, configured in `.github/dependabot.yml`:
 
 - **What:** Python (`uv.lock`, the whole workspace), the website (`web/`), workflow actions (the SHA
   and its version comment), and Terraform providers (`envs/production` and the capacity-report
-  tool).
+  tool). Python updates change only `uv.lock` (`versioning-strategy: lockfile-only`): the first
+  run also opened a pull request per package raising its minimum in `pyproject.toml`, and one
+  moving `uv-build`'s range past the uv version the Dockerfile pins.
 - **When:** weekly, Mondays 07:00 UTC, just after the weekly audit. Minor and patch updates come
   as one grouped pull request per ecosystem, majors one by one, at most 5 open per ecosystem.
 - **A week's cooldown:** a release is proposed only once it is 7 days old. Most malicious

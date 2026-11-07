@@ -55,3 +55,8 @@ def test_node_types_stay_on_the_node_version_the_website_uses() -> None:
         "@types/node"
     ]
     assert re.sub(r"^\D*", "", types).split(".")[0] == node_major, (types, node_major)
+
+
+def test_python_updates_change_only_the_lock_file() -> None:
+    [uv] = [u for u in CONFIG["updates"] if u["package-ecosystem"] == "uv"]
+    assert uv["versioning-strategy"] == "lockfile-only"

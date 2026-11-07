@@ -2,6 +2,8 @@
 repository has an entry, so a new one isn't left out by accident, and every entry waits a week
 before proposing a release."""
 
+import json
+import re
 import subprocess
 from pathlib import Path
 
@@ -41,3 +43,15 @@ def test_every_entry_waits_a_week_and_runs_weekly() -> None:
     for update in CONFIG["updates"]:
         assert update["cooldown"]["default-days"] >= 7, update["package-ecosystem"]
         assert update["schedule"]["interval"] == "weekly", update["package-ecosystem"]
+
+
+def test_node_types_stay_on_the_node_version_the_website_uses() -> None:
+    """Dependabot doesn't propose @types/node majors: they must match web/.nvmrc's Node."""
+    [npm] = [u for u in CONFIG["updates"] if u["package-ecosystem"] == "npm"]
+    ignored = {i["dependency-name"]: i["update-types"] for i in npm.get("ignore", [])}
+    assert ignored["@types/node"] == ["version-update:semver-major"]
+    node_major = (ROOT / "web" / ".nvmrc").read_text().strip().lstrip("v").split(".")[0]
+    types = json.loads((ROOT / "web" / "package.json").read_text())["devDependencies"][
+        "@types/node"
+    ]
+    assert re.sub(r"^\D*", "", types).split(".")[0] == node_major, (types, node_major)

@@ -28,6 +28,9 @@ applying, reaching the cluster, Terraform state).
 - [Pausing Argo CD for hands-on work](#pausing-argo-cd-for-hands-on-work)
 - [Rotating secrets](#rotating-secrets)
 - [Dependency audit fails](#dependency-audit-fails)
+- [Updating a GitHub Action](#updating-a-github-action)
+- [Dependency update pull requests](#dependency-update-pull-requests)
+- [Updating a container image](#updating-a-container-image)
 - [SEC 429s and fair access](#sec-429s-and-fair-access)
 - [Swapping the local LLM model](#swapping-the-local-llm-model)
 - [Changing search ranking or the embedding model](#changing-search-ranking-or-the-embedding-model)
@@ -509,7 +512,8 @@ the repository changed. It is separate from CI, so a failure doesn't block deplo
 
 Every `uses:` in `.github/workflows/` names a commit SHA, with the version it was in a comment
 ([ADR-0019](adr/0019-image-ci-and-deploy.md#consequences)): a tag can be moved to other code, a
-SHA can't. To move to a newer version, read its release notes, then:
+SHA can't. Dependabot proposes newer versions weekly (next section). To move one by hand, read
+its release notes, then:
 
 ```
 gh api repos/<owner>/<action>/commits/<tag> --jq .sha   # e.g. actions/checkout, v7.0.2
@@ -517,6 +521,43 @@ gh api repos/<owner>/<action>/commits/<tag> --jq .sha   # e.g. actions/checkout,
 
 Replace the SHA in every workflow that uses the action, update the version comment, and open a
 pull request: CI runs the changed workflows, and `actionlint` (pre-commit) checks their syntax.
+
+## Dependency update pull requests
+
+Dependabot opens them on Mondays ([ADR-0023](adr/0023-dependency-updates.md)): one grouped pull
+request per ecosystem for minor and patch updates (Python, website, actions, Terraform providers),
+and one for each major update. Each release is at least a week old. For each:
+
+1. Read the release notes and changelog in its description, for anything that changes behavior
+   the project relies on.
+2. Wait for the required checks. A Python group runs every test; a website group, the website
+   job (`make web-check`, and the API types check); an actions group, `actionlint` and the changed
+   workflows themselves; a Terraform group, `make tf-check`.
+3. Terraform providers: after merging, `make tf-plan` should show no change you didn't expect
+   before the next apply.
+4. Merge with `gh pr merge <n> --merge`. If a grouped update breaks one package, comment
+   `@dependabot ignore <package> minor version` (or `major version`) and fix it separately, or
+   pin it in `pyproject.toml` / `web/package.json` with a note why.
+
+Comments Dependabot understands: `@dependabot rebase`, `@dependabot recreate`,
+`@dependabot ignore this major version`, `@dependabot ignore this dependency`.
+
+## Updating a container image
+
+Images are pinned by hand, each in every place it appears; move them together in one pull
+request, after reading the release notes:
+
+- Postgres (`pgvector/pgvector`), Valkey, Redpanda: `docker-compose.yml` and `deploy/k8s/base/`
+  (Postgres also in `postgres-backup.yaml`). A major Postgres version needs a dump and restore
+  ([Backups and restores](#backups-and-restores)); Redpanda and MongoDB upgrades go one feature
+  version at a time.
+- MongoDB (`mongo`, local only; production is Atlas), Ollama, the local viewer (`grafana/otel-lgtm`):
+  `docker-compose.yml`.
+- Python and uv: the `ARG`s at the top of `docker/service.Dockerfile`. Python's minor version
+  matches `.python-version` (3.12); CI installs the latest uv.
+
+`docker compose config` and the manifest tests run in CI; build the images (`make images`) and
+start the stack (`make up`) before merging.
 
 ## SEC 429s and fair access
 

@@ -34,3 +34,4 @@ row below.
 | [0020](0020-start-small-grow-later.md) | Starting on a smaller VM and growing it in place | Accepted |
 | [0021](0021-amended-filings.md) | Amended filings (Form 4/A, 8-K/A) | Accepted |
 | [0022](0022-earnings-call-qa.md) | Earnings-call Q&A summaries from companies' own transcripts | Accepted |
+| [0023](0023-dependency-updates.md) | Automatic dependency updates with Dependabot | Accepted |

@@ -24,6 +24,11 @@ oci_core_compute_capacity_report
 oci_limits_quota
 oci_budget_budget
 oci_budget_alert_rule
+oci_identity_group
+oci_identity_user
+oci_identity_user_group_membership
+oci_identity_policy
+oci_identity_api_key
 cloudflare_zero_trust_tunnel_cloudflared
 cloudflare_zero_trust_tunnel_cloudflared_config
 cloudflare_dns_record

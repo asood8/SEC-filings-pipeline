@@ -32,6 +32,7 @@ resources:
   # Operations
   - postgres-backup.yaml
   - r2-usage.yaml
+  - oci-inventory.yaml
   - cloudflared.yaml
   - otel-collector.yaml
 

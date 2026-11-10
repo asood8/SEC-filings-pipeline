@@ -1,0 +1,69 @@
+# Daily look at what exists in the Oracle account (filings-oci-inventory,
+# libs/common/src/filings_common/oci_inventory.py): with a key that can only read, it lists every
+# resource, and checks the quota policy and the budget. Oracle bills a Pay As You Go account past
+# Always Free, has no spending cap, and evaluates its budget alert once a day on day-old costs; a
+# list of what exists is current. The alerts "Oracle account has unexpected resources", "Oracle
+# guardrail missing", "Oracle reports spend" and "Oracle account not checked" (deploy/grafana)
+# read its gauges. It makes a handful of HTTPS requests to Oracle's API in the home region.
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: oci-inventory
+spec:
+  # Clear of the other daily jobs (03:30, 03:40, 05:17, 06:47), so at most one overlaps discovery
+  # (the VM's memory budget counts two jobs at once).
+  schedule: "23 7 * * *"
+  timeZone: Etc/UTC
+  concurrencyPolicy: Forbid
+  startingDeadlineSeconds: 3600
+  successfulJobsHistoryLimit: 1
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      backoffLimit: 2
+      activeDeadlineSeconds: 300
+      template:
+        metadata:
+          labels:
+            app.kubernetes.io/name: oci-inventory
+            app.kubernetes.io/component: operations
+        spec:
+          restartPolicy: Never
+          automountServiceAccountToken: false
+          enableServiceLinks: false
+          # Time for the final telemetry export, as for discovery.
+          terminationGracePeriodSeconds: 45
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 10001
+            runAsGroup: 10001
+            seccompProfile:
+              type: RuntimeDefault
+          containers:
+            - name: oci-inventory
+              # Any service image has filings-common's commands; discovery's is the jobs' image.
+              image: filings-discovery
+              command: ["filings-oci-inventory"]
+              envFrom:
+                - configMapRef:
+                    name: filings-config
+                - secretRef:
+                    name: oci-inventory
+              resources:
+                requests:
+                  cpu: 20m
+                  memory: 64Mi
+                limits:
+                  cpu: 250m
+                  memory: 128Mi
+              securityContext:
+                allowPrivilegeEscalation: false
+                readOnlyRootFilesystem: true
+                capabilities:
+                  drop: ["ALL"]
+              volumeMounts:
+                - name: tmp
+                  mountPath: /tmp
+          volumes:
+            - name: tmp
+              emptyDir: {}

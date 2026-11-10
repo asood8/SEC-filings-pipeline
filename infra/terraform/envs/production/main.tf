@@ -27,6 +27,10 @@ module "oci" {
   git_revision               = var.git_revision
   budget_alert_emails        = var.oci_budget_alert_emails
 
+  pin_storage_to_availability_domain = var.oci_pin_storage_to_availability_domain
+  inventory_public_key_path          = var.oci_inventory_public_key_path
+  inventory_user_email               = var.oci_inventory_user_email
+
   freeform_tags = {
     project    = "sec-filings-pipeline"
     managed-by = "terraform"

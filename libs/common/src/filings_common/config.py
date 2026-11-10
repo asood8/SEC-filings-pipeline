@@ -250,6 +250,25 @@ class TelemetrySettings(BaseSettings):
         return None if isinstance(value, str) and not value.strip() else value
 
 
+class OciInventorySettings(BaseSettings):
+    """The daily look at the Oracle account (`filings-oci-inventory`): an API key of a user who
+    can only read (Terraform creates the user; the key pair is made by hand), and the names of
+    the guardrails to find."""
+
+    model_config = _config("OCI_INVENTORY_")
+
+    tenancy_ocid: str
+    user_ocid: str
+    fingerprint: str
+    region: str
+    private_key: SecretStr  # PEM
+    quota_name: str = "filings-always-free"
+    budget_name: str = "filings-stay-free"
+    # The policy has 44 statements, or 46 once storage is pinned to one availability domain.
+    min_quota_statements: int = 44
+    max_budget: float = 1.0
+
+
 class R2UsageSettings(BaseSettings):
     """The daily R2 free-tier check (`filings-r2-usage`): the Cloudflare account, and a token
     that can only read its analytics (Account Analytics: Read)."""

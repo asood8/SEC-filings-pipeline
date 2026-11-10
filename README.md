@@ -322,6 +322,8 @@ uv run filings-rebuild-key-fields --form-type 4  # refill Form 4 key fields from
 | `uv run python scripts/synthetic_data.py --create --database-url <throwaway>` | Fill a throwaway database with years of synthetic, production-shaped data (resumes if interrupted; `--drop` deletes it) |
 | `uv run python scripts/measure_queries.py --database-url <throwaway>` | Time and explain every regular query on it, flagging sequential scans of large tables |
 | `uv run filings-admin grant <email>` | Make a signed-in account the admin who reviews company suggestions (`revoke` undoes it) |
+| `uv run filings-oci-inventory` | List what exists in the Oracle account and check its spending guardrails with a read-only key (`OCI_INVENTORY_*`); a daily job in production |
+| `make oci-status` / `make oci-stop` / `make oci-off` | The Oracle account's off switch, with your own key: what could be billed and what was spent; stop every VM; or delete every VM and volume after a typed confirmation |
 | `uv run filings-healthcheck <process>` | The workers' liveness check (e.g. `filings-parser`): exits 1 if its loop stopped beating |
 
 ## Local services

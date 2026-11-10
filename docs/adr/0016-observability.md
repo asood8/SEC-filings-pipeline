@@ -338,6 +338,10 @@ Nine rules, in `deploy/grafana/alerting/filings.yaml`:
 | Pipeline service not reporting | a long-running service exported metrics in the last day, but not in the last 10 minutes | at once |
 | R2 free tier half used | the daily `r2-usage` job measured over half of a monthly R2 allowance (storage, Class A, or Class B operations) | at once |
 | R2 usage not measured | that job reported in the last week, but not in the last 50 hours | at once |
+| Oracle account has unexpected resources | the daily `oci-inventory` job found a resource beyond what the project creates (ADR-0018) | at once |
+| Oracle guardrail missing | the quota policy or the budget is gone or weakened, or a second region is subscribed | at once |
+| Oracle reports spend | the budget's figure for the month is above zero | at once |
+| Oracle account not checked | that job reported in the last week, but not in the last 50 hours | at once |
 | Postgres backup missing | the nightly backup reported an upload to R2 in the last 8 days, but not in the last 28 hours | at once |
 | Postgres backup shrank | the newest backup is under half the size of the largest in the last 8 days | at once |
 | Earnings-call transcript overdue | the nightly `call-transcripts` job found a company whose earnings 8-K is three weeks old with no transcript of the call (ADR-0022) | at once |

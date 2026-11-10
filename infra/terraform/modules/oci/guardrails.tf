@@ -16,6 +16,17 @@ variable "budget_alert_emails" {
   sensitive   = true
 }
 
+variable "pin_storage_to_availability_domain" {
+  description = <<-EOT
+    Allow block storage only in the VM's availability domain. A block-storage quota is per
+    availability domain, so without this each domain of the region gets the whole free
+    allowance. Leave it false until the VM exists: while capacity is being looked for
+    (scripts/retry-vm-capacity.sh), its domain can still change.
+  EOT
+  type        = bool
+  default     = false
+}
+
 variable "budget_amount" {
   description = "The monthly budget in the account's currency. Everything here should cost 0."
   type        = number
@@ -69,10 +80,18 @@ locals {
     "waf",
   ]
 
+  # Block storage, in the VM's availability domain only once that is fixed.
+  storage_scope = (
+    var.pin_storage_to_availability_domain && local.availability_domain != null
+    ? "in tenancy where request.ad = '${local.availability_domain}'"
+    : "in tenancy"
+  )
+
   # "zero" first, then what is allowed. A1 is capped per availability domain and region-wide (the
   # limit exists at both levels; only the regional one holds across Ashburn's three domains).
-  # Block storage has no region-wide quota, so each domain gets the whole allowance; Terraform's
-  # own check (boot + data within free_block_storage_gbs) and the budget cover the rest.
+  # Block storage has no region-wide quota: each domain gets the whole allowance, until
+  # pin_storage_to_availability_domain leaves it to the VM's domain alone. Terraform's own check
+  # (boot + data within free_block_storage_gbs) and the daily inventory cover the rest.
   quota_statements = concat(
     [
       "zero compute-core quotas in tenancy",
@@ -82,9 +101,9 @@ locals {
       "set compute-memory quota standard-a1-memory-count to ${local.free_a1_memory_gbs} in tenancy",
       "set compute-memory quota standard-a1-memory-regional-count to ${local.free_a1_memory_gbs} in tenancy",
       "zero block-storage quotas in tenancy",
-      "set block-storage quota total-storage-gb to ${var.free_block_storage_gbs} in tenancy",
+      "set block-storage quota total-storage-gb to ${var.free_block_storage_gbs} ${local.storage_scope}",
       # The boot volume and the data volume.
-      "set block-storage quota volume-count to 2 in tenancy",
+      "set block-storage quota volume-count to 2 ${local.storage_scope}",
     ],
     [for service in local.unused_services : "zero ${service} quotas in tenancy"],
   )

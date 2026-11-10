@@ -2194,6 +2194,98 @@
         "x": 0,
         "y": 79
       }
+    },
+    {
+      "type": "stat",
+      "title": "Oracle account",
+      "description": "What the daily filings-oci-inventory job found in the Oracle account: resources beyond what the project creates, spending guardrails that are missing or weakened (the quota policy, the budget, a second region), and what Oracle's budget says was spent this month. All three should be 0: Oracle bills past Always Free and has no cap, and each has an alert.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "decimals": 2,
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 0.001
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "textMode": "value_and_name",
+        "wideLayout": true
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "editorMode": "code",
+          "expr": "max(max_over_time(filings_oci_resources_unexpected[26h]))",
+          "legendFormat": "unexpected resources",
+          "refId": "A",
+          "instant": true,
+          "range": false
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "editorMode": "code",
+          "expr": "max(max_over_time(filings_oci_guardrails_missing[26h]))",
+          "legendFormat": "guardrails missing",
+          "refId": "B",
+          "instant": true,
+          "range": false
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "editorMode": "code",
+          "expr": "max(max_over_time(filings_oci_budget_spend[26h]))",
+          "legendFormat": "spent this month",
+          "refId": "C",
+          "instant": true,
+          "range": false
+        }
+      ],
+      "id": 34,
+      "gridPos": {
+        "h": 4,
+        "w": 12,
+        "x": 12,
+        "y": 79
+      }
     }
   ]
 }

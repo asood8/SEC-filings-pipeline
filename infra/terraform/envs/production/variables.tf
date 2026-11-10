@@ -55,6 +55,25 @@ variable "oci_budget_alert_emails" {
   sensitive   = true
 }
 
+variable "oci_pin_storage_to_availability_domain" {
+  description = "Allow block storage only in the VM's availability domain. Set it to true once the VM exists (ADR-0018)."
+  type        = bool
+  default     = false
+}
+
+variable "oci_inventory_public_key_path" {
+  description = "PEM public key for the read-only user of the daily inventory check (ADR-0018). Null: no such user."
+  type        = string
+  default     = null
+}
+
+variable "oci_inventory_user_email" {
+  description = "Email for the inventory user, if it can't share the first budget alert email."
+  type        = string
+  default     = null
+  sensitive   = true
+}
+
 variable "data_volume_size_gbs" {
   description = "Size of the block volume for k3s's persistent volumes, in GB (boot + data must stay within 200 GB)."
   type        = number

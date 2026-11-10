@@ -123,6 +123,44 @@ behaves the same while it lasts. So, applied before any upgrade (`modules/oci/gu
 7. **`scripts/retry-vm-capacity.sh` refuses to run** unless the quota policy is in the state:
    unattended applies on an account that can be billed need the cap underneath them.
 
+**Three more, added 2026-11-09**, before the upgrade to Pay As You Go. Oracle's documentation
+says budget alerts are evaluated once every 24 hours (the forecast hourly, once there are three
+days of spend), on cost data that is itself about a day old: the "first cent" email can come a
+day or two after the cent. So:
+
+8. **A daily inventory of the account** (`filings-oci-inventory`, the `oci-inventory` CronJob). What
+   exists is known at once, unlike what it cost. With a key that can only read, it lists every
+   resource (Resource Search) and compares the kinds and numbers with what the project creates;
+   it checks that the quota policy is active with its statements, that the budget has both alert
+   rules, and that the tenancy is subscribed to one region; and it reads the budget's own figure
+   for the month. Four Grafana rules read its gauges: unexpected resources, a missing guardrail,
+   any spend, and the job itself gone silent (ADR-0016). A quota binds administrators too, but an
+   administrator, or whoever steals the login, can delete the policy: this is what would notice.
+   - Its user (`modules/oci/inventory.tf`) may `inspect all-resources`, `read quotas` and `read
+     usage-budgets`, nothing else. The key pair is made by hand, so the private half is never in
+     Terraform's state; it reaches the cluster as the sealed Secret `oci-inventory`.
+   - It signs its own requests (`filings_common.oci`, RSA-SHA256 as Oracle specifies, with
+     `cryptography`, already a dependency of the API) instead of carrying Oracle's SDK.
+   - In the cluster rather than a scheduled GitHub workflow: no Oracle key among a public
+     repository's secrets, and the alerts go where the others do. If the VM is off, the job is
+     silent and "Oracle account not checked" says so after 50 hours.
+9. **Storage pinned to one availability domain** (`oci_pin_storage_to_availability_domain`). A
+   block-storage quota is per domain, so layer 5 allowed 200 GB in each of Ashburn's three. With
+   the variable set, the two statements carry `where request.ad = '<the VM's domain>'` and the
+   other domains keep the zero. It is set once the VM exists: while capacity is being looked
+   for, its domain can still change (ADR-0020).
+10. **An off switch** (`filings-oci-vm`; `make oci-status`, `make oci-stop`, `make oci-off`), with the
+    operator's own key: what could be billed and what was spent; stop every VM (disks kept); or,
+    after typing a phrase, terminate every VM and delete every volume. It acts on everything in
+    the account, not only what Terraform made, because what costs money may be something else.
+
+Considered and left out: Oracle's pattern of a Function triggered by the budget's event (the
+Functions service is one of the 35 zeroed, and it would act a day late anyway); IAM deny
+policies (new in November 2025, but the default Administrators group is always exempt, and the
+account has one user); cost anomaly detection (free since January 2026, but it needs 60 days of
+history: a console setting for later). Outside Oracle: a card with a low limit is the only hard
+cap, and is the user's choice.
+
 The runbook's "Guardrails against charges" has the checklist for before and after an upgrade.
 
 **Usage, not just configuration (added 2026-10-22).** The layers above keep every resource free,

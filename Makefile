@@ -1,5 +1,5 @@
 .DEFAULT_GOAL := help
-.PHONY: help setup sync up down ps logs llm-up llm-down obs-up obs-down migrate backup-drill api pipeline images lint fmt test audit web-install web web-types web-check loadtest api-loadtest tf-check tf-init tf-plan tf-apply tf-fmt k8s-tools k8s-check
+.PHONY: help setup sync up down ps logs llm-up llm-down obs-up obs-down migrate backup-drill api pipeline images lint fmt test audit web-install web web-types web-check loadtest api-loadtest oci-status oci-stop oci-off tf-check tf-init tf-plan tf-apply tf-fmt k8s-tools k8s-check
 
 help: ## List targets
 	@grep -E '^[a-z0-9-]+:.*## ' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*## "} {printf "  %-12s %s\n", $$1, $$2}'
@@ -143,6 +143,15 @@ tf-plan: ## Plan production from production.tfvars into production.tfplan; read 
 
 tf-apply: ## Apply exactly the plan tf-plan saved
 	set -a; . $(TF_ENV_FILE); set +a; terraform -chdir=$(TF_ENV) apply -input=false production.tfplan
+
+oci-status: ## What exists in the Oracle account that could be billed, and what was spent (your ~/.oci key)
+	uv run filings-oci-vm status
+
+oci-stop: ## Stop every VM in the Oracle account; disks and data are kept
+	uv run filings-oci-vm stop
+
+oci-off: ## Terminate every VM and delete every volume in the Oracle account, after a typed confirmation
+	uv run filings-oci-vm off
 
 tf-fmt: ## Format the Terraform code
 	terraform -chdir=$(TF_DIR) fmt -recursive

@@ -80,6 +80,7 @@ and turns them back into ordinary Secrets.
 | `smtp` (optional until `EMAIL_BACKEND=smtp`) | `EMAIL_SMTP_USERNAME`, `EMAIL_SMTP_PASSWORD` | notifier |
 | `unsubscribe` (optional) | `UNSUBSCRIBE_SECRET` (`openssl rand -hex 32`): signs email alerts' one-click unsubscribe links | notifier, api |
 | `cloudflared` | `TUNNEL_TOKEN` | cloudflared |
+| `oci-inventory` | `OCI_INVENTORY_TENANCY_OCID`, `OCI_INVENTORY_USER_OCID`, `OCI_INVENTORY_FINGERPRINT`, `OCI_INVENTORY_REGION`, `OCI_INVENTORY_PRIVATE_KEY` (the read-only Oracle user's API key, PEM) | oci-inventory |
 | `grafana-cloud` | `GRAFANA_CLOUD_OTLP_ENDPOINT`, `GRAFANA_CLOUD_INSTANCE_ID`, `GRAFANA_CLOUD_API_TOKEN` | otel-collector |
 
 Not secrets, so in the config instead: `GOOGLE_CLIENT_ID` (public; the website embeds it too),

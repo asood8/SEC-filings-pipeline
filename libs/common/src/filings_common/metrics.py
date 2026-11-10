@@ -212,6 +212,36 @@ R2_FREE_TIER_USED = meter.create_observable_gauge(
     ),
 )
 
+# --- The Oracle account (filings-oci-inventory, a daily job) -------------------------------------
+
+OCI_UNEXPECTED_VALUES = LatestValues()
+OCI_UNEXPECTED = meter.create_observable_gauge(
+    "filings.oci.resources.unexpected",
+    callbacks=[OCI_UNEXPECTED_VALUES.observe],
+    unit="{resource}",
+    description=(
+        "Resources in the Oracle account beyond what the project creates (another VM, a volume, "
+        "a kind it doesn't use). Anything above 0 may cost money. Counted once a day."
+    ),
+)
+OCI_GUARDRAILS_VALUES = LatestValues()
+OCI_GUARDRAILS_MISSING = meter.create_observable_gauge(
+    "filings.oci.guardrails.missing",
+    callbacks=[OCI_GUARDRAILS_VALUES.observe],
+    unit="{guardrail}",
+    description=(
+        "Spending guardrails of the Oracle account that are missing or weakened: the quota "
+        "policy, the budget, a second region. Checked once a day."
+    ),
+)
+OCI_SPEND_VALUES = LatestValues()
+OCI_BUDGET_SPEND = meter.create_observable_gauge(
+    "filings.oci.budget.spend",
+    callbacks=[OCI_SPEND_VALUES.observe],
+    unit="{currency}",
+    description="What Oracle's budget says was spent this month; everything should be free.",
+)
+
 # --- Earnings-call transcripts (filings-discovery fetch-transcripts, a nightly job) --------------
 
 TRANSCRIPTS_STORED = meter.create_counter(

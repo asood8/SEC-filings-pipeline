@@ -100,6 +100,9 @@ def defined_metrics(_metric_reader: "InMemoryMetricReader") -> set[str]:
         metrics.R2_FREE_TIER_VALUES,
         metrics.BACKUP_SIZE_VALUES,
         metrics.TRANSCRIPTS_OVERDUE_VALUES,
+        metrics.OCI_UNEXPECTED_VALUES,
+        metrics.OCI_GUARDRAILS_VALUES,
+        metrics.OCI_SPEND_VALUES,
     )
     for gauge in gauges:
         gauge.replace(owner, [(0, probe)])

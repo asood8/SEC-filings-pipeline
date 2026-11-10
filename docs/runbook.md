@@ -852,14 +852,21 @@ upgrade don't: they bill it. Seven layers keep the project at $0 either way (ADR
    - block storage at 200 GB and two volumes per availability domain, no backups or replicas;
    - 35 unused services at zero.
 6. A **$1 monthly budget** that emails `oci_budget_alert_emails` at the first cent charged and
-   when the month's forecast reaches $1. It stops nothing.
+   when the month's forecast reaches $1. It stops nothing, and it is slow: Oracle evaluates it
+   once a day, on costs about a day old.
 7. **`scripts/retry-vm-capacity.sh` refuses to run** without the quota policy, and its plan
    checks let it create only the VM, finish only its volume, attachment, and Atlas entry, and
    grow only the VM in place.
+8. **A daily inventory** (the `oci-inventory` CronJob, 07:23 UTC): it lists everything in the
+   account with a read-only key and alerts through Grafana on anything the project doesn't
+   create, on a missing or weakened quota policy or budget, on any spend, and on its own
+   silence. The "Oracle account" panel shows its three numbers, all 0 when all is well.
+9. **Storage pinned to the VM's availability domain** once the VM exists (below).
+10. **The off switch**: `make oci-status`, `make oci-stop`, `make oci-off` (below).
 
 What they leave open:
-- Storage spread over several availability domains: there is no region-wide quota, so layer 2
-  and the budget cover it.
+- Storage spread over several availability domains, until layer 9 is switched on: layer 2 and
+  the inventory cover it meanwhile.
 - Services without quotas, such as MySQL.
 - Outbound data past 10 TB a month, far beyond this traffic.
 
@@ -872,9 +879,42 @@ What they leave open:
 - `make tf-plan` shows no change to the quota policy or the budget.
 
 **After upgrading:**
-- Check Cost Analysis daily for a week.
-- If the budget's email comes, find the charge in Cost Analysis and remove what caused it.
+- Check Cost Analysis daily for a week (`make oci-status` prints the month's spend too).
 - Never lift a quota to make something fit: anything that needs more costs money.
+
+**Once the VM exists**, pin storage to its availability domain: set
+`oci_pin_storage_to_availability_domain = true` in `production.tfvars`, then `make tf-plan`
+(the quota policy changes in place: two statements gain `where request.ad = ...`) and apply.
+If the VM is ever moved to another domain, set it to false first.
+
+**If an alert or Oracle's email says something costs money** (Oracle reports spend, Oracle
+account has unexpected resources, or the budget's email):
+
+1. `make oci-status`: the VMs and volumes that exist, and the month's spend. Billing & Cost
+   Management, Cost Analysis, grouped by service, shows what is charged.
+2. If it is something the project doesn't create, delete that in the console. If you didn't
+   create it, someone else did: change the Oracle password, and delete API keys you don't
+   recognize (Identity, your user, API keys).
+3. To stop the VM's own costs at once and keep its data: `make oci-stop`. Start it again from
+   the console (Compute, Instances, Start); the cluster comes back by itself.
+4. To remove everything that can be billed: `make oci-off`. It asks you to type "delete
+   everything", then terminates every VM and deletes every volume. The production database
+   goes with them; restore the last nightly backup afterwards
+   ([Backups and restores](#backups-and-restores), "After a VM rebuild"). The network, the
+   quota policy and the budget stay, and cost nothing. Terraform will plan to create the VM
+   and volume again: apply only when you want them back.
+
+**Alert: Oracle guardrail missing.** The job's log (`kubectl -n filings logs job/<newest
+oci-inventory job>`) says which: the quota policy, the budget, or a second region. If you didn't
+change it, treat the login as stolen (step 2). `make tf-plan` shows what to put back.
+
+**Alert: Oracle account not checked.** The `oci-inventory` CronJob hasn't reported for 50 hours:
+check its runs and logs (an expired or deleted key answers HTTP 401). The other three Oracle
+alerts can't fire meanwhile, so run `make oci-status` by hand.
+
+**A new kind of resource.** The first time the VM exists, the inventory may count a kind it
+doesn't know (Oracle lists some of a VM's parts separately). If the log names a harmless one,
+add it to `EXPECTED` in `libs/common/src/filings_common/oci_inventory.py`.
 
 ## Backups and restores
 

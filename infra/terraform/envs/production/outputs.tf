@@ -94,3 +94,8 @@ output "grafana_rule_groups" {
   description = "Provisioned Grafana alert rule groups."
   value       = module.grafana.rule_groups
 }
+
+output "oci_inventory_user" {
+  description = "The read-only inventory user's OCID and key fingerprint, for the oci-inventory Secret (null without a key)."
+  value       = module.oci.inventory_user
+}

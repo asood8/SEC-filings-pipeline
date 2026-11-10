@@ -178,6 +178,34 @@ ssh ubuntu@$(terraform output -raw vm_public_ip) sudo cat /etc/rancher/k3s/k3s.y
 
 Set `ssh_ingress_cidr` back to null and apply again when done.
 
+## The inventory user's key
+
+The daily inventory of the Oracle account (ADR-0018) signs in as a user who can only read.
+Make its key pair once, on your machine; Terraform uploads the public half and never sees the
+private one:
+
+```
+openssl genrsa -out ~/.config/filings/oci_inventory_key.pem 2048
+chmod 600 ~/.config/filings/oci_inventory_key.pem
+openssl rsa -in ~/.config/filings/oci_inventory_key.pem -pubout -out ~/.config/filings/oci_inventory_key.pub.pem
+```
+
+Set `oci_inventory_public_key_path = "~/.config/filings/oci_inventory_key.pub.pem"` in
+`production.tfvars`. The user takes the first budget alert email; Oracle wants each user's email
+to be its own, so if that address already belongs to a user, set `oci_inventory_user_email`.
+After the apply, `terraform output oci_inventory_user` gives the user's OCID and the key's
+fingerprint for the `oci-inventory` Secret, whose private key comes from the file:
+
+```
+kubectl create secret generic oci-inventory -n filings --dry-run=client -o yaml \
+    --from-literal=OCI_INVENTORY_TENANCY_OCID=<tenancy OCID> \
+    --from-literal=OCI_INVENTORY_USER_OCID=<user_ocid> \
+    --from-literal=OCI_INVENTORY_FINGERPRINT=<fingerprint> \
+    --from-literal=OCI_INVENTORY_REGION=us-ashburn-1 \
+    --from-file=OCI_INVENTORY_PRIVATE_KEY=$HOME/.config/filings/oci_inventory_key.pem \
+  | kubeseal --cert "$cert" --format yaml > "$out/oci-inventory.yaml"
+```
+
 ## Secrets into the cluster
 
 Terraform's generated secrets reach the cluster as SealedSecrets committed to git, never through
@@ -208,6 +236,7 @@ terraform output -raw mongodb_url \
 | `r2-raw-filings`, `r2-backups` | endpoint: `terraform output r2_endpoint_url`; keys: the R2 API tokens made by hand, one per bucket |
 | `grafana-cloud` | the Grafana Cloud portal (OTLP endpoint, instance ID, access policy token) |
 | `cloudflare-analytics` | the account ID, and a token made by hand with only **Account Analytics: Read** (the daily R2 free-tier check) |
+| `oci-inventory` | the tenancy OCID and region from `production.tfvars`; `terraform output oci_inventory_user` (user OCID, key fingerprint); the private key you made (below) |
 | `postgres`, `unsubscribe` | generate: `openssl rand -hex 32` |
 | `gemini`, `sec-edgar`, `smtp` | your own values |
 

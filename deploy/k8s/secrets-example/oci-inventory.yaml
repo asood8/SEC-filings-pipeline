@@ -1,0 +1,21 @@
+# EXAMPLE ONLY: placeholder values. Never commit a filled-in copy; seal it instead
+# (deploy/k8s/README.md, "Secrets").
+#
+# The read-only Oracle user of the daily inventory check. Terraform creates the user from a
+# public key you make by hand (infra/terraform/modules/oci/inventory.tf); `terraform output
+# oci_inventory_user` gives its OCID and the key's fingerprint, and the private key is the file
+# you made. It can list resources and read the quota policy and the budget, nothing else.
+# Used by: oci-inventory.
+apiVersion: v1
+kind: Secret
+metadata:
+  name: oci-inventory
+  namespace: filings
+type: Opaque
+stringData:
+  OCI_INVENTORY_TENANCY_OCID: ocid1.tenancy.oc1..replace-me
+  OCI_INVENTORY_USER_OCID: ocid1.user.oc1..replace-me
+  OCI_INVENTORY_FINGERPRINT: "00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00"
+  OCI_INVENTORY_REGION: us-ashburn-1
+  OCI_INVENTORY_PRIVATE_KEY: |
+    replace-with-the-private-key-pem

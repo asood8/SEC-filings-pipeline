@@ -24,6 +24,13 @@ oci_tenancy_ocid = "ocid1.tenancy.oc1..replace-me"
 # Who Oracle's $1 budget emails at the first cent of spend (ADR-0018). Empty: no budget.
 # oci_budget_alert_emails = ["you@example.com"]
 
+# Once the VM exists: allow block storage only in its availability domain (ADR-0018).
+# oci_pin_storage_to_availability_domain = true
+
+# The read-only user of the daily inventory check; make the key pair first (README.md, "The
+# inventory user's key").
+# oci_inventory_public_key_path = "~/.config/filings/oci_inventory_key.pub.pem"
+
 # SSH stays closed unless you set a source range; open it only while you need it.
 # ssh_ingress_cidr    = "203.0.113.7/32"
 ssh_authorized_keys = "ssh-ed25519 AAAA...replace-me you@laptop"

@@ -404,6 +404,73 @@ run "quotas_cap_the_tenancy_at_the_free_allowance" {
   }
 }
 
+run "storage_can_be_pinned_to_the_vms_availability_domain" {
+  command = plan
+
+  module {
+    source = "../../modules/oci"
+  }
+
+  variables {
+    pin_storage_to_availability_domain = true
+  }
+
+  assert {
+    condition = alltrue([
+      for statement in [
+        "zero block-storage quotas in tenancy",
+        "set block-storage quota total-storage-gb to 200 in tenancy where request.ad = 'Uocm:US-ASHBURN-AD-1'",
+        "set block-storage quota volume-count to 2 in tenancy where request.ad = 'Uocm:US-ASHBURN-AD-1'",
+      ] : contains(oci_limits_quota.always_free.statements, statement)
+    ])
+    error_message = "Pinned, block storage is allowed in the VM's availability domain and nowhere else."
+  }
+
+  assert {
+    condition     = !contains(oci_limits_quota.always_free.statements, "set block-storage quota total-storage-gb to 200 in tenancy")
+    error_message = "Pinned, no statement may give every availability domain the allowance."
+  }
+}
+
+run "the_inventory_user_can_only_read" {
+  command = plan
+
+  module {
+    source = "../../modules/oci"
+  }
+
+  variables {
+    inventory_public_key_path = "tests/fixtures/inventory_key.pub.pem"
+    budget_alert_emails       = ["ops@example.com"]
+  }
+
+  assert {
+    condition = alltrue([
+      for statement in oci_identity_policy.inventory[0].statements :
+      can(regex("^allow group filings-inventory to (inspect|read) ", statement))
+    ]) && length(oci_identity_policy.inventory[0].statements) == 3
+    error_message = "The inventory user's policy may only inspect and read."
+  }
+
+  assert {
+    condition     = nonsensitive(oci_identity_user.inventory[0].email) == "ops@example.com"
+    error_message = "The inventory user takes the first budget alert email unless given its own."
+  }
+}
+
+run "without_a_key_there_is_no_inventory_user" {
+  command = plan
+
+  module {
+    source = "../../modules/oci"
+  }
+
+  assert {
+    condition     = length(oci_identity_user.inventory) == 0 && length(oci_identity_policy.inventory) == 0
+    error_message = "No key, no user."
+  }
+}
+
 run "a_budget_alerts_at_the_first_cent" {
   command = plan
 

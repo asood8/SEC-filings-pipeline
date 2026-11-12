@@ -72,6 +72,10 @@ export function Layout() {
         <p>
           <Link to="/about">About</Link>
           <span aria-hidden="true"> · </span>
+          <Link to="/privacy">Privacy</Link>
+          <span aria-hidden="true"> · </span>
+          <Link to="/terms">Terms</Link>
+          <span aria-hidden="true"> · </span>
           <a href={`${API_BASE_URL}/docs`}>API documentation</a>
         </p>
       </footer>

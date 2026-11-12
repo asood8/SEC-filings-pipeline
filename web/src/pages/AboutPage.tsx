@@ -84,6 +84,11 @@ export function AboutPage() {
         can't catch every mistake. Earnings-call Q&amp;A is summarized the same
         way, one question at a time, and is checked against the transcript.
       </p>
+      <p>
+        The models: Meta&apos;s Llama 3.2 (3B), run on the site&apos;s own
+        server, and Google&apos;s Gemini when that one is unavailable. Built
+        with Llama.
+      </p>
 
       <h2>Limits</h2>
       <ul>
@@ -91,7 +96,15 @@ export function AboutPage() {
           Summaries are generated automatically and may contain errors. Read the
           original filing before relying on one.
         </li>
-        <li>Nothing on this site is investment advice.</li>
+        <li>
+          Nothing on this site is investment advice. See the{' '}
+          <Link to="/terms">terms</Link> and the{' '}
+          <Link to="/privacy">privacy</Link> page.
+        </li>
+        <li>
+          &ldquo;Fortune 100&rdquo; refers to Fortune&apos;s published list;
+          this site has no connection to Fortune or to any company it covers.
+        </li>
       </ul>
     </article>
   )

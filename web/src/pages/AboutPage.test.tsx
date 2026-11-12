@@ -31,8 +31,9 @@ describe('AboutPage', () => {
     expect(edgar).toHaveAttribute('target', '_blank')
     expect(screen.getByText(/every 10 minutes/)).toBeInTheDocument()
     expect(screen.getByText(/isn't affiliated with/)).toBeInTheDocument()
+    expect(screen.getByText(/Built with Llama\./)).toBeInTheDocument()
     expect(
-      screen.getByText('Nothing on this site is investment advice.'),
+      screen.getByText(/Nothing on this site is investment advice\./),
     ).toBeInTheDocument()
   })
 

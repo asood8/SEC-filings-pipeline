@@ -102,7 +102,7 @@ Each is an account action, which is why Terraform doesn't do it (ADR-0018, "What
 | MongoDB Atlas | Account and organization; an organization service account with the Organization Project Creator role | `MONGODB_ATLAS_CLIENT_ID`, `MONGODB_ATLAS_CLIENT_SECRET`; `atlas_org_id` in tfvars |
 | Grafana Cloud | Account and a stack; a service account in the stack with the Admin role (alerting provisioning needs it) and a token | `GRAFANA_AUTH`; `grafana_url` in tfvars |
 | Google Cloud | Add the website's address (`https://<web_subdomain>.<domain>`) to the existing OAuth client's authorized JavaScript origins. On the OAuth consent screen, set the home page, the privacy policy (`/privacy`) and the terms (`/terms`), then publish the app ("In production"): in "Testing" only listed test users can sign in | not used by Terraform |
-| Cloudflare Email Routing | Free, on the domain's Email page: route `hello@<domain>` (the contact address on the Privacy and Terms pages, `web/src/lib/site.ts`) to your own inbox | not used by Terraform |
+| Cloudflare Email Routing | Free, on the domain's Email page: route `contact@<domain>` (the contact address on the Privacy and Terms pages, `web/src/lib/site.ts`) to your own inbox | not used by Terraform |
 
 The Cloudflare API token for Terraform (My Profile, API Tokens, custom token):
 

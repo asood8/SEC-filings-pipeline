@@ -22,8 +22,8 @@ describe('the privacy and terms pages', () => {
       ).toBeInTheDocument()
     expect(screen.getByText(/removes your account, every alert/)).toBeVisible()
     expect(
-      screen.getAllByRole('link', { name: 'hello@filingwire.app' })[0],
-    ).toHaveAttribute('href', 'mailto:hello@filingwire.app')
+      screen.getAllByRole('link', { name: 'contact@filingwire.app' })[0],
+    ).toHaveAttribute('href', 'mailto:contact@filingwire.app')
   })
 
   it('states the terms, and both are linked from every page', async () => {

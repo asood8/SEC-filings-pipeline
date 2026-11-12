@@ -58,6 +58,16 @@ We will build the website as a single-page app with **Vite, React, and TypeScrip
   summaries are written, and their limits (automated, may contain errors, not investment
   advice). Its facts come from the configuration and the README, so it needs updating when
   those change: the polling interval, the form types, or the 30-day lookback.
+- **Privacy and terms pages** (`/privacy`, `/terms`, in the footer; added 2026-11-11, before the
+  public launch). Privacy says what is kept and why (the Google email and identifier, alerts
+  and their destinations, alert history, suggestions, sessions; IP addresses in logs for up to
+  14 days), which services process it, that there are no ads, analytics or tracking, and how to
+  delete it all. It describes what the code does (ADR-0012, ADR-0013, ADR-0016), so it changes
+  when that does. Google needs its address to let anyone sign in (the OAuth consent screen's
+  "In production"). Terms: not investment advice, summaries can be wrong, no warranty, fair use.
+  The contact address is on the site's own domain, forwarded by Cloudflare Email Routing, so no
+  personal address is published. The About page names the models and says "Built with Llama",
+  as the Llama 3.2 license asks of a service that uses it. Written without a lawyer.
 
 ## Alternatives considered
 

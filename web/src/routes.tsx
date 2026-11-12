@@ -12,8 +12,10 @@ import { FeedPage } from './pages/FeedPage'
 import { FilingPage } from './pages/FilingPage'
 import { InsiderTradesPage } from './pages/InsiderTradesPage'
 import { NotFoundPage } from './pages/NotFoundPage'
+import { PrivacyPage } from './pages/PrivacyPage'
 import { SearchPage } from './pages/SearchPage'
 import { SuggestCompanyPage } from './pages/SuggestCompanyPage'
+import { TermsPage } from './pages/TermsPage'
 import { UnsubscribePage } from './pages/UnsubscribePage'
 
 export const routes: RouteObject[] = [
@@ -34,6 +36,8 @@ export const routes: RouteObject[] = [
       { path: 'alerts', element: <AlertsPage /> },
       { path: 'unsubscribe', element: <UnsubscribePage /> },
       { path: 'about', element: <AboutPage /> },
+      { path: 'privacy', element: <PrivacyPage /> },
+      { path: 'terms', element: <TermsPage /> },
       { path: '*', element: <NotFoundPage /> },
     ],
   },

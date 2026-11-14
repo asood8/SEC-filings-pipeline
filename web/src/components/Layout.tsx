@@ -35,6 +35,8 @@ export function Layout() {
       <header className={styles.header}>
         <div className={styles.bar}>
           <Link to="/" className={styles.brand}>
+            {/* The tab icon, so the two always match. The name beside it is the link's text. */}
+            <img src="/favicon.svg" alt="" width={28} height={28} />
             {SITE_NAME}
           </Link>
           <nav className={styles.nav} aria-label="Main">

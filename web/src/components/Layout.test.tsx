@@ -23,6 +23,20 @@ describe('Layout', () => {
     expect(screen.getAllByRole('heading', { level: 1 })).toHaveLength(1)
   })
 
+  it('shows the logo beside the name, which stays the link text', async () => {
+    mockApi({ '/filings': () => EMPTY })
+    renderRoute('/')
+    await screen.findByText('No filings yet.')
+
+    const home = within(screen.getByRole('banner')).getByRole('link', {
+      name: 'Filingwire',
+    })
+    expect(home).toHaveAttribute('href', '/')
+    const logo = home.querySelector('img')
+    expect(logo).toHaveAttribute('src', '/favicon.svg') // the tab icon's file
+    expect(logo).toHaveAttribute('alt', '') // decorative: the name says it
+  })
+
   it('starts with a skip link to the main content', async () => {
     mockApi({ '/filings': () => EMPTY })
     renderRoute('/')

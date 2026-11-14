@@ -96,6 +96,12 @@ for _ in $(seq 1 120); do
   kubectl get --raw /readyz >/dev/null 2>&1 && break
   sleep 5
 done
+# The API answers before the node has registered itself, and `kubectl wait` on no nodes fails at
+# once ("no matching resources found"): the launch's first boot stopped here (2026-11-14).
+for _ in $(seq 1 120); do
+  [ -n "$(kubectl get nodes -o name 2>/dev/null)" ] && break
+  sleep 5
+done
 kubectl wait --for=condition=Ready node --all --timeout=10m
 
 # --- 4. Argo CD ----------------------------------------------------------------------------------

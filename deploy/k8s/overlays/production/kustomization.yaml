@@ -9,16 +9,25 @@ kind: Kustomization
 resources:
   - ../../base
   # The SealedSecrets, one file per Secret, made with kubeseal against this cluster's key
-  # (deploy/k8s/README.md). Phase 7 adds them here:
-  # - sealed-secrets/postgres.yaml
+  # (deploy/k8s/README.md; cert.pem is its public half). No smtp: email alerts are off.
+  - sealed-secrets/cloudflare-analytics.yaml
+  - sealed-secrets/cloudflared.yaml
+  - sealed-secrets/gemini.yaml
+  - sealed-secrets/grafana-cloud.yaml
+  - sealed-secrets/mongodb.yaml
+  - sealed-secrets/oci-inventory.yaml
+  - sealed-secrets/postgres.yaml
+  - sealed-secrets/r2-backups.yaml
+  - sealed-secrets/r2-raw-filings.yaml
+  - sealed-secrets/sec-edgar.yaml
+  - sealed-secrets/unsubscribe.yaml
 
 # The service images' registry and tags. CI sets the tags on each deploy, on the production
 # branch (images/kustomization.yaml).
 components:
   - images
-  # The VM's smaller size (1 OCPU, 6 GB): no local LLM or embedding server. Delete this line once
-  # the VM has 2 OCPU and 12 GB (docs/adr/0020).
-  - ../../components/small-vm
+  # The VM came up at its full size (2 OCPU, 12 GB) at launch, so the local LLM and embedding
+  # servers run: no components/small-vm (docs/adr/0020).
 
 # Replica counts for the workloads that can run more than one copy. The rest must stay at one:
 # the data stores, the LLM servers, the outbox relay, and the summarizer (see each manifest).

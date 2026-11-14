@@ -53,6 +53,34 @@ run "the_tunnel_routes_the_api_hostname_to_the_api_service" {
   }
 }
 
+run "the_bare_domain_redirects_to_the_website" {
+  command = plan
+
+  module {
+    source = "../../modules/cloudflare"
+  }
+
+  variables {
+    web_subdomain = "www"
+  }
+
+  assert {
+    condition     = cloudflare_dns_record.apex[0].name == "example.com" && cloudflare_dns_record.apex[0].proxied && cloudflare_dns_record.apex[0].content == "100::"
+    error_message = "The bare domain needs a proxied placeholder record for the redirect to answer on."
+  }
+
+  assert {
+    condition = (
+      cloudflare_ruleset.apex_redirect[0].phase == "http_request_dynamic_redirect"
+      && cloudflare_ruleset.apex_redirect[0].rules[0].expression == "(http.host eq \"example.com\")"
+      && cloudflare_ruleset.apex_redirect[0].rules[0].action_parameters.from_value.target_url.expression == "concat(\"https://www.example.com\", http.request.uri.path)"
+      && cloudflare_ruleset.apex_redirect[0].rules[0].action_parameters.from_value.status_code == 301
+      && cloudflare_ruleset.apex_redirect[0].rules[0].action_parameters.from_value.preserve_query_string
+    )
+    error_message = "example.com/<path>?<query> must redirect permanently to https://www.example.com/<path>?<query>."
+  }
+}
+
 run "without_a_domain_only_the_tunnel_and_the_buckets_are_made" {
   command = plan
 
@@ -65,7 +93,7 @@ run "without_a_domain_only_the_tunnel_and_the_buckets_are_made" {
   }
 
   assert {
-    condition     = length(data.cloudflare_zone.main) == 0 && length(cloudflare_dns_record.api) == 0 && length(cloudflare_dns_record.web) == 0
+    condition     = length(data.cloudflare_zone.main) == 0 && length(cloudflare_dns_record.api) == 0 && length(cloudflare_dns_record.web) == 0 && length(cloudflare_ruleset.apex_redirect) == 0
     error_message = "Without a domain, no zone is looked up and no DNS records are made."
   }
 

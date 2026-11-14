@@ -163,6 +163,14 @@ cap, and is the user's choice.
 
 The runbook's "Guardrails against charges" has the checklist for before and after an upgrade.
 
+**The bare domain (added 2026-11-14).** The site is on `www.`, and people type the bare domain.
+A proxied placeholder record (`AAAA 100::`, Cloudflare's documented address for a hostname that
+only redirects) and one redirect rule (`cloudflare_ruleset`, phase
+`http_request_dynamic_redirect`; the free plan has 10) send `filingwire.app/<path>?<query>` to
+`https://www.filingwire.app/<path>?<query>` with a 301, at Cloudflare's edge. Serving the site on
+both hostnames instead would need both in the API's CORS list and in Google's sign-in origins,
+and would split the session cookie's site; one address keeps it simple.
+
 **Usage, not just configuration (added 2026-10-22).** The layers above keep every resource free,
 but R2 also bills by use past its monthly allowance (10 GB of storage, 1 million Class A and 10
 million Class B operations), with no spending cap. Normal use is a few percent of that, so the

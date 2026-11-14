@@ -32,6 +32,7 @@ oci_identity_api_key
 cloudflare_zero_trust_tunnel_cloudflared
 cloudflare_zero_trust_tunnel_cloudflared_config
 cloudflare_dns_record
+cloudflare_ruleset
 cloudflare_r2_bucket
 cloudflare_r2_bucket_lifecycle
 cloudflare_pages_project

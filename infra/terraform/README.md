@@ -107,7 +107,8 @@ Each is an account action, which is why Terraform doesn't do it (ADR-0018, "What
 The Cloudflare API token for Terraform (My Profile, API Tokens, custom token):
 
 - Account: **Cloudflare Tunnel: Edit**, **Workers R2 Storage: Edit**, **Cloudflare Pages: Edit**
-- Zone (only the project's zone): **DNS: Edit**, **Zone: Read**
+- Zone (only the project's zone): **DNS: Edit**, **Zone: Read**, **Single Redirect: Edit** (the
+  bare domain's redirect to the website; `redirect_apex_to_web`)
 
 If the Atlas organization requires an IP access list for its API, add your own address to the
 service account's list.

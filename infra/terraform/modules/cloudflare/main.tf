@@ -195,3 +195,49 @@ resource "cloudflare_dns_record" "web" {
   ttl     = 1
   comment = "Cloudflare Pages: the filings website (Terraform)"
 }
+
+# --- The bare domain ------------------------------------------------------------------------------
+# People type filingwire.app without the www. A redirect rule (free plan: up to 10) answers at
+# Cloudflare's edge, so the record it hangs on points nowhere: 100:: is the discard prefix,
+# Cloudflare's documented placeholder for a proxied hostname that only redirects.
+locals {
+  apex_redirect = local.has_domain && var.redirect_apex_to_web
+}
+
+resource "cloudflare_dns_record" "apex" {
+  count = local.apex_redirect ? 1 : 0
+
+  zone_id = data.cloudflare_zone.main[0].id
+  name    = var.zone_name
+  type    = "AAAA"
+  content = "100::"
+  proxied = true
+  ttl     = 1
+  comment = "Placeholder for the redirect to the website (Terraform)"
+}
+
+resource "cloudflare_ruleset" "apex_redirect" {
+  count = local.apex_redirect ? 1 : 0
+
+  zone_id     = data.cloudflare_zone.main[0].id
+  name        = "Redirects"
+  description = "The bare domain to the website (Terraform)"
+  kind        = "zone"
+  phase       = "http_request_dynamic_redirect"
+
+  rules = [{
+    description = "${var.zone_name} to ${local.web_hostname}, keeping the path and query"
+    expression  = "(http.host eq \"${var.zone_name}\")"
+    action      = "redirect"
+    action_parameters = {
+      from_value = {
+        status_code           = 301
+        preserve_query_string = true
+        target_url = {
+          expression = "concat(\"${local.web_url}\", http.request.uri.path)"
+        }
+      }
+    }
+    enabled = true
+  }]
+}

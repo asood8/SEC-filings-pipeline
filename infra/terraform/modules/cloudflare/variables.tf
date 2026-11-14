@@ -197,3 +197,9 @@ variable "node_version" {
     error_message = "node_version must be a Node.js version such as 24 or 24.9.0."
   }
 }
+
+variable "redirect_apex_to_web" {
+  description = "Send visitors of the bare domain (zone_name itself) to the website's hostname with a permanent redirect. Needs the API token's zone permission Single Redirect: Edit."
+  type        = bool
+  default     = true
+}

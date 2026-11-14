@@ -16,7 +16,14 @@ mock_provider "oci" {
   }
 }
 
-mock_provider "cloudflare" {}
+mock_provider "cloudflare" {
+  # The redirect ruleset checks the zone ID's shape: 32 hexadecimal characters.
+  mock_data "cloudflare_zone" {
+    defaults = {
+      id = "0123456789abcdef0123456789abcdef"
+    }
+  }
+}
 mock_provider "mongodbatlas" {}
 mock_provider "grafana" {}
 

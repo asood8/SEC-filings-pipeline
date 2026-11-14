@@ -181,7 +181,7 @@ run "pages_builds_web_from_github_with_the_public_settings" {
   }
 
   assert {
-    condition     = cloudflare_pages_project.web[0].source.type == "github" && cloudflare_pages_project.web[0].source.config.path_includes == tolist(["web/**"])
+    condition     = cloudflare_pages_project.web[0].source.type == "github" && cloudflare_pages_project.web[0].source.config.path_includes == tolist(["*"])
     error_message = "Pages should build from GitHub, only when web/ changes."
   }
 

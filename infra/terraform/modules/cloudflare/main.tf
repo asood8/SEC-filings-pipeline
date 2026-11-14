@@ -169,8 +169,11 @@ resource "cloudflare_pages_project" "web" {
       production_deployments_enabled = true
       preview_deployment_setting     = var.pages_preview_deployments ? "all" : "none"
       pr_comments_enabled            = var.pages_preview_deployments
-      # Build only when the website changed, to stay well inside 500 builds a month.
-      path_includes = ["web/**"]
+      # Every push to the production branch builds. A filter of web/** skipped every Git build
+      # after the launch (2026-11-14), even those that changed web/, apparently because the
+      # paths are matched under root_dir. About 70 pushes a month, well inside the free 500;
+      # other branches don't build (preview_deployment_setting).
+      path_includes = ["*"]
     }
   } : null
 }

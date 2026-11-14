@@ -1,0 +1,14 @@
+---
+apiVersion: bitnami.com/v1alpha1
+kind: SealedSecret
+metadata:
+  name: sec-edgar
+  namespace: filings
+spec:
+  encryptedData:
+    SEC_CONTACT_EMAIL: AgAKDo4XldKabjbeW147p3hUIF5MkbmTDuQmlDXSN0slGvOr5wFtGWRktVZoLLMO2jKnb39rpAdVDJ7DYEon1BmVdy46op/WtyDK4nCxDBOEYSyAoXD5cB91iJAvkBcLAS3CX1f8dtU9v/oeCSWR/W52MRxqmfw/25pdea0dbtyBGWqVcpFjM7ngXVUhlYKfUGjdTfx3geEgg1j48+VfDAd1RMDvAUg6Cv3BMGWH0p/ZngvCaH3VtU/rWQr+0JYNX5BXoKRa767t7Fl4pt52uPTxIGlEht9JWMsFuEgMpmHrqeSqbO89HGC4yFKAuypRQ3zpvaC9Dwx+x/jii9BSvBh5+Rl6ahjE+YqnD5m4YqQJw4c8clN2ElMYsZuILtjwtVM0xQKth81loV6/a1QGzSxBWLsR74HxP8lbtmxsEwYyuAuOrpa9YzSFpJHAIHTXFVZs2fbIjBiFL1psb/IFSsZdP3f2IshYlnPFwX0rjdPm6PmGI2G8c7f0wms6XizqPSpT6vnjaxihF66ZZ1dNvFuNr27Wkj8doeoQQpu8Syvxfo+RKZjgS+69t9RZGuMeZPIGtjZoKNXuq9Ys/bLNo7keKdoZj9YFebYvGcIoi9RIVSbBYvkiJ3GVOB8oN8oZ5Z/3QnamnQeQSS0aJb7u7VylGzB4E+Sh5fqEih6wTgA0Bn3pozfUnL9oNypiP8MSmfdkczFA38M9xa6OmuKjoIdKGKJLKg==
+  template:
+    metadata:
+      name: sec-edgar
+      namespace: filings
+    type: Opaque

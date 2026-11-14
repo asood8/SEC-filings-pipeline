@@ -9,8 +9,18 @@ kind: Kustomization
 resources:
   - ../../base
   # The SealedSecrets, one file per Secret, made with kubeseal against this cluster's key
-  # (deploy/k8s/README.md). Phase 7 adds them here:
-  # - sealed-secrets/postgres.yaml
+  # (deploy/k8s/README.md; cert.pem is its public half). No smtp: email alerts are off.
+  - sealed-secrets/cloudflare-analytics.yaml
+  - sealed-secrets/cloudflared.yaml
+  - sealed-secrets/gemini.yaml
+  - sealed-secrets/grafana-cloud.yaml
+  - sealed-secrets/mongodb.yaml
+  - sealed-secrets/oci-inventory.yaml
+  - sealed-secrets/postgres.yaml
+  - sealed-secrets/r2-backups.yaml
+  - sealed-secrets/r2-raw-filings.yaml
+  - sealed-secrets/sec-edgar.yaml
+  - sealed-secrets/unsubscribe.yaml
 
 # The service images' registry and tags. CI sets the tags on each deploy, on the production
 # branch (images/kustomization.yaml).

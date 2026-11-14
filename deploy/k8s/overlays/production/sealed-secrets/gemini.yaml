@@ -1,0 +1,14 @@
+---
+apiVersion: bitnami.com/v1alpha1
+kind: SealedSecret
+metadata:
+  name: gemini
+  namespace: filings
+spec:
+  encryptedData:
+    GEMINI_API_KEY: AgAOHNAFsmlbPYNZvtjDopQxVHTXZpdDqyB5d56z7/1JKKEkBjdkap8STv5NIQURuqygDE6mgYcr6Lg36eOm0ndcWr7HquYkYf3+coWEx9eztcMatKZg5suHVmvoMcRrLK5sX2Mq+4TvRaKDRsvSoCgYQmDw5VSopU4P1AwxZgilm8bI96b8dJVyQz3pZ/5FDKgmVlw3ZpIRFGbk6JwR7NYhXRV/ZY+N7pqRiB0wyu+Y4q06xL64kNLU+5yA70ba3w2siFPra6/JdyUDTM+8SxJCg7LSZ+Y/WcHLdFqhxz9yOZPDhiHyIe+3JUNAWC5lxALsHGc/6DvbIazR/98dXz8JDs6d1e5lNM7orIz65hmTTDKYk+P9Ip9mbZOoQ+LxnDPC488LGlezC3QrJfndQQI4JWXT2A4cczwjriNdue857uEI8yxGZjUPwZvdTyyaFwxIvKUiqFZLTBC393TZhyyCngSJjevuNVUIVFJp5Fe0Ub+ngj0mSxbMJ6VPmMhRRAZ8A0I2R9Dqam6pCukK5AAX3EojixFyCgvNnboZFLlipCSEtamRXAkItudXwVVyR1rkEtF9EsYM3zRyvFCyoMv3Ctey4GkjBwphgY1oRjG5JqRBRjGd/Uyw4sVRNRQvwhbpsjtpfjSkL/rbaQf8Tubn/faPKH75OUKt8XbtE/kORIQsaPovwUNIkIwnRyKdeYHc461JyqWFhw80YZR9NVvbQgQGtyFd8D9ttD1pk1m9Og4NyHmoi6VfOWvcM6o13oPumyiSbQ==
+  template:
+    metadata:
+      name: gemini
+      namespace: filings
+    type: Opaque

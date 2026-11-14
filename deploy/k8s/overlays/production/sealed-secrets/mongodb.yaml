@@ -1,0 +1,14 @@
+---
+apiVersion: bitnami.com/v1alpha1
+kind: SealedSecret
+metadata:
+  name: mongodb
+  namespace: filings
+spec:
+  encryptedData:
+    MONGODB_URL: AgBLGJZBqv7XsOIWH+3UE2ol5Xk0WBtlVsiLtzYVricpATIPjVbyWLIkIWhlBV2S1FEz8x+e3g6c2ONsl2UdMZm37J1BiLlMXFVbf/wVERFKo4oB18/np1yn9O4SUQIi0IR5xvZp2K/gKwEQJLSumJ61Q6p064teFqRnSHnCK6VDHtGTe1dHTxFBFdNhFZn6Rq/guLk2/A8RD6/zZHmK1KmSu2hc2JBTuVDtRCPl2xi3eHKujx8acMfHt7ng3o/BRCYQnMeWY/kPgDsD4sbdNelUKD4cFe9k924ch8WF72M2rKc9gZR7gG8czqblnoI4cWAu23NK3T4SXmRjXlvIfQeoAWltdQLxaBDRRKa+aohEGgcbWKAXUZk47+11sx5YppJfJzbwJ0FrjmDE9xzkMEzLxUnZfzrGJGguuPBpeFVBLCT7JHBXOQei9sV0gkgegCByZwy/YGW9tNy4UxL9AENRPeZkD0DDe/L+eGblMSE7EqJ5UbbJDF0DzRfEhlve3z+F9m1JRX5URE7YE32vKYSbsxu1wVbiveZFDME20BQCsJ8DxB3S+9oCyqlltjUULacB9KluonnvRRiTTXdIeG6Gg+BHZlIGwsq4pNAtGIusfj3NjOxcjcmY1bQwJZ8OlKdmUhf+7RcetsDekcm+sqD7j3OGMtMyxbvOsxMunb+VquwNLm6lWDb8aBy9q+yvAgTkTUUjmfw8wHPcZSICV+UJoTLOFeH8+GOxgREH0jRhjEMcrjfzgaxyXLtSK7/P0p66s+gLHJLTdUCyfCCORVi96O+61SYkieITPrG4L0LLPT6Q7XTNjpvMaWfDUvydEIhxPq9XlhiTfMA8tFarY7E/kiTTveAQkFdxTwQt0GO9
+  template:
+    metadata:
+      name: mongodb
+      namespace: filings
+    type: Opaque

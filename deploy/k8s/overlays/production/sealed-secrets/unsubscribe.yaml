@@ -1,0 +1,14 @@
+---
+apiVersion: bitnami.com/v1alpha1
+kind: SealedSecret
+metadata:
+  name: unsubscribe
+  namespace: filings
+spec:
+  encryptedData:
+    UNSUBSCRIBE_SECRET: AgAVvOdJCj5W023VCLPSXLrzcTA/owN5FwNrtOCPruespyZTqCnJIYqyPKPAl5kYf6iochIeWkefu1h4LxQ1EhKHbtMrxnkKzjB0U/2nKOjgMBqvKV4bh14gfgl3Z+j5oQ8dboXeOoyrvCmqqX0HaBlc+FJHnjUi2YDoCS+M4N8QFDCB4vQ4i3WGtR6JtJzXxRdEJrRezL6JHCeGxC07ivR37co+AyNnskZrmt8H4Vm6QRX5A5+bgYGwZ67BTw4iqZxi2R+w0v+sr4hhVSXACmh8Wr+pt7iUcFS55D2Cx0ivauGOknkrx319zQf/Gm4SOstIYk1RGtDQ6C3GgQzD5z5QXCuCHu8ENkK8MRpZqjmtC30TED9JnUlX6nScKiEJ+u8z2n8MfNLtgazqdB5KXlEBocwCL2sbfGazKKlbEtzE/v17ROV82+g4Lb4iW6PrRxxL1KXOv+hsVurOhqHFwqMZvmfYmh2yp84/wVLQ8PcQadV9fCmohahizxBcMUSjDcX9YGMh2G0a2UoDdGMWFkIOEUawwUU0lbe8PAzyd5Sw6mk/GdA3V7fGwnJXYl4jtT2DVGOPoYpQEehpC2RU82SC85SJ2gprpWHgUJtOVnBvc028vOnrtMvlllw+//tcczyN1aJGBpMQxar/e0uVImhD+qDCio3knL+OPOOvuqhvxsGN2nuTjbNM818QG91asdrfQK2Fa5bsl/OerTzBeJhb4iXRHKVrjF1dVH8hVr7XopK/viEMuBQ3bwkzQAC2xCcpH/3iAiqzbT3XciN25cuR
+  template:
+    metadata:
+      name: unsubscribe
+      namespace: filings
+    type: Opaque

@@ -106,6 +106,11 @@ We will build the website as a single-page app with **Vite, React, and TypeScrip
   its own; ADR-0011.) The policy
   ships report-only, since Google's sign-in can only be checked against it on the live site; once
   the browser console shows no violations there, rename the header to enforce it (runbook).
+  - Checked 2026-11-14 on the live site (headless Chrome, every page signed out): Google's
+    sign-in script adds its button's CSS as an inline `<style>`, which the policy refused; with
+    the policy enforced the button rendered as a page-sized logo. `style-src` now allows inline
+    styles (`'unsafe-inline'`): a hash would break whenever Google changes that CSS, and inline
+    styles can't run code, while scripts stay limited to the site and Google's sign-in.
 - **Local development:** `make web` serves the site on port 3000, the origin the API's CORS
   settings and the Google OAuth client allow.
 

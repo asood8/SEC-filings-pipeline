@@ -11,7 +11,11 @@ export function contentSecurityPolicy(apiBaseUrl: string): string {
   return [
     "default-src 'self'",
     `script-src 'self' ${GOOGLE_SIGN_IN}client`,
-    `style-src 'self' ${GOOGLE_SIGN_IN}style`,
+    // Google's sign-in script puts its button's CSS in a <style> element of its own: without
+    // 'unsafe-inline' the button renders as a page-sized logo (checked 2026-11-14 with the policy
+    // enforced). Its content changes with Google's releases, so a hash would break the button
+    // without warning. Inline styles can't run code; scripts stay limited to these two sources.
+    `style-src 'self' 'unsafe-inline' ${GOOGLE_SIGN_IN}style`,
     `frame-src ${GOOGLE_SIGN_IN}`,
     `connect-src 'self' ${api} ${GOOGLE_SIGN_IN}`,
     "img-src 'self' data: https://*.googleusercontent.com",

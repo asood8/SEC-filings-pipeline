@@ -90,6 +90,26 @@ class OutboxSettings(BaseSettings):
     retention_days: int = Field(default=7, ge=1)
 
 
+class SummarizerSettings(BaseSettings):
+    """Which filings one summarizer process takes. Empty `forms` (the default, and local
+    development) takes every form. In production two run side by side, each in its own consumer
+    group: one for 8-Ks, which wait minutes for the LLM, and one for Form 4s, which a template
+    summarizes at once, so a Form 4 never queues behind an 8-K."""
+
+    model_config = _config("SUMMARIZER_")
+
+    # Comma-separated base forms, e.g. "4" or "8-K"; each takes its amendments too (4/A, 8-K/A).
+    forms: str = ""
+    consumer_group: str = "summarizer"
+    # Names the heartbeat file (the probes' `filings-healthcheck <name>`) and the telemetry
+    # service, so each summarizer is watched on its own.
+    process_name: str = "filings-summarizer"
+
+    @property
+    def form_families(self) -> frozenset[str]:
+        return frozenset(f.strip() for f in self.forms.split(",") if f.strip())
+
+
 class LlmSettings(BaseSettings):
     """The local, OpenAI-compatible LLM server: Ollama in development, llama.cpp in production."""
 

@@ -15,6 +15,7 @@ from filings_common.config import (
     LlmSettings,
     MongoSettings,
     RedisSettings,
+    SummarizerSettings,
 )
 from filings_common.consumer import make_consumer, run_consumer
 from filings_common.db import create_engine, session_factory
@@ -27,6 +28,8 @@ from filings_common.telemetry import setup_telemetry
 from filings_summarizer.handler import SummaryHandler
 from filings_summarizer.summarizers import build_summarizers
 
+# The defaults (SummarizerSettings): one process taking every form. Production runs a second, for
+# Form 4s, under its own process name and consumer group (deploy/k8s/base/summarizer-form4.yaml).
 PROCESS_NAME = "filings-summarizer"
 CONSUMER_GROUP = "summarizer"
 # LLM outages and free-tier 429s are waited out: up to 6 attempts with backoff of 10s, 20s, 40s,
@@ -77,8 +80,9 @@ def poll_interval_seconds(
 
 
 def main() -> int:
-    heartbeat = Heartbeat.for_process(PROCESS_NAME)
-    telemetry = setup_telemetry(PROCESS_NAME)
+    settings = SummarizerSettings()
+    heartbeat = Heartbeat.for_process(settings.process_name)
+    telemetry = setup_telemetry(settings.process_name)
     kafka = KafkaSettings()
     mongo_settings = MongoSettings()
 
@@ -97,10 +101,11 @@ def main() -> int:
             ParsedFilingStore(mongo[mongo_settings.mongodb_database]),
             build_summarizers(llm, gemini, redis_client),
             embedder_from_settings(embedding),
+            forms=settings.form_families,
         )
         consumer = make_consumer(
             kafka.bootstrap_servers,
-            CONSUMER_GROUP,
+            settings.consumer_group,
             max_poll_interval_seconds=poll_interval_seconds(llm, gemini, embedding),
         )
         run_consumer(
@@ -111,7 +116,7 @@ def main() -> int:
             stop,
             max_attempts=MAX_ATTEMPTS,
             backoff_seconds=BACKOFF_SECONDS,
-            consumer_group=CONSUMER_GROUP,
+            consumer_group=settings.consumer_group,
             heartbeat=heartbeat,
             attempt_seconds=attempt_seconds(llm, gemini, embedding),
         )

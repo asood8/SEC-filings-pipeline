@@ -1,4 +1,4 @@
-"""A small Oracle Cloud (OCI) API client: signed requests, and Resource Search.
+"""A small Oracle Cloud (OCI) API client: signed requests, List calls, and Resource Search.
 
 Oracle's APIs take HTTP requests signed with the user's API key (RSA-SHA256 over the date, the
 request line and the host, plus the body's length, type and SHA-256 for requests that have one):
@@ -129,6 +129,21 @@ class OciClient:
         if response.status_code != 200:
             raise OciError(f"GET {service}{path}: HTTP {response.status_code}")
         return response.json()
+
+    def get_all(self, service: str, path: str, **params: str | int) -> list[dict[str, Any]]:
+        """Every item a List call returns, following its pages (Oracle's opc-next-page)."""
+        items: list[dict[str, Any]] = []
+        query: dict[str, str | int] = {**params, "limit": SEARCH_PAGE}
+        for _ in range(MAX_PAGES):
+            response = self.request("GET", service, path, params=query)
+            if response.status_code != 200:
+                raise OciError(f"GET {service}{path}: HTTP {response.status_code}")
+            items += response.json()
+            page = response.headers.get("opc-next-page")
+            if not page:
+                return items
+            query = {**params, "limit": SEARCH_PAGE, "page": page}
+        raise OciError(f"GET {service}{path}: more than {MAX_PAGES} pages")
 
     def search(self, query: str) -> list[dict[str, Any]]:
         """Every resource a Resource Search query matches, in this region."""

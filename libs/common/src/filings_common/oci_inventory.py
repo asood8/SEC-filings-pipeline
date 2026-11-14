@@ -6,7 +6,10 @@ doesn't wait for a cost: once a day it lists what exists, which is known at once
 it with what the project creates. With a key that can only read, it checks that:
 
 - every resource is of an expected kind, within the expected number (one VM, its boot volume
-  and one data volume, one network): anything else, or one too many, is "unexpected";
+  and one data volume, one network): anything else, or one too many, is "unexpected". Resource
+  Search lists them, except the VMs: it doesn't return instances to a user that may only
+  inspect (seen 2026-11-14: none listed while the VM ran), so those come from the Compute API,
+  in every compartment;
 - the tenancy is subscribed to its home region only (Always Free applies there alone);
 - the guardrails are in place: the quota policy, active, with its statements, and the budget
   with both alert rules.
@@ -100,11 +103,30 @@ def unexpected_resources(items: Sequence[dict[str, Any]]) -> tuple[dict[str, int
     return dict(sorted(counts.items())), dict(sorted(over.items()))
 
 
+def instances(client: OciClient) -> list[dict[str, Any]]:
+    """Every VM in every compartment, from the Compute API, shaped like Search's items."""
+    compartments = [client.tenancy] + [
+        c["id"]
+        for c in client.get_all(
+            "identity",
+            "/20160918/compartments",
+            compartmentId=client.tenancy,
+            compartmentIdInSubtree="true",
+            accessLevel="ANY",
+        )
+        if c.get("lifecycleState") not in GONE
+    ]
+    return [
+        {"resourceType": "Instance", "lifecycleState": vm.get("lifecycleState")}
+        for compartment in compartments
+        for vm in client.get_all("iaas", "/20160918/instances", compartmentId=compartment)
+    ]
+
+
 def check(client: OciClient, settings: OciInventorySettings) -> Inventory:
     inventory = Inventory()
-    inventory.counts, inventory.unexpected = unexpected_resources(
-        client.search("query all resources")
-    )
+    found = [i for i in client.search("query all resources") if i["resourceType"] != "Instance"]
+    inventory.counts, inventory.unexpected = unexpected_resources(found + instances(client))
 
     regions = client.get("identity", f"/20160918/tenancies/{client.tenancy}/regionSubscriptions")
     if len(regions) != 1:

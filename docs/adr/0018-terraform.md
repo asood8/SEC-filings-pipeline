@@ -130,7 +130,9 @@ day or two after the cent. So:
 
 8. **A daily inventory of the account** (`filings-oci-inventory`, the `oci-inventory` CronJob). What
    exists is known at once, unlike what it cost. With a key that can only read, it lists every
-   resource (Resource Search) and compares the kinds and numbers with what the project creates;
+   resource (Resource Search; the VMs through the Compute API in every compartment, because
+   Search doesn't return instances to a user that may only inspect: found 2026-11-14, when it
+   listed none while the VM ran) and compares the kinds and numbers with what the project creates;
    it checks that the quota policy is active with its statements, that the budget has both alert
    rules, and that the tenancy is subscribed to one region; and it reads the budget's own figure
    for the month. Four Grafana rules read its gauges: unexpected resources, a missing guardrail,

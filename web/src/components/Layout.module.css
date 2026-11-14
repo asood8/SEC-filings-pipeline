@@ -14,9 +14,16 @@
 }
 
 .brand {
+  display: inline-flex;
+  gap: 0.5rem;
+  align-items: center;
   color: var(--text);
   font-size: 1.15rem;
   font-weight: 700;
+}
+
+.brand img {
+  flex: none;
 }
 
 .nav {

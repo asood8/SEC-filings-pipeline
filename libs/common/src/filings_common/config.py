@@ -90,6 +90,23 @@ class OutboxSettings(BaseSettings):
     retention_days: int = Field(default=7, ge=1)
 
 
+class SummarizerSettings(BaseSettings):
+    """Forms that get their own queue inside the summarizer: each is consumed by a second Kafka
+    consumer, on its own thread and in its own consumer group, so its filings never wait behind
+    the others'. In production Form 4s ("4"), summarized at once by a template, so they don't
+    queue behind 8-Ks, which wait minutes for the LLM. Empty (the default, and local
+    development): one queue for every form."""
+
+    model_config = _config("SUMMARIZER_")
+
+    # Comma-separated base forms, e.g. "4"; each takes its amendments too (4/A).
+    separate_forms: str = ""
+
+    @property
+    def separate_families(self) -> list[str]:
+        return sorted({f.strip() for f in self.separate_forms.split(",") if f.strip()})
+
+
 class LlmSettings(BaseSettings):
     """The local, OpenAI-compatible LLM server: Ollama in development, llama.cpp in production."""
 

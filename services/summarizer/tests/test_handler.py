@@ -152,6 +152,22 @@ def test_forms_without_a_summarizer_stay_parsed(setup: tuple[Engine, ParsedFilin
     assert (summaries, events, status) == ([], [], FilingStatus.PARSED)
 
 
+def test_a_summarizer_for_some_forms_leaves_the_rest_to_another(
+    setup: tuple[Engine, ParsedFilingStore],
+) -> None:
+    """In production Form 4s have a queue of their own (a second consumer group), so a Form 4
+    never waits behind an 8-K's LLM call."""
+    engine, store = setup
+    SummaryHandler(session_factory(engine), store, SUMMARIZERS, skip={"4"})(parsed_event())
+    assert rows(engine) == ([], [], FilingStatus.PARSED)  # the main queue leaves Form 4s
+    SummaryHandler(session_factory(engine), store, SUMMARIZERS, forms={"8-K"})(parsed_event())
+    assert rows(engine) == ([], [], FilingStatus.PARSED)
+
+    SummaryHandler(session_factory(engine), store, SUMMARIZERS, forms={"4"})(parsed_event())
+    summaries, events, status = rows(engine)
+    assert (len(summaries), len(events), status) == (1, 1, FilingStatus.READY)
+
+
 @pytest.mark.parametrize(
     ("received", "reason"),
     [

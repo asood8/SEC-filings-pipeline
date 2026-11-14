@@ -309,22 +309,38 @@ def _container(objects: list[dict[str, Any]], workload: str) -> dict[str, Any]:
 
 def test_workers_are_probed_by_their_heartbeat(production: list[dict[str, Any]]) -> None:
     from filings_common import relay
+    from filings_common.config import SummarizerSettings
     from filings_notifier import cli as notifier
     from filings_parser import cli as parser
     from filings_summarizer import cli as summarizer
 
-    # Each Deployment checks the heartbeat its process actually writes (filings_common.health).
-    workers = {
-        "Deployment/outbox-relay": relay.PROCESS_NAME,
-        "Deployment/parser": parser.PROCESS_NAME,
-        "Deployment/summarizer": summarizer.PROCESS_NAME,
-        "Deployment/notifier": notifier.PROCESS_NAME,
+    # Each Deployment checks the heartbeats its process actually writes (filings_common.health):
+    # the summarizer one per queue, as its SUMMARIZER_SEPARATE_FORMS sets them up.
+    summarizer_env = {
+        e["name"]: e["value"]
+        for e in _container(production, "Deployment/summarizer")["env"]
+        if "value" in e
     }
-    for workload, process in workers.items():
+    summarizer_queues = summarizer.queues(
+        SummarizerSettings(
+            _env_file=None, separate_forms=summarizer_env.get("SUMMARIZER_SEPARATE_FORMS", "")
+        )
+    )
+    assert [q.process_name for q in summarizer_queues] == [
+        "filings-summarizer",
+        "filings-summarizer-form4",
+    ]
+    workers = {
+        "Deployment/outbox-relay": [relay.PROCESS_NAME],
+        "Deployment/parser": [parser.PROCESS_NAME],
+        "Deployment/summarizer": [q.process_name for q in summarizer_queues],
+        "Deployment/notifier": [notifier.PROCESS_NAME],
+    }
+    for workload, processes in workers.items():
         container = _container(production, workload)
         for probe in ("startupProbe", "livenessProbe"):
             command = container[probe]["exec"]["command"]
-            assert command == ["filings-healthcheck", process], (workload, probe)
+            assert command == ["filings-healthcheck", *processes], (workload, probe)
             # A probe is a fresh Python process: give it more than the default 1 s on a busy node.
             assert container[probe]["timeoutSeconds"] >= 5, (workload, probe)
         # The heartbeat lives in /tmp, which needs a writable volume on a read-only root.

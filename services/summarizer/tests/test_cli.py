@@ -1,4 +1,11 @@
-from filings_common.config import EmbeddingSettings, GeminiSettings, LlmSettings
+import pytest
+
+from filings_common.config import (
+    EmbeddingSettings,
+    GeminiSettings,
+    LlmSettings,
+    SummarizerSettings,
+)
 from filings_summarizer import cli
 
 
@@ -47,3 +54,28 @@ def test_the_poll_interval_stays_within_librdkafkas_limits() -> None:
         EmbeddingSettings(_env_file=None),
     )
     assert huge == cli.MAX_POLL_INTERVAL_SECONDS
+
+
+def test_one_queue_takes_every_form_unless_some_get_their_own(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.delenv("SUMMARIZER_SEPARATE_FORMS", raising=False)
+    [only] = cli.queues(SummarizerSettings(_env_file=None))
+    assert (only.process_name, only.consumer_group, only.forms, only.skip) == (
+        "filings-summarizer",
+        "summarizer",
+        frozenset(),
+        frozenset(),
+    )
+    assert only.uses_llm
+
+    # Production: Form 4s in a queue of their own, so they never wait behind an 8-K's LLM call.
+    monkeypatch.setenv("SUMMARIZER_SEPARATE_FORMS", " 4 ,")
+    main, form4 = cli.queues(SummarizerSettings(_env_file=None))
+    assert (main.consumer_group, main.skip, main.uses_llm) == ("summarizer", frozenset({"4"}), True)
+    assert (form4.process_name, form4.consumer_group, form4.forms) == (
+        "filings-summarizer-form4",
+        "summarizer-form4",
+        frozenset({"4"}),
+    )
+    assert not form4.uses_llm  # templates only: its poll interval allows no LLM timeout

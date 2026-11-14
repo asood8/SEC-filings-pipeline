@@ -145,7 +145,11 @@ def test_discovers_stores_and_announces_new_filings_exactly_once(
         ("0000320193-26-000101", "8-K"),
     ]
     form4 = filings[0]
-    assert form4.primary_doc_url == f"{ARCHIVE}/320193/000114036126000202/form4.xml"
+    assert form4.primary_doc_url == f"{ARCHIVE}/320193/000114036126000202/form4.xml"  # parsed
+    # What people are sent to: SEC's rendered page, as the list of filings names it.
+    assert form4.view_url == f"{ARCHIVE}/320193/000114036126000202/xslF345X05/form4.xml"
+    assert form4.readable_url == form4.view_url
+    assert filings[1].view_url == filings[1].primary_doc_url  # an 8-K is a web page already
     assert store.get(form4.raw_object_key) == b"<ownershipDocument/>"
 
     assert [e.topic for e in events] == [Topic.FILINGS_DISCOVERED] * 2
@@ -256,6 +260,49 @@ def test_each_new_filing_gets_its_own_trace_linked_to_the_poll(
         ]
         assert record.parent is not None
         assert record.parent.span_id == filing.context.span_id
+
+
+def test_known_filings_get_their_readable_link_from_the_next_poll(
+    clean_db: Engine,
+    make_submissions: SubmissionsFactory,
+    company_tickers: dict[str, Any],
+    tmp_path: Path,
+) -> None:
+    seed_companies(clean_db, company_tickers)
+    sessions = session_factory(clean_db)
+    known = "0001140361-26-000202"
+    raw = f"{ARCHIVE}/320193/000114036126000202/form4.xml"
+    with sessions.begin() as session:  # discovered before the readable link was stored
+        session.add(
+            Filing(
+                accession_no=known,
+                cik=APPLE,
+                form_type="4",
+                filed_at=date(2026, 9, 29),
+                primary_doc_url=raw,
+                raw_object_key="filings/320193/0001140361-26-000202/form4.xml",
+            )
+        )
+    with sessions() as session:
+        assert session.get_one(Filing, known).readable_url == raw  # until then, the raw XML
+    sec = FakeSec(
+        {
+            "https://data.sec.gov/submissions/CIK0000320193.json": httpx2.Response(
+                200, json=make_submissions((known, "4", "2026-09-29", "xslF345X06/form4.xml"))
+            ),
+        }
+    )
+    with sec.client() as edgar:
+        result = discover(
+            sessions, edgar, LocalObjectStore(tmp_path), form_types={"4"}, since=date(2026, 9, 1)
+        )
+
+    assert result.new_filings == 0
+    assert not any(url.startswith(ARCHIVE) for url in sec.hits)  # no document fetched again
+    with sessions() as session:
+        filing = session.get_one(Filing, known)
+    assert filing.view_url == f"{ARCHIVE}/320193/000114036126000202/xslF345X06/form4.xml"
+    assert filing.primary_doc_url == raw
 
 
 def test_amendments_are_collected_and_report_dates_recorded(

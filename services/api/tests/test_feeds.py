@@ -216,3 +216,19 @@ def test_a_forms_feed_includes_its_amendments(client: TestClient, seeded: Engine
     feed = parse(client.get("/feeds/filings.atom", params={"form_type": "4"}))
     assert titles(feed)[0] == "AAPL Form 4/A: Amended: Timothy D Cook sold 30,000 AAPL shares"
     assert len(titles(feed)) == 2  # and the Form 4 it amends
+
+
+def test_a_form_4_links_its_readable_page_and_keeps_its_id(
+    client: TestClient, seeded: Engine, ids: Any
+) -> None:
+    raw = f"https://www.sec.gov/Archives/{ids.form4}.htm"
+    view = f"https://www.sec.gov/Archives/xslF345X06/{ids.form4}.xml"
+    with session_factory(seeded).begin() as session:
+        session.get_one(Filing, ids.form4).view_url = view
+    [entry] = [
+        e
+        for e in parse(client.get("/feeds/filings.atom")).findall("a:entry", NS)
+        if e.findtext("a:id", namespaces=NS) == raw  # the id it always had
+    ]
+    assert entry.find("a:link", NS).get("href") == view  # type: ignore[union-attr]
+    assert client.get(f"/filings/{ids.form4}").json()["sec_url"] == view

@@ -158,7 +158,7 @@ class NotificationHandler:
             headline=content.headline,
             summary=content.summary,
             key_points=content.key_points,
-            url=filing.primary_doc_url,
+            url=filing.readable_url,
             investor_call=(
                 InvestorCall.model_validate(form8k.investor_call)
                 if form8k is not None and form8k.investor_call is not None

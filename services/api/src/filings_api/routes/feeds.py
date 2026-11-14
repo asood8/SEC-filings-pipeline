@@ -100,14 +100,16 @@ def filings_feed(
         published = filing.accepted_at or datetime.combine(filing.filed_at, time(), EASTERN)
         entries.append(
             atom.Entry(
-                id=filing.primary_doc_url,  # permanent and unique: EDGAR never moves a filing
+                # Permanent and unique: EDGAR never moves a filing. The raw document's URL, as it
+                # always was: a new id would make readers show every entry again.
+                id=filing.primary_doc_url,
                 title=f"{ticker} {_form_label(filing.form_type)}: {summary.headline}",
                 published=published,
                 updated=max(published, summarized_at),
-                link=filing.primary_doc_url,
+                link=filing.readable_url,
                 author=company_name(name),
                 category=filing.form_type,
-                html=_html(summary, filing.primary_doc_url),
+                html=_html(summary, filing.readable_url),
             )
         )
     # Stable whatever host or scheme the request came through, unlike the URL itself.

@@ -123,16 +123,22 @@ def discover_company(
     if not candidates:
         return 0
     with sessions() as session:
-        known: dict[str, date | None] = dict(
-            session.execute(
-                sa.select(Filing.accession_no, Filing.report_date).where(
+        known: dict[str, tuple[date | None, str | None]] = {
+            accession_no: (report_date, view_url)
+            for accession_no, report_date, view_url in session.execute(
+                sa.select(Filing.accession_no, Filing.report_date, Filing.view_url).where(
                     Filing.accession_no.in_([ref.accession_no for ref in candidates])
                 )
             ).all()
-        )
+        }
     _record_report_dates(
         sessions,
-        [ref for ref in candidates if ref.accession_no in known and not known[ref.accession_no]],
+        [ref for ref in candidates if ref.accession_no in known and not known[ref.accession_no][0]],
+    )
+    _record_view_urls(
+        sessions,
+        cik,
+        [ref for ref in candidates if ref.accession_no in known and not known[ref.accession_no][1]],
     )
     new = 0
     # Oldest first, so events go out roughly in filing order.
@@ -158,6 +164,20 @@ def _record_report_dates(sessions: sessionmaker[Session], refs: Sequence[FilingR
                 sa.update(Filing)
                 .where(Filing.accession_no == ref.accession_no, Filing.report_date.is_(None))
                 .values(report_date=ref.report_date)
+            )
+
+
+def _record_view_urls(sessions: sessionmaker[Session], cik: int, refs: Sequence[FilingRef]) -> None:
+    """Fill in the readable link of known filings stored without one (discovered before it was
+    recorded), from the list of filings discovery reads anyway: no request to SEC."""
+    if not refs:
+        return
+    with sessions.begin() as session:
+        for ref in refs:
+            session.execute(
+                sa.update(Filing)
+                .where(Filing.accession_no == ref.accession_no, Filing.view_url.is_(None))
+                .values(view_url=archive_url(cik, ref.accession_no, ref.primary_document))
             )
 
 
@@ -221,6 +241,8 @@ def _fetch_and_record(
                 accepted_at=ref.accepted_at,
                 report_date=ref.report_date,
                 primary_doc_url=url,
+                # SEC's name for it, which for a Form 4 is the rendered page, not the raw XML.
+                view_url=archive_url(cik, ref.accession_no, ref.primary_document),
                 raw_object_key=key,
             )
             .on_conflict_do_nothing(index_elements=[Filing.accession_no])

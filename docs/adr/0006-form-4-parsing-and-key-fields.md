@@ -212,6 +212,17 @@ reading MongoDB from the API (a second datastore on every insider request, as ab
 "Director" when the title already says Chair ("Chair and CEO, Director"): shorter, but not every
 chair title is a board seat, so the label keeps what the filing says.
 
+### The link people follow (added 2026-11-14)
+
+A Form 4's primary document, as discovery stores and parses it, is the raw XML at the root of the
+filing's folder; SEC's list of filings names the same file under an XSL folder
+(`xslF345X06/form4.xml`), which SEC serves as a formatted page. Readers were sent to the raw XML.
+`filings.view_url` keeps SEC's name (migration 8e719488e543), and the filing page, alerts, the
+Atom feed's links and the calendar use it (`Filing.readable_url`, falling back to the raw URL).
+Discovery fills it for already-stored filings from the list it reads on every poll, so no extra
+request goes to SEC. The Atom feed's entry ids stay the raw URL: a changed id would show every
+entry again in feed readers.
+
 ## Alternatives considered
 
 - **A per-transaction relational table** (`insider_transactions`). It is the natural next step for

@@ -138,9 +138,9 @@ def calls_calendar(session: SessionDep, request: Request, ticker: TickerFilter =
     )
     urls = dict(
         session.execute(
-            sa.select(Filing.accession_no, Filing.primary_doc_url).where(
-                Filing.accession_no.in_([c.accession_no for c in calls])
-            )
+            sa.select(
+                Filing.accession_no, sa.func.coalesce(Filing.view_url, Filing.primary_doc_url)
+            ).where(Filing.accession_no.in_([c.accession_no for c in calls]))
         ).all()
     )
     events = [

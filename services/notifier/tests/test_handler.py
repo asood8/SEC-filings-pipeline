@@ -760,6 +760,16 @@ def test_with_a_website_a_filing_alert_links_the_filings_page(
     assert NotificationHandler(session_factory(clean_db), fakes)._page("x") is None
 
 
+def test_a_form_4_alert_links_the_readable_page_not_the_raw_xml(
+    clean_db: Engine, world: dict[str, int]
+) -> None:
+    with session_factory(clean_db).begin() as session:
+        session.get_one(Filing, FORM4).view_url = "https://www.sec.gov/xslF345X06/x.xml"
+    fakes = senders()
+    NotificationHandler(session_factory(clean_db), fakes)(ready_event(world["summary_id"]))
+    assert fakes[Channel.DISCORD].alerts[0].url == "https://www.sec.gov/xslF345X06/x.xml"
+
+
 def test_only_email_alerts_get_signed_unsubscribe_links(
     clean_db: Engine, world: dict[str, int]
 ) -> None:

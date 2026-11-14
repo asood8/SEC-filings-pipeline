@@ -73,7 +73,7 @@ def to_filing_out(filing: Filing, ticker: str, name: str, headline: str | None) 
         accepted_at=filing.accepted_at,
         status=filing.status,
         headline=headline,
-        sec_url=filing.primary_doc_url,
+        sec_url=filing.readable_url,
         amends_accession_no=filing.amends_accession_no,
         amends_filed_at=filing.amends_filed_at,
     )

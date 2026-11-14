@@ -114,7 +114,12 @@ class Filing(Base):
     # reports. NULL when EDGAR gives none, and on rows discovered before it was stored until
     # discovery sees them again.
     report_date: Mapped[date | None]
+    # The primary document as stored and parsed: for ownership forms (3/4/5) the raw XML.
     primary_doc_url: Mapped[str]
+    # The primary document as SEC shows it to people: for ownership forms the XSL-rendered page
+    # (xslF345X06/form4.xml), otherwise the same as primary_doc_url. NULL on rows discovered
+    # before it was stored, until discovery sees them again. Read it through readable_url.
+    view_url: Mapped[str | None]
     raw_object_key: Mapped[str]
     # Amendments only (4/A, 8-K/A), written by the parser (filings_parser.amendments): the
     # filing date of the filing this amends, as the amendment states it, and that filing once
@@ -141,6 +146,12 @@ class Filing(Base):
     updated_at: Mapped[datetime] = mapped_column(
         server_default=sa.func.now(), onupdate=sa.func.now()
     )
+
+    @property
+    def readable_url(self) -> str:
+        """The filing on sec.gov as a person reads it: the rendered page for a Form 4, whose
+        primary_doc_url is raw XML."""
+        return self.view_url or self.primary_doc_url
 
 
 class FilingExhibit(Base):

@@ -40,7 +40,12 @@ class FilingOut(BaseModel):
     accepted_at: datetime | None
     status: FilingStatus
     headline: str | None = Field(description="The current summary's headline, once summarized.")
-    sec_url: str = Field(description="The filing's primary document on sec.gov.")
+    sec_url: str = Field(
+        description=(
+            "The filing's primary document on sec.gov, as people read it: for a Form 4, SEC's "
+            "rendered page rather than the raw XML."
+        )
+    )
     amends_accession_no: str | None = Field(
         description=(
             "An amendment's (4/A, 8-K/A) original Form 4 or 8-K, when it is among the collected "

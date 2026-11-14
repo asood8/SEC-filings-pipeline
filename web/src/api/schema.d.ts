@@ -855,7 +855,7 @@ export interface components {
             headline: string | null;
             /**
              * Sec Url
-             * @description The filing's primary document on sec.gov.
+             * @description The filing's primary document on sec.gov, as people read it: for a Form 4, SEC's rendered page rather than the raw XML.
              */
             sec_url: string;
             /**
@@ -919,7 +919,7 @@ export interface components {
             headline: string | null;
             /**
              * Sec Url
-             * @description The filing's primary document on sec.gov.
+             * @description The filing's primary document on sec.gov, as people read it: for a Form 4, SEC's rendered page rather than the raw XML.
              */
             sec_url: string;
             /**
@@ -1336,7 +1336,7 @@ export interface components {
             headline: string | null;
             /**
              * Sec Url
-             * @description The filing's primary document on sec.gov.
+             * @description The filing's primary document on sec.gov, as people read it: for a Form 4, SEC's rendered page rather than the raw XML.
              */
             sec_url: string;
             /**

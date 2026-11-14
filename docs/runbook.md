@@ -1209,3 +1209,8 @@ sign in with Google, use search and the alerts page, and check the console for C
 there are none, rename the header to `Content-Security-Policy` in `web/src/lib/securityHeaders.ts`
 and redeploy. If a violation is expected (for example Google changed a domain), add that source to
 the policy first.
+
+Expected and fine: a report for `static.cloudflareinsights.com/beacon.min.js` means the zone's
+Cloudflare Web Analytics "automatic setup" is on and Cloudflare is adding its beacon to every page.
+The site promises no analytics (the Privacy page), so the policy leaves it out: turn Web Analytics
+off for filingwire.app in the Cloudflare dashboard rather than allowing it.

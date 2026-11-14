@@ -11,7 +11,11 @@ describe('security headers', () => {
       "script-src 'self' https://accounts.google.com/gsi/client",
     )
     expect(csp).toContain("frame-ancestors 'none'")
-    expect(csp).not.toContain('unsafe-inline')
+    // Inline styles only, for Google's sign-in button: never inline or eval'd scripts.
+    const directives = csp.split('; ')
+    expect(directives.filter((d) => d.includes("'unsafe-inline'"))).toEqual([
+      "style-src 'self' 'unsafe-inline' https://accounts.google.com/gsi/style",
+    ])
     expect(csp).not.toContain('unsafe-eval')
   })
 

@@ -77,6 +77,9 @@ class FakeOracle:
                 }
             ],
         )
+        self.compartments: list[dict[str, Any]] = changes.get("compartments", [])
+        # Oracle's Search doesn't return VMs to a user that may only inspect (the inventory's).
+        self.search_shows_vms: bool = changes.get("search_shows_vms", True)
         self.instance_state = "TERMINATED"
         self.requests: list[httpx2.Request] = []
 
@@ -88,9 +91,25 @@ class FakeOracle:
             assert wanted
             kind = wanted[1]
             items = [
-                i for i in self.items if kind == "all" or i["resourceType"].lower() == kind.lower()
+                i
+                for i in self.items
+                if (kind == "all" or i["resourceType"].lower() == kind.lower())
+                and (self.search_shows_vms or i["resourceType"] != "Instance")
             ]
             return httpx2.Response(200, json={"items": items})
+        if path == "/20160918/compartments":
+            return httpx2.Response(200, json=self.compartments)
+        if request.method == "GET" and path == "/20160918/instances":
+            compartment = request.url.params["compartmentId"]
+            return httpx2.Response(
+                200,
+                json=[
+                    i
+                    for i in self.items
+                    if i["resourceType"] == "Instance"
+                    and i.get("compartmentId", TENANCY) == compartment
+                ],
+            )
         if path.endswith("/regionSubscriptions"):
             return httpx2.Response(200, json=self.regions)
         if path == "/20181025/quotas":
@@ -200,6 +219,37 @@ def test_search_follows_pages_and_refusals_are_errors() -> None:
 # --- The inventory --------------------------------------------------------------------------------
 
 
+def test_list_calls_follow_pages_and_refusals_are_errors() -> None:
+    pages = iter(
+        [
+            httpx2.Response(200, json=[{"id": "a"}], headers={"opc-next-page": "p2"}),
+            httpx2.Response(200, json=[{"id": "b"}]),
+            httpx2.Response(404),
+        ]
+    )
+    seen: list[str] = []
+
+    def answer(request: httpx2.Request) -> httpx2.Response:
+        seen.append(request.url.query.decode())
+        return next(pages)
+
+    with OciClient(
+        tenancy=TENANCY,
+        user="u",
+        fingerprint="f",
+        private_key_pem=PEM,
+        region="r",
+        transport=httpx2.MockTransport(answer),
+    ) as client:
+        assert client.get_all("iaas", "/20160918/instances", compartmentId="c") == [
+            {"id": "a"},
+            {"id": "b"},
+        ]
+        assert seen == ["compartmentId=c&limit=1000", "compartmentId=c&limit=1000&page=p2"]
+        with pytest.raises(OciError, match="HTTP 404"):
+            client.get_all("iaas", "/20160918/instances", compartmentId="c")
+
+
 def test_only_what_exists_beyond_the_expected_is_counted() -> None:
     counts, over = unexpected_resources(
         [
@@ -268,6 +318,37 @@ def test_extras_and_weakened_guardrails_are_reported(
     found_unexpected, found_guardrails, _ = gauges(measured)
     assert (found_unexpected, found_guardrails) == ({"": unexpected}, {"": guardrails})
     assert logged in caplog.text
+
+
+def test_vms_are_counted_through_compute_in_every_compartment(
+    measured: Any, caplog: pytest.LogCaptureFixture
+) -> None:
+    hidden = {"search_shows_vms": False}
+    with caplog.at_level(logging.INFO, logger="filings_common.oci_inventory"):
+        assert run(SETTINGS, transport=httpx2.MockTransport(FakeOracle(**hidden))) == 0
+    assert gauges(measured)[0] == {"": 0}
+    assert "1 Instance" in caplog.text  # the VM Search left out
+
+    caplog.clear()
+    compartment = "ocid1.compartment.oc1..c"
+    oracle = FakeOracle(
+        **hidden,
+        compartments=[{"id": compartment, "lifecycleState": "ACTIVE"}],
+        items=[
+            *EXPECTED_ACCOUNT,
+            resource("Instance", "RUNNING", 2) | {"compartmentId": compartment},
+        ],
+    )
+    with caplog.at_level(logging.WARNING, logger="filings_common.oci_inventory"):
+        assert run(SETTINGS, transport=httpx2.MockTransport(oracle)) == 0
+    assert gauges(measured)[0] == {"": 1}
+    assert "1 Instance more" in caplog.text
+    listed = [
+        r.url.params["compartmentId"]
+        for r in oracle.requests
+        if r.url.path == "/20160918/instances"
+    ]
+    assert listed == [TENANCY, compartment]
 
 
 def test_spend_and_a_weakened_budget_are_reported(measured: Any) -> None:

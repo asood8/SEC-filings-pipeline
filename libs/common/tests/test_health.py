@@ -140,3 +140,15 @@ def test_a_heartbeat_from_before_this_container_started_is_not_live(tmp_path: Pa
         f"no heartbeat yet from this container ({path} is older)"
     )
     assert health.check(path, started_at=written - 1) is None
+
+
+def test_the_cli_checks_every_named_heartbeat(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """The summarizer keeps one heartbeat per queue; its probe names both."""
+    monkeypatch.setattr(tempfile, "tempdir", str(tmp_path))
+    Heartbeat.for_process("filings-summarizer").beat()
+    assert health.main(["filings-summarizer", "filings-summarizer-form4"]) == 1
+    assert "filings-summarizer-form4" in capsys.readouterr().err
+    Heartbeat.for_process("filings-summarizer-form4").beat()
+    assert health.main(["filings-summarizer", "filings-summarizer-form4"]) == 0

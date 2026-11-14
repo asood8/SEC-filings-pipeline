@@ -53,7 +53,7 @@ first install, and upgrades.
 | api | Deployment + Service | `filings-api` | 1 (overlay) | Ready on `GET /readyz` (Postgres answers), alive on `GET /healthz` |
 | outbox-relay | Deployment | `filings-discovery`, `filings-outbox-relay` | exactly 1 | A second relay could publish out of order; heartbeat probe |
 | parser | Deployment | `filings-parser` | 1 (overlay) | Up to 3 could share the 3 partitions; heartbeat probe |
-| summarizer | Deployment | `filings-summarizer` | exactly 1 | The LLM serves one request at a time; a second copy would only queue; heartbeat probe |
+| summarizer | Deployment | `filings-summarizer` | exactly 1 | The LLM serves one request at a time; a second copy would only queue; Form 4s in a queue of their own; heartbeat probe per queue |
 | notifier | Deployment | `filings-notifier` | 1 (overlay) | More would be safe: the one-alert guarantee is a database row; heartbeat probe |
 | discovery | CronJob, every 10 min | `filings-discovery` | 1 at a time | `concurrencyPolicy: Forbid`, no retries (the next run is 10 minutes away) |
 | load-companies | CronJob, daily | `filings-discovery load-companies` | 1 | Run once by hand after the first install |
@@ -252,6 +252,34 @@ The Phase 8 benchmark (`filings-benchmark`) measures this on the VM.
   now exits at once through its `finally` blocks: the filing in progress is rolled back, as when
   killed, and the spans so far are exported. The migrate Job keeps the default grace: it exports
   no telemetry, and still ignores SIGTERM.
+
+### Form 4s in a queue of their own (added 2026-11-14)
+
+- **Why.** One consumer took every filing from `filings.parsed` in order, so the Form 4s (a
+  template, done in well under a second) waited behind every 8-K ahead of them. On the A1 the
+  local model takes about 5.5 minutes per 8-K (`filings_llm_duration_seconds`), and the first
+  days after launch had 128 8-Ks ahead of 388 Form 4s: insider trades would have waited about
+  12 hours for no reason.
+- **What.** `SUMMARIZER_SEPARATE_FORMS=4` gives Form 4s (and 4/As) a queue of their own inside
+  the summarizer: a second Kafka consumer on its own thread, in its own consumer group
+  (`summarizer-form4`), with its own heartbeat (`filings-summarizer-form4`). The main queue
+  (group `summarizer`) skips them and takes everything else. The two never handle the same
+  filing, and each is idempotent anyway. Both probes name both heartbeats, so a hung queue
+  restarts the pod. The Form 4 queue allows no LLM timeouts in its poll interval or heartbeat:
+  it never waits on the model. Unset (local development), there is one queue for every form.
+- **Not a second Deployment.** That was the first attempt: a pod of its own needs at least
+  ~192 MiB for the Python process, and the memory budget has about 26 MiB left (see above). A
+  second consumer inside the existing process measured about 1 MiB more (93 MiB after imports,
+  98 with one consumer, 99 with two, each having read the 1,411 local events), so the
+  summarizer's 256 MiB limit stays.
+- **Not a topic per form.** The parser would publish to two topics, and replay, dead letters,
+  dashboards and alerts would all double. A consumer group per queue keeps one topic and one
+  replay path; skipping another queue's event costs a JSON parse.
+- **Rollout.** A new group starts at the beginning of the topic (`auto.offset.reset: earliest`),
+  so the Form 4 queue's first run passes over every Form 4 event ever published: those already
+  summarized get the same template summary again and are not announced again (the status is
+  already `ready`), the rest are summarized for the first time. Consumer lag is now reported per
+  queue, so the lag alert says which one is behind.
 
 ### Sync order
 

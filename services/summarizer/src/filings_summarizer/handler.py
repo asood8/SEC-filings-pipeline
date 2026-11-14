@@ -10,7 +10,7 @@ Safe to run more than once for the same filing:
 """
 
 import logging
-from collections.abc import Mapping
+from collections.abc import Collection, Mapping
 
 import sqlalchemy as sa
 from opentelemetry import trace
@@ -42,11 +42,18 @@ class SummaryHandler:
         parsed: ParsedFilingStore,
         summarizers: Mapping[str, Summarizer],
         embedder: Embedder | None = None,
+        *,
+        forms: Collection[str] = (),
+        skip: Collection[str] = (),
     ) -> None:
+        """`forms`: the only base forms this handler takes ("4" takes 4/A too), empty for any;
+        `skip`: base forms it leaves to another queue (cli: SUMMARIZER_SEPARATE_FORMS)."""
         self._sessions = sessions
         self._parsed = parsed
         self._summarizers = summarizers
         self._embedder = embedder
+        self._forms = frozenset(forms)
+        self._skip = frozenset(skip)
         metrics.start_at_zero(metrics.FILINGS_READY, map(metrics.form_type, summarizers))
 
     def __call__(self, received: Received) -> None:
@@ -55,6 +62,10 @@ class SummaryHandler:
         except ValidationError as exc:
             raise PermanentError(f"invalid {Topic.FILINGS_PARSED} event: {exc}") from exc
         telemetry.tag_filing(event.accession_no, form_type=event.form_type, cik=event.cik)
+        form = base_form(event.form_type)
+        if (self._forms and form not in self._forms) or form in self._skip:
+            logger.debug("%s (%s) is another queue's", event.accession_no, event.form_type)
+            return
 
         summarizer = self._summarizers.get(event.form_type)
         if summarizer is None:

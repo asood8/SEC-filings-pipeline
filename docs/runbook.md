@@ -120,7 +120,10 @@ kubectl -n filings exec redpanda-0 -- rpk group describe <group>   # LAG per par
 - **A replay is running.** A replay of 8-Ks goes through the local LLM at minutes per filing (up
   to about 5 on two laptop cores), so 100 8-Ks take hours. Expected: let it finish, or silence
   the alert.
-- **summarizer:** look for failovers and circuit-breaker messages in its log. Then the llm pod:
+- **summarizer:** 8-Ks behind is normal after a busy day (minutes each with the local model);
+  Form 4s have their own group, `summarizer-form4`, which should never be far behind, since a
+  template summarizes them. If it is, look for embedding or database errors in the log. For 8-Ks,
+  look for failovers and circuit-breaker messages in its log. Then the llm pod:
   `kubectl -n filings describe pod -l app.kubernetes.io/name=llm` (restarts, `OOMKilled`). If the
   local model is down and Gemini answers 429 (free daily quota used up), the backlog waits for one
   of them; nothing is lost. An llm pod killed every few 8-Ks, with memory rising after each one,

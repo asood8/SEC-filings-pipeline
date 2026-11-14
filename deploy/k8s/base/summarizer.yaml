@@ -1,5 +1,7 @@
 # The summarizer: consumes filings.parsed; Form 4s get a template, 8-Ks the LLM (llama.cpp first,
-# then Gemini), and every summary an embedding.
+# then Gemini), and every summary an embedding. Form 4s have a queue of their own (a second
+# consumer thread in consumer group summarizer-form4), so they never wait behind an 8-K's minutes
+# with the LLM; the main queue (group summarizer) takes everything else.
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -48,19 +50,21 @@ spec:
           env:
             - name: DATABASE_URL
               value: postgresql+psycopg://$(POSTGRES_USER):$(POSTGRES_PASSWORD)@postgres:5432/$(POSTGRES_DB)
-          # The loop keeps a heartbeat file in /tmp; the check fails once it is overdue, i.e. the
-          # loop hangs (filings_common.health, ADR-0017). Until the first beat, the startup probe
-          # allows 5 minutes. Before each attempt at a filing the heartbeat allows for every LLM
-          # timeout, so a long 8-K summary is never mistaken for a hang.
+            - name: SUMMARIZER_SEPARATE_FORMS
+              value: "4"
+          # Each queue keeps a heartbeat file in /tmp; the check fails once one is overdue, i.e. a
+          # loop hangs (filings_common.health, ADR-0017). Until the first beats, the startup probe
+          # allows 5 minutes. Before each attempt at a filing the main queue's heartbeat allows for
+          # every LLM timeout, so a long 8-K summary is never mistaken for a hang.
           startupProbe:
             exec:
-              command: ["filings-healthcheck", "filings-summarizer"]
+              command: ["filings-healthcheck", "filings-summarizer", "filings-summarizer-form4"]
             periodSeconds: 10
             timeoutSeconds: 5
             failureThreshold: 30
           livenessProbe:
             exec:
-              command: ["filings-healthcheck", "filings-summarizer"]
+              command: ["filings-healthcheck", "filings-summarizer", "filings-summarizer-form4"]
             periodSeconds: 30
             timeoutSeconds: 5
             failureThreshold: 2

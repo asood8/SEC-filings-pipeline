@@ -115,21 +115,24 @@ def check(path: Path, *, now: float | None = None, started_at: float | None = No
 
 
 def main(argv: Sequence[str] | None = None) -> int:
-    """`filings-healthcheck <name>`: exit 0 if the process's heartbeat is on time, else 1 with
-    the reason on stderr (Kubernetes shows it in the pod's events)."""
+    """`filings-healthcheck <name>...`: exit 0 if every named heartbeat is on time, else 1 with
+    the reasons on stderr (Kubernetes shows them in the pod's events). A process with several
+    loops (the summarizer's queues) keeps one heartbeat per loop."""
     parser = argparse.ArgumentParser(
         prog="filings-healthcheck",
         description="Liveness check for a worker: fails once its heartbeat is overdue.",
     )
     parser.add_argument(
-        "name", help="the worker's process name, e.g. filings-parser or filings-outbox-relay"
+        "names",
+        nargs="+",
+        metavar="name",
+        help="the worker's process name, e.g. filings-parser or filings-outbox-relay",
     )
     args = parser.parse_args(argv)
-    problem = check(heartbeat_path(args.name))
-    if problem is not None:
+    problems = [p for name in args.names if (p := check(heartbeat_path(name))) is not None]
+    for problem in problems:
         print(problem, file=sys.stderr)
-        return 1
-    return 0
+    return 1 if problems else 0
 
 
 if __name__ == "__main__":

@@ -63,14 +63,14 @@ export function EarningsCallPage() {
           </ul>
         )}
         {summary.ungrounded_numbers.length > 0 && (
-          <p className="notice">
+          <p className="fine-print">
             Check these numbers against the transcript:{' '}
             {summary.ungrounded_numbers.join(', ')}. They appear in the summary
             but not in the transcript.
           </p>
         )}
         {summary.ungrounded_names.length > 0 && (
-          <p className="notice">
+          <p className="fine-print">
             Check these names against the transcript:{' '}
             {summary.ungrounded_names.join(', ')}. The summary uses them, but
             the transcript doesn't.
@@ -122,7 +122,7 @@ function Exchange({ exchange }: { exchange: CallExchange }) {
             <span className={styles.label}>Answer:</span> {exchange.answer}
           </p>
           {unverified.length > 0 && (
-            <p className="notice">
+            <p className="fine-print">
               Check against the transcript: {unverified.join(', ')}.
             </p>
           )}

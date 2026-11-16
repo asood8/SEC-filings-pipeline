@@ -226,13 +226,13 @@ function Summary({ filing }: { filing: FilingDetail }) {
         </ul>
       )}
       {unverified.length > 0 && (
-        <p className="notice">
+        <p className="fine-print">
           Check these numbers against the original: {unverified.join(', ')}.
           They appear in the summary but weren't found in the filing's text.
         </p>
       )}
       {unknownNames.length > 0 && (
-        <p className="notice">
+        <p className="fine-print">
           Check these names against the original: {unknownNames.join(', ')}. The
           summary uses them, but the filing's text doesn't.
         </p>

@@ -152,6 +152,12 @@ button[aria-disabled='true'] {
   background: var(--warn-bg);
 }
 
+/* Quiet notes beside a summary, such as numbers to check against the original. */
+.fine-print {
+  color: var(--muted);
+  font-size: 0.8125rem;
+}
+
 /* Read by screen readers, not shown. */
 .visually-hidden {
   position: absolute;

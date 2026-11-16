@@ -56,9 +56,9 @@ describe('EarningsCallPage', () => {
     expect(
       await screen.findByText(/Check these numbers against the transcript/),
     ).toHaveTextContent('9.9 billion')
-    expect(
-      screen.getByText(/Check these names against the transcript/),
-    ).toHaveTextContent('Whitfield')
+    const names = screen.getByText(/Check these names against the transcript/)
+    expect(names).toHaveTextContent('Whitfield')
+    expect(names).toHaveClass('fine-print')
   })
 
   it('says when there is no such call', async () => {

@@ -142,9 +142,13 @@ describe('FilingPage', () => {
       }),
     })
     renderRoute('/filings/0000320193-26-000001')
-    expect(await screen.findByText(/Check these names/)).toHaveTextContent(
+    const note = await screen.findByText(/Check these names/)
+    expect(note).toHaveTextContent(
       "Check these names against the original: Whitfield. The summary uses them, but the filing's text doesn't.",
     )
+    // Fine print, not a warning box: the summary's own disclaimer already says it may be wrong.
+    expect(note).toHaveClass('fine-print')
+    expect(note).not.toHaveClass('notice')
   })
 
   it('explains a Form 4 filed about another company', async () => {

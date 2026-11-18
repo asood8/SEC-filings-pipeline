@@ -105,18 +105,30 @@ _AMPERSAND_WORD = re.compile(r"[A-Z]+&[A-Z]+")
 # Jpmorgan), keyed as EDGAR writes them in capitals: well-known brands among large US companies.
 _SPELLINGS = {
     "ABBVIE": "AbbVie",
+    "AUTONATION": "AutoNation",
     "BLACKROCK": "BlackRock",
+    "CARMAX": "CarMax",
+    "CBRE": "CBRE",
     "CONOCOPHILLIPS": "ConocoPhillips",
+    "EOG": "EOG",
     "EXXONMOBIL": "ExxonMobil",
     "FEDEX": "FedEx",
+    "FREEPORT-MCMORAN": "Freeport-McMoRan",
+    "GP": "GP",  # a general partner: "PLAINS GP HOLDINGS LP"
     "HP": "HP",
     "JPMORGAN": "JPMorgan",
     "MCDONALDS": "McDonald's",
     "METLIFE": "MetLife",
+    "NEXTERA": "NextEra",
+    "NRG": "NRG",
     "NVIDIA": "NVIDIA",
+    "ONEOK": "ONEOK",
+    "PACCAR": "PACCAR",
     "PAYPAL": "PayPal",
     "PEPSICO": "PepsiCo",
+    "PNC": "PNC",
     "SAP": "SAP",
+    "SLB": "SLB",
     "SYNNEX": "SYNNEX",
     "TD": "TD",
     "TJX": "TJX",
@@ -124,11 +136,20 @@ _SPELLINGS = {
 }
 # Whole company names that word rules can't fix, keyed as EDGAR writes them (without a state tag):
 # a brand inside a name not all in capitals, a brand that is also a surname (a reporting owner
-# named Lowes keeps his spelling), and two companies better known by their nicknames, which their
+# named Lowes or Lasalle keeps the spelling), names EDGAR lists last name first or with a state
+# tag run in ("US BANCORP DE"), and two companies better known by their nicknames, which their
 # own filings use.
 _COMPANY_NAMES = {
     "CVS HEALTH Corp": "CVS Health Corp",
+    "Duke Energy CORP": "Duke Energy Corp",
+    "NEWMONT Corp": "Newmont Corp",
     "LOWES COMPANIES INC": "Lowe's Companies Inc",
+    "JONES LANG LASALLE INC": "Jones Lang LaSalle Inc",
+    "SHERWIN WILLIAMS CO": "Sherwin-Williams Co",
+    "HORTON D R INC": "D.R. Horton Inc",
+    "SCHWAB CHARLES CORP": "Charles Schwab Corp",
+    "US BANCORP": "U.S. Bancorp",
+    "US BANCORP DE": "U.S. Bancorp",
     "FEDERAL NATIONAL MORTGAGE ASSOCIATION FANNIE MAE": "Fannie Mae",
     "FEDERAL HOME LOAN MORTGAGE CORP": "Freddie Mac",
 }
@@ -232,8 +253,9 @@ def officer_title(title: str) -> str:
 
 
 def _strip_state_tag(name: str) -> str:
-    # EDGAR conformed names can end in a state or status tag: "BANK OF AMERICA CORP /DE/".
-    return re.sub(r"\s*/[A-Z]{2,3}/?\s*$", "", name.strip())
+    # EDGAR conformed names can end in a state or status tag: "BANK OF AMERICA CORP /DE/", and
+    # now and then with backslashes: "US BANCORP \DE\".
+    return re.sub(r"\s*[/\\][A-Z]{2,3}[/\\]?\s*$", "", name.strip())
 
 
 def _in_capitals(text: str) -> bool:

@@ -22,7 +22,8 @@ Tunnel, and OpenTelemetry with Grafana Cloud.
 ## What it does today
 
 On a live run against EDGAR, for the first watchlist of 35 large US companies (it now follows
-99: the Fortune 100 companies that trade on a market, plus 7 more):
+199: the Fortune 100 companies that trade on a market, plus 7 more, and the next 100 largest US
+companies by 2025 revenue, ranked from their own SEC filings by `scripts/rank_companies.py`):
 
 - **Discovery** found 275 recent filings (255 Form 4 insider trades and 20 Form 8-K current
   reports). It respected SEC's fair-access rules: a declared User-Agent, and a rate limit shared
@@ -33,7 +34,7 @@ On a live run against EDGAR, for the first watchlist of 35 large US companies (i
   page with a calendar feed ("Q&A session: Oct 21, 2026, 5:30 pm ET, https://ir.tesla.com"):
   9 of the 22 8-Ks do, and all 9 were read correctly.
 - **Earnings-call Q&A** is summarized from the transcripts 10 companies publish on their own
-  sites (the only ones of the 99 whose terms allow automated downloads; ADR-0022): each
+  sites (the only ones of the first 99 whose terms allow automated downloads; ADR-0022): each
   analyst's question and management's answer, then the call's takeaways, with a link to the
   transcript, and an alert to the company's subscribers. A nightly job fetches politely (robots.txt, a second between requests) and never
   republishes the transcript. On 6 hand-labeled exchanges the local model states 69% of the key
@@ -176,7 +177,8 @@ worth a look:
   to official Discord and Slack URLs. Form 4 alerts can be narrowed to open-market trades or
   purchases, above a dollar value, so routine filings (tax withholding, awards) stay quiet, and
   8-K alerts to chosen items (earnings, officer changes, ...). Keyword alerts watch for words
-  ("buyback", "resign OR retire") in one company's filings or every watchlist company's. Before
+  ("buyback", "resign OR retire") in one company's filings or every watchlist company's (not a
+  newly added company's past month, which arrives at once). Before
   saving, a preview lists the recent filings the settings would have sent, matched exactly as the
   notifier matches (Apple alerts: 15 in 90 days, 8 with open-market trades only), and an alert
   says which of yours sent it when the filing alone doesn't.
@@ -321,6 +323,7 @@ uv run filings-rebuild-key-fields --form-type 4  # refill Form 4 key fields from
 | `uv run filings-rebuild-key-fields --form-type 4` | Rewrite parsed filings' Postgres key fields (Form 4 owner CIKs and transaction lines too) from their MongoDB payloads, after a key-field change; no SEC calls, no events |
 | `uv run python scripts/synthetic_data.py --create --database-url <throwaway>` | Fill a throwaway database with years of synthetic, production-shaped data (resumes if interrupted; `--drop` deletes it) |
 | `uv run python scripts/measure_queries.py --database-url <throwaway>` | Time and explain every regular query on it, flagging sequential scans of large tables |
+| `uv run python scripts/rank_companies.py [--count 100] [--cache DIR]` | Rank the US companies not on the watchlist by 2025 revenue from their own SEC filings (XBRL frames, through the shared EDGAR client), listing the ones it leaves out and why |
 | `uv run filings-admin grant <email>` | Make a signed-in account the admin who reviews company suggestions (`revoke` undoes it) |
 | `uv run filings-oci-inventory` | List what exists in the Oracle account and check its spending guardrails with a read-only key (`OCI_INVENTORY_*`); a daily job in production |
 | `make oci-status` / `make oci-stop` / `make oci-off` | The Oracle account's off switch, with your own key: what could be billed and what was spent; stop every VM; or delete every VM and volume after a typed confirmation |
@@ -355,7 +358,7 @@ docs/adr/             architecture decision records
 docs/runbook.md       operating the production system: alerts, deploys, secrets, backups
 docker/               the Dockerfile for the service images
 scripts/              helpers for `make pipeline`, `backup-drill`, `k8s-tools`, and `k8s-check`;
-                      synthetic data and query measurements at volume
+                      synthetic data and query measurements at volume; ranking companies to add
 deploy/               Kubernetes manifests (Kustomize, Sealed Secrets, Argo CD), and Grafana
                       dashboards and alert rules
 .github/workflows/    CI, image builds and deploys, the dependency audit (dependabot.yml: weekly updates)

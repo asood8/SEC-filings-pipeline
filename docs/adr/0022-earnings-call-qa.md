@@ -181,9 +181,9 @@ On the laptop, against the real sites and the local model only (no Gemini):
 
 ## Consequences
 
-- Coverage is 10 of the 99 watchlist companies (10%): 7 of the first 35, and 3 of the 64 added on
-  2026-11-06 (Ford, Dell, TD SYNNEX). Adding one means reading its terms first (runbook,
-  "Earnings-call transcripts").
+- Coverage is 10 of the 199 watchlist companies: 7 of the first 35, 3 of the 64 added on
+  2026-11-06 (Ford, Dell, TD SYNNEX), and none yet of the 100 added on 2026-11-18, which no survey
+  has checked. Adding one means reading its terms first (runbook, "Earnings-call transcripts").
 - Sources are per-site and will break when a site changes; the overdue alert says when.
 - The small model's known weakness (who did what) matters more in Q&A, which is mostly who said
   what. The labels make that measurable.

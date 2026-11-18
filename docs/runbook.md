@@ -731,6 +731,10 @@ To find why a company has none, open its investor site in a browser and compare 
   questions needs a rule and a test there; then bump `SPLITTER_VERSION`.
 - **"robots.txt disallows" or HTTP 403:** the site now refuses automated requests. Remove the
   source: the project only reads sites that allow it.
+- **"only https on the default port is fetched" or "is not a public address":** the source (or a
+  redirect from it) points at plain http, another port, or a private address, which the job
+  refuses (ADR-0022). A site that moved to http needs a look before anything changes; an address
+  inside the cluster or the VPC means the site or its DNS is misbehaving.
 - **The terms changed:** before adding a company or when a site's terms change, read its terms
   of use. A site whose terms bar automated access or downloads is not a source (ADR-0022).
 

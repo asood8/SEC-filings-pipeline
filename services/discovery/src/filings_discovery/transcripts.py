@@ -16,8 +16,10 @@ company has one transcript per call day, so a re-run (or a listing whose links m
 nothing twice. Neither is ever served: the API serves only summaries and the link.
 """
 
+import ipaddress
 import logging
 import re
+import socket
 import time
 import tomllib
 from collections.abc import Callable, Iterable, Sequence
@@ -51,6 +53,13 @@ MIN_WORDS = 1_000  # less is a placeholder page, not a call's transcript
 EARNINGS_ITEM = "2.02"
 ORDINALS = {1: "1st", 2: "2nd", 3: "3rd", 4: "4th"}
 _REDIRECTS = frozenset({301, 302, 303, 307, 308})
+
+
+def resolve_host(host: str) -> list[str]:
+    """The addresses `host` resolves to (IPv4 and IPv6)."""
+    return sorted({str(info[4][0]) for info in socket.getaddrinfo(host, 443)})
+
+
 _NOT_POSTED = frozenset({404, 410})
 
 
@@ -165,7 +174,14 @@ class Document:
 
 class SiteClient:
     """GETs from companies' sites (not SEC's: that is EdgarClient's job): robots.txt honored for
-    every request and redirect, at least `delay` seconds between requests to one host."""
+    every request and redirect, at least `delay` seconds between requests to one host.
+
+    Every request, redirects included, must go to https on the default port of a host whose
+    addresses are all public: a redirect from a company's site (or its CDN) can't point the job
+    at the cluster's services, the node, or Oracle's metadata service. Checked by resolving the
+    host first; the connection resolves it again, so a host that changes its answer in between
+    could still slip through, but the configured sites are the companies' own.
+    """
 
     def __init__(
         self,
@@ -176,8 +192,10 @@ class SiteClient:
         transport: httpx2.BaseTransport | None = None,
         sleep: Callable[[float], None] = time.sleep,
         clock: Callable[[], float] = time.monotonic,
+        resolve: Callable[[str], Iterable[str]] = resolve_host,
     ) -> None:
         self._agent = user_agent.split("/", 1)[0]  # the product token robots.txt rules name
+        self._resolve = resolve
         self._delay = delay
         self._sleep = sleep
         self._clock = clock
@@ -199,6 +217,7 @@ class SiteClient:
     def get(self, url: str) -> Document | None:
         """The document at `url`, or None when the site says it isn't there (404, 410)."""
         for _ in range(MAX_REDIRECTS + 1):
+            self._check_public(url)  # before its robots.txt is fetched (and again in _request)
             if not self._allowed(url):
                 raise SourceError(f"robots.txt disallows {url}")
             reply = self._request(url)
@@ -212,7 +231,32 @@ class SiteClient:
             return Document(url, reply.content_type, reply.body)
         raise SourceError(f"{url}: more than {MAX_REDIRECTS} redirects")
 
+    def _check_public(self, url: str) -> None:
+        """SourceError unless `url` is https on the default port of a host whose addresses are
+        all public (none private, loopback, link-local, or otherwise reserved)."""
+        parts = urlsplit(url)
+        try:
+            port = parts.port
+        except ValueError:
+            raise SourceError(f"{url}: not a valid address") from None
+        if parts.scheme != "https" or not parts.hostname or port not in (None, 443):
+            raise SourceError(f"{url}: only https on the default port is fetched")
+        host = parts.hostname
+        try:
+            addresses = [str(ipaddress.ip_address(host))]
+        except ValueError:
+            try:
+                addresses = list(self._resolve(host))
+            except OSError as exc:
+                raise SourceError(f"{url}: {exc!r}") from exc
+        if not addresses:
+            raise SourceError(f"{url}: {host} has no addresses")
+        for address in addresses:
+            if not ipaddress.ip_address(address.split("%", 1)[0]).is_global:
+                raise SourceError(f"{url}: {host} is not a public address ({address})")
+
     def _request(self, url: str) -> "_Reply":
+        self._check_public(url)
         host = urlsplit(url).netloc
         wait = self._last.get(host, float("-inf")) + self._delay - self._clock()
         if wait > 0:

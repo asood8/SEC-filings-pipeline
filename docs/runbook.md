@@ -772,7 +772,11 @@ Reload the website afterwards: "Review everyone's suggestions" appears on `/sugg
    `production` branch; Argo CD syncs it ([Deploys and rollbacks](#deploys-and-rollbacks)).
 3. Load the new watchlist now instead of at 05:17 UTC:
    `kubectl -n filings create job --from=cronjob/load-companies load-companies-now`.
-   The next discovery run collects the company's filings from the previous 30 days.
+   The next discovery run collects the company's filings from the previous 30 days. Keyword
+   alerts skip them (ADR-0012, "Old news"). Their 8-Ks wait for the summarizer like any others,
+   about 4 to 5 minutes each on the VM, so adding many companies at once delays other 8-Ks'
+   alerts until the backlog clears: about 10 hours for the 100 added on 2026-11-18 (estimated).
+   `scripts/rank_companies.py` ranks candidates by revenue from their SEC filings.
 4. On `/admin/suggestions`, press "Mark ... added". It's refused until the company is on the
    watchlist, since everyone who suggested it then reads "Added" with a link to its page.
 
@@ -1032,9 +1036,9 @@ the tested path.
 ## Capacity planning
 
 Measured with the watchlist of **35 companies, about 3,500 filings a year** (mostly Form 4s;
-about 7% are 8-Ks, which is roughly 250 a year). Since 2026-11-06 the watchlist has **99
-companies**, so expect about 2.8 times every rate below: about 10,000 filings and 700 8-Ks a
-year.
+about 7% are 8-Ks, which is roughly 250 a year). Since 2026-11-06 the watchlist had **99
+companies**, so about 2.8 times every rate below: about 10,000 filings and 700 8-Ks a year; since
+2026-11-18 it has **199**, about twice that again.
 
 | Store | Growth per year | Free limit | Room at this rate |
 |---|---|---|---|
@@ -1056,8 +1060,8 @@ year.
   Postgres ~0.9 MB (measured locally). MongoDB and R2's raw filings hold a year at most
   ([how long documents are kept](adr/0006-form-4-parsing-and-key-fields.md#how-long-the-working-copies-are-kept-added-2026-11-18)),
   so Atlas holds about 170 MB at 200 companies; past about 450, lower `DOCUMENT_RETENTION_DAYS`.
-- **SEC:** discovery's run takes about 7 s for 35 companies at 5 requests/s (about 20 s for 99);
-  within its 9-minute deadline one run could poll about 2,500 companies.
+- **SEC:** discovery's run takes about 7 s for 35 companies at 5 requests/s (about 20 s for 99,
+  40 s for 199); within its 9-minute deadline one run could poll about 2,500 companies.
 - **The local LLM:** up to about 5 minutes per 8-K on two laptop cores (the A1 is measured by the
   benchmark), so at most about 60 hours of both cores a year at 99 companies; re-summarizing a
   year of 8-Ks takes up to about 2.5 days.

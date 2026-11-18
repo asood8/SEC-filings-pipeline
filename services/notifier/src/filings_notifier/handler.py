@@ -8,6 +8,10 @@
   alerts nobody; it is still stored and shown.
 - Alerts are about new filings: a subscription only matches filings discovered after it was
   created. Otherwise replaying the topic would send a new subscription every past filing.
+- Keyword alerts follow every company, so they also skip a filing discovered more than
+  KEYWORD_ALERT_MAX_DELAY_DAYS after it was filed: when a company joins the watchlist, its past
+  month of filings arrives at once, and nobody wants a month of old news. A company's own
+  subscribers can't predate its joining, and after an outage they still get what they missed.
 - Each alert is a `notifications` row, unique per (subscription, filing). It is delivered inside
   a transaction that locks the row, and skipped unless still pending, so redeliveries, replays,
   and concurrent notifiers never alert a subscription twice about the same filing.
@@ -27,7 +31,7 @@ URL or a personal email address), and errors by type only, since their messages 
 import logging
 from collections.abc import Callable, Mapping
 from dataclasses import replace
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Any, Literal
 
 import sqlalchemy as sa
@@ -73,6 +77,9 @@ from filings_notifier.channels import Alert, DeliveryError, PermanentDeliveryErr
 
 logger = logging.getLogger(__name__)
 tracer = trace.get_tracer(__name__)
+
+# Filings discovered longer than this after their filing date alert no keyword alert (above).
+KEYWORD_ALERT_MAX_DELAY_DAYS = 3
 
 DeliveryOutcome = Literal["sent", "failed", "retry", "already_settled"]
 
@@ -221,6 +228,8 @@ class NotificationHandler:
             )
             .order_by(Subscription.id)
         )
+        if discovered_at.date() - alert.filed_at > timedelta(days=KEYWORD_ALERT_MAX_DELAY_DAYS):
+            query = query.where(Subscription.query.is_(None))
         rows = session.execute(query).all()
         if form4 is None:
             # 8-K item filters (filings_common.alert_filters); other forms have no items.

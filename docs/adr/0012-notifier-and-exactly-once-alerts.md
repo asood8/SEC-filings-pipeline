@@ -96,6 +96,15 @@ filing. Every subscription still needs a subject (a company, a query, or both: c
 words ("the") is refused, since it would never match. Exactly-once delivery is unchanged: it is
 per subscription and filing, whatever selected them. Migration a77c95f05ece.
 
+**Old news (added 2026-11-18).** A keyword alert follows every company, including one that has
+just joined the watchlist, and discovery collects a new company's previous 30 days at once: 100
+companies added on 2026-11-18 would have sent every keyword alert a month of old filings. So a
+keyword alert skips a filing discovered more than 3 days after its filing date
+(`KEYWORD_ALERT_MAX_DELAY_DAYS`; 3 covers a weekend, and normal discovery takes minutes). Alerts
+on a company are unchanged: they can't predate the company joining the watchlist, and after an
+outage their subscribers still get what they missed. The alert preview doesn't apply the rule; it
+shows what an alert matches, which for a new company's past month is a fair answer.
+
 ### Previewing an alert (added 2026-10-22)
 
 With filters and keywords, it is hard to guess what an alert will send. `GET

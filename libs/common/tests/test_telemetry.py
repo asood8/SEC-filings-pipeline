@@ -6,8 +6,16 @@ from typing import Any, ClassVar
 
 import pytest
 from opentelemetry import metrics, trace
+from opentelemetry.exporter.otlp.proto.http import _log_exporter as otlp_logs
 from opentelemetry.exporter.otlp.proto.http import metric_exporter as otlp_metrics
 from opentelemetry.exporter.otlp.proto.http import trace_exporter as otlp
+from opentelemetry.sdk._logs import LoggerProvider, ReadableLogRecord
+from opentelemetry.sdk._logs.export import (
+    InMemoryLogRecordExporter,
+    LogRecordExporter,
+    LogRecordExportResult,
+    SimpleLogRecordProcessor,
+)
 from opentelemetry.sdk.metrics.export import MetricExporter, MetricExportResult, MetricsData
 from opentelemetry.sdk.trace import ReadableSpan
 from opentelemetry.sdk.trace.export import SpanExporter, SpanExportResult
@@ -17,13 +25,17 @@ from opentelemetry.trace import StatusCode
 from filings_common.config import TelemetrySettings
 from filings_common.telemetry import (
     LOG_FORMAT,
+    LogExportFilter,
+    Telemetry,
     TraceContextFormatter,
+    build_logger_provider,
     build_meter_provider,
     build_resource,
     build_tracer_provider,
     context_from_headers,
     continue_from,
     current_trace_context,
+    export_logs,
     filing_trace,
     kafka_headers,
     parse_pairs,
@@ -76,6 +88,24 @@ class FakeMetricExporter(MetricExporter):
         pass
 
 
+class FakeLogExporter(LogRecordExporter):
+    """Stands in for the OTLP log exporter: keeps what it was built with, never sends anything."""
+
+    built: ClassVar[dict[str, Any]] = {}
+
+    def __init__(self, **kwargs: Any) -> None:
+        FakeLogExporter.built = kwargs
+
+    def export(self, batch: Sequence[ReadableLogRecord]) -> LogRecordExportResult:
+        return LogRecordExportResult.SUCCESS
+
+    def force_flush(self, timeout_millis: int = 30_000) -> bool:
+        return True
+
+    def shutdown(self) -> None:
+        pass
+
+
 def settings(**values: Any) -> TelemetrySettings:
     return TelemetrySettings(_env_file=None, **values)
 
@@ -89,6 +119,7 @@ def only(spans: InMemorySpanExporter, name: str) -> ReadableSpan:
 def fake_exporters(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(otlp, "OTLPSpanExporter", FakeExporter)
     monkeypatch.setattr(otlp_metrics, "OTLPMetricExporter", FakeMetricExporter)
+    monkeypatch.setattr(otlp_logs, "OTLPLogExporter", FakeLogExporter)
 
 
 @pytest.fixture
@@ -135,23 +166,32 @@ def test_sdk_disabled_turns_telemetry_off_despite_an_endpoint(installed: list[ob
 
 
 @pytest.mark.usefixtures("fake_exporters")
+@pytest.mark.usefixtures("fake_exporters")
 def test_each_signal_can_be_turned_off_on_its_own(installed: list[object]) -> None:
     endpoint = "http://collector:4318"
-    traces_only = setup_telemetry(
-        "filings-test", settings=settings(exporter_otlp_endpoint=endpoint, metrics_exporter="none")
-    )
-    metrics_only = setup_telemetry(
-        "filings-test", settings=settings(exporter_otlp_endpoint=endpoint, traces_exporter="none")
-    )
+
+    def only(signal: str) -> Telemetry:
+        off = {f"{other}_exporter": "none" for other in ("traces", "metrics", "logs")}
+        off.pop(f"{signal}_exporter")
+        return setup_telemetry(
+            "filings-test", settings=settings(exporter_otlp_endpoint=endpoint, **off)
+        )
+
+    traces_only, metrics_only, logs_only = only("traces"), only("metrics"), only("logs")
     try:
-        assert traces_only.tracer_provider is not None
-        assert traces_only.meter_provider is None
-        assert metrics_only.tracer_provider is None
-        assert metrics_only.meter_provider is not None
+        for on in (traces_only, metrics_only, logs_only):
+            assert on.enabled
+        assert (traces_only.meter_provider, traces_only.logger_provider) == (None, None)
+        assert (metrics_only.tracer_provider, metrics_only.logger_provider) == (None, None)
+        assert (logs_only.tracer_provider, logs_only.meter_provider) == (None, None)
+        assert logs_only.logger_provider is not None
         assert installed == [traces_only.tracer_provider, metrics_only.meter_provider]
+        assert logs_only.log_handler in logging.getLogger().handlers
+        assert traces_only.log_handler is None
     finally:
-        traces_only.shutdown()
-        metrics_only.shutdown()
+        for on in (traces_only, metrics_only, logs_only):
+            on.shutdown()
+    assert logs_only.log_handler not in logging.getLogger().handlers
 
 
 @pytest.mark.usefixtures("fake_exporters")
@@ -166,8 +206,10 @@ def test_providers_export_over_otlp_http_with_the_configured_resource() -> None:
     resource = build_resource(configured, "filings-parser", "1.2.3")
     tracer_provider = build_tracer_provider(configured, resource)
     meter_provider = build_meter_provider(configured, resource)
+    logger_provider = build_logger_provider(configured, resource)
     assert tracer_provider is not None
     assert meter_provider is not None
+    assert logger_provider is not None
     try:
         headers = {"Authorization": "Basic c2VjcmV0", "X-Scope-OrgID": "t1"}
         assert FakeExporter.built["endpoint"] == "https://otlp-gateway.example.net/otlp/v1/traces"
@@ -176,6 +218,9 @@ def test_providers_export_over_otlp_http_with_the_configured_resource() -> None:
             "https://otlp-gateway.example.net/otlp/v1/metrics"
         )
         assert FakeMetricExporter.built["headers"] == headers
+        assert FakeLogExporter.built["endpoint"] == "https://otlp-gateway.example.net/otlp/v1/logs"
+        assert FakeLogExporter.built["headers"] == headers
+        assert logger_provider.resource is resource
         attributes = tracer_provider.resource.attributes
         assert attributes["service.name"] == "parser-canary"  # OTEL_SERVICE_NAME wins
         assert attributes["service.version"] == "1.2.3"
@@ -185,6 +230,7 @@ def test_providers_export_over_otlp_http_with_the_configured_resource() -> None:
     finally:
         tracer_provider.shutdown()
         meter_provider.shutdown()
+        logger_provider.shutdown()
 
 
 def test_each_process_is_its_own_service_instance() -> None:
@@ -226,7 +272,8 @@ def test_setup_installs_the_providers_and_never_logs_the_headers(
     try:
         assert on.enabled
         assert installed == [on.tracer_provider, on.meter_provider]
-        assert "traces and metrics to otlp-gateway.example.net" in caplog.text
+        assert on.logger_provider is not None
+        assert "traces, metrics and logs to otlp-gateway.example.net" in caplog.text
         assert "c2VjcmV0" not in caplog.text
         assert "c2VjcmV0" not in repr(configured)  # SecretStr keeps it out of reprs
     finally:
@@ -368,3 +415,75 @@ def test_log_lines_carry_the_active_trace(spans: InMemorySpanExporter) -> None:
             f"parsed x trace_id={trace.format_trace_id(context.trace_id)}"
             f" span_id={trace.format_span_id(context.span_id)}"
         )
+
+
+# --- Log export ----------------------------------------------------------------------------------
+
+
+def exporting_logs() -> tuple[InMemoryLogRecordExporter, Telemetry]:
+    """`export_logs` into a provider whose records the test can read. Shut it down afterwards."""
+    exporter = InMemoryLogRecordExporter()  # type: ignore[no-untyped-call]
+    provider = LoggerProvider()
+    provider.add_log_record_processor(SimpleLogRecordProcessor(exporter))
+    handler, sources = export_logs(provider)
+    return exporter, Telemetry(logger_provider=provider, log_handler=handler, log_sources=sources)
+
+
+def test_log_lines_are_exported_with_their_trace(
+    spans: InMemorySpanExporter, caplog: pytest.LogCaptureFixture
+) -> None:
+    exporter, telemetry = exporting_logs()
+    log = logging.getLogger("filings.test")
+    try:
+        with caplog.at_level(logging.DEBUG):
+            with tracer.start_as_current_span("work") as span:
+                log.info("parsed %s", "0000320193-26-000001")
+            log.debug("too detailed to export")
+            logging.getLogger("opentelemetry.sdk._logs").warning("export failed")
+    finally:
+        telemetry.shutdown()
+
+    [record] = exporter.get_finished_logs()
+    assert record.log_record.body == "parsed 0000320193-26-000001"
+    assert record.log_record.severity_text == "INFO"
+    assert record.log_record.trace_id == span.get_span_context().trace_id
+    # Every line still reached the other handlers (stderr in a service), the SDK's own included.
+    assert "export failed" in caplog.text
+    assert telemetry.log_handler not in logging.getLogger().handlers
+
+
+def test_uvicorn_lines_are_exported_but_not_its_access_log(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    for name in ("uvicorn", "uvicorn.access"):  # as uvicorn configures them
+        monkeypatch.setattr(logging.getLogger(name), "propagate", False)
+        monkeypatch.setattr(logging.getLogger(name), "level", logging.INFO)
+    exporter, telemetry = exporting_logs()
+    try:
+        assert logging.getLogger("uvicorn") in telemetry.log_sources
+        logging.getLogger("uvicorn.error").info("Application startup complete.")
+        logging.getLogger("uvicorn.access").info(
+            '%s - "%s %s HTTP/%s" %d', "10.42.0.7:51234", "GET", "/filings", "1.1", 200
+        )
+    finally:
+        telemetry.shutdown()
+    assert [r.log_record.body for r in exporter.get_finished_logs()] == [
+        "Application startup complete."
+    ]
+    assert telemetry.log_handler not in logging.getLogger("uvicorn").handlers
+
+
+def test_log_export_stops_at_the_limit_each_minute(caplog: pytest.LogCaptureFixture) -> None:
+    now = [30.0]
+    limit = LogExportFilter(per_minute=3, clock=lambda: now[0])
+
+    def passes(name: str = "filings.test") -> bool:
+        return limit.filter(logging.LogRecord(name, logging.INFO, __file__, 1, "line", None, None))
+
+    with caplog.at_level(logging.WARNING):
+        assert [passes() for _ in range(5)] == [True, True, True, False, False]
+        now[0] = 61.0  # the next minute
+        assert passes()
+        assert not passes("opentelemetry.exporter.otlp.proto.http._log_exporter")
+    # Said once, on stderr only (it is over the limit itself).
+    assert caplog.text.count("over 3 log lines this minute") == 1

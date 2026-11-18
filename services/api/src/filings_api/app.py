@@ -109,6 +109,30 @@ def _redact_tokens(span: Span, scope: dict[str, Any]) -> None:
         span.set_attribute("url.query", "token=REDACTED")
 
 
+class AccessLogTokenFilter(logging.Filter):
+    """Keeps unsubscribe tokens out of uvicorn's access log, as `_redact_tokens` keeps them out of
+    traces. Its line `%s - "%s %s HTTP/%s" %d` has the path and query as one argument."""
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        if isinstance(record.args, tuple):
+            record.args = tuple(
+                _without_token(arg) if isinstance(arg, str) else arg for arg in record.args
+            )
+        return True
+
+
+def _without_token(value: str) -> str:
+    path, query = value.split("?", 1) if "?" in value else (value, "")
+    return f"{path}?token=REDACTED" if query and path in TOKEN_PATHS else value
+
+
+def redact_access_log() -> None:
+    """Add `AccessLogTokenFilter` to uvicorn's access logger, once per process."""
+    access_log = logging.getLogger("uvicorn.access")
+    if not any(isinstance(f, AccessLogTokenFilter) for f in access_log.filters):
+        access_log.addFilter(AccessLogTokenFilter())
+
+
 def create_app(
     sessions: sessionmaker[Session] | None = None,
     *,
@@ -124,6 +148,7 @@ def create_app(
     settings = settings or ApiSettings()
     telemetry = setup_telemetry("filings-api") if sessions is None else Telemetry()
     logging.getLogger("httpx2").setLevel(logging.WARNING)  # one line per embedding call is noise
+    redact_access_log()
 
     def configure(
         app: FastAPI,

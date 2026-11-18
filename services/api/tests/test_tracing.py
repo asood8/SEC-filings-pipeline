@@ -1,5 +1,6 @@
 """Request tracing and metrics, as when OTEL_EXPORTER_OTLP_ENDPOINT is set."""
 
+import logging
 from collections.abc import Callable
 from typing import Any
 
@@ -8,6 +9,7 @@ from fastapi.testclient import TestClient
 from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter
 from opentelemetry.trace import SpanKind
 
+from filings_api.app import AccessLogTokenFilter
 from filings_api.auth import SESSION_COOKIE
 from filings_common.unsubscribe import token
 
@@ -95,3 +97,6 @@ def test_unsubscribe_spans_hold_no_token(
         assert (finished[name].attributes or {})["url.query"] == "token=REDACTED"
     # Other routes' query strings (search terms, filters) are recorded as before.
     assert "buyback" in str((finished["GET /search"].attributes or {})["url.query"])
+    # The app also keeps the token out of uvicorn's access log (test_access_log.py).
+    access_filters = logging.getLogger("uvicorn.access").filters
+    assert any(isinstance(f, AccessLogTokenFilter) for f in access_filters)

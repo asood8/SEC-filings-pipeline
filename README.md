@@ -237,9 +237,10 @@ make web-install && make web               # the website on http://localhost:300
 
 Or run every stage at once, with discovery every 10 minutes: `make pipeline` (Ctrl+C stops it).
 
-To watch traces and metrics: `make obs-up`, set `OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4318`
-in `.env` (see `.env.example`), restart the services, and open http://localhost:3001 (dashboards
-"Filingwire: Pipeline" and "Filingwire: API"; traces under Explore, Tempo). With the endpoint
+To watch traces, metrics, and logs: `make obs-up`, set
+`OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4318` in `.env` (see `.env.example`), restart the
+services, and open http://localhost:3001 (dashboards "Filingwire: Pipeline" and "Filingwire: API";
+traces under Explore, Tempo; logs under Explore, Loki). With the endpoint
 unset, telemetry is off and costs nothing.
 
 Sign-in needs a Google OAuth client ID (Google Cloud console, APIs & Services, Credentials: a

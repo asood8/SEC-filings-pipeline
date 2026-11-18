@@ -1,9 +1,14 @@
+import re
+from datetime import timedelta
+from pathlib import Path
+
 import pytest
 from pydantic import ValidationError
 
 from filings_common.config import (
     ApiSettings,
     DatabaseSettings,
+    DocumentRetentionSettings,
     EdgarSettings,
     EmbeddingSettings,
     GoogleSignInSettings,
@@ -96,3 +101,20 @@ def test_queries_get_a_shorter_embedding_timeout(monkeypatch: pytest.MonkeyPatch
     assert (settings.timeout_seconds, settings.query_timeout_seconds) == (60.0, 2.0)
     monkeypatch.setenv("EMBEDDING_QUERY_TIMEOUT_SECONDS", "0.5")
     assert EmbeddingSettings(_env_file=None).query_timeout_seconds == 0.5
+
+
+def test_documents_are_kept_a_year_as_long_as_raw_filings_in_r2() -> None:
+    assert DocumentRetentionSettings(_env_file=None).retention == timedelta(days=365)
+    # The R2 lifecycle rule for raw filings is Terraform's; the two should expire together.
+    terraform = Path(__file__).parents[3] / "infra/terraform"
+    for variables in ("modules/cloudflare/variables.tf", "envs/production/variables.tf"):
+        text = (terraform / variables).read_text()
+        match = re.search(r'variable "raw_retention_days" \{.*?default\s*=\s*(\d+)', text, re.S)
+        assert match is not None, variables
+        assert int(match.group(1)) == 365, variables
+
+
+@pytest.mark.parametrize("days", [7, 731])
+def test_document_retention_stays_within_bounds(days: int) -> None:
+    with pytest.raises(ValidationError, match="retention_days"):
+        DocumentRetentionSettings(_env_file=None, retention_days=days)

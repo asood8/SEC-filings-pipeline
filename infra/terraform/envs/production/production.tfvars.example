@@ -44,6 +44,7 @@ cloudflare_account_id = "0123456789abcdef0123456789abcdef"
 # api_subdomain = "api"
 # web_subdomain = "app"
 # r2_location   = "enam"   # nearest to the VM: apac, eeur, enam, weur, wnam, oc
+# raw_retention_days    = 365  # keep equal to DOCUMENT_RETENTION_DAYS
 # backup_retention_days = 30
 # pages_github_integration = true  # install the Cloudflare Pages GitHub app first
 # google_client_id = "1234567890-abc.apps.googleusercontent.com"  # public, not a secret

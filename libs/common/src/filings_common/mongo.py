@@ -3,14 +3,18 @@ earnings-call transcripts companies publish (ADR-0022), one document per source 
 
 The natural key is the document `_id`, so writes are naturally idempotent upserts. Payload
 shapes differ by form type, which is why they live in a document store rather than Postgres.
+
+Both are working copies: MongoDB deletes each document a retention period after it was written
+(a TTL index; DocumentRetentionSettings), which keeps Atlas's free 512 MB from filling up.
 """
 
 from contextlib import AbstractContextManager
-from datetime import UTC, date, datetime
+from datetime import UTC, date, datetime, timedelta
 from typing import Any
 
 from opentelemetry import trace
 from opentelemetry.trace import Span, SpanKind
+from pymongo import ASCENDING
 from pymongo.collection import Collection
 from pymongo.database import Database
 
@@ -33,6 +37,21 @@ def _span(collection: Collection[dict[str, Any]], operation: str) -> AbstractCon
     )
 
 
+def expire_after(collection: Collection[dict[str, Any]], field: str, retention: timedelta) -> None:
+    """Have MongoDB delete each document `retention` after the time in its `field` (a TTL index,
+    named `<field>_ttl`; MongoDB's TTL monitor deletes expired documents about once a minute).
+    Idempotent; a changed retention updates the index in place (collMod)."""
+    name = f"{field}_ttl"
+    seconds = int(retention.total_seconds())
+    current = collection.index_information().get(name)
+    if current is None:
+        collection.create_index([(field, ASCENDING)], name=name, expireAfterSeconds=seconds)
+    elif current.get("expireAfterSeconds") != seconds:
+        collection.database.command(
+            "collMod", collection.name, index={"name": name, "expireAfterSeconds": seconds}
+        )
+
+
 class ParsedFilingStore:
     def __init__(self, database: Database[dict[str, Any]]) -> None:
         self._collection = database[COLLECTION]
@@ -40,8 +59,10 @@ class ParsedFilingStore:
     def _span(self, operation: str) -> AbstractContextManager[Span]:
         return _span(self._collection, operation)
 
-    def ensure_indexes(self) -> None:
+    def ensure_indexes(self, retention: timedelta) -> None:
+        """The lookup index, and expiry `retention` after each document was last parsed."""
         self._collection.create_index([("cik", 1), ("form_type", 1)])
+        expire_after(self._collection, "parsed_at", retention)
 
     def upsert(
         self,
@@ -96,6 +117,10 @@ class TranscriptStore:
 
     def __init__(self, database: Database[dict[str, Any]]) -> None:
         self._collection = database[TRANSCRIPTS]
+
+    def ensure_indexes(self, retention: timedelta) -> None:
+        """Expiry `retention` after each transcript was stored."""
+        expire_after(self._collection, "stored_at", retention)
 
     def upsert(self, *, source_url: str, cik: int, ticker: str, call_date: date, text: str) -> None:
         with _span(self._collection, "replace_one"):

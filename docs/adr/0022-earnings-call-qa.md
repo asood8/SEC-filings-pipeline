@@ -123,7 +123,9 @@ Seven real transcripts (Microsoft, Alphabet, JPMorgan, Bank of America, J&J, Pep
    twice real time).
 4. **Stored, never served.** The text goes to MongoDB (`call_transcripts`, keyed by the source
    URL), a row to Postgres (`call_transcripts`: company, call date, source URL, size). The API and
-   website show only our summaries and the link. Test fixtures are written for the tests in each
+   website show only our summaries and the link. MongoDB deletes the text a year after storing it
+   (ADR-0006, "How long the working copies are kept"; added 2026-11-18), while the Postgres row
+   and the summaries stay. Test fixtures are written for the tests in each
    real format; no real transcript is committed (FactSet's and LSEG's notices bar republishing).
 5. **Splitting by rules** (`filings_common.transcripts`): exchanges start at the operator's
    introductions; the transcript's own labels say who answers.

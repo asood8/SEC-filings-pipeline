@@ -8,6 +8,7 @@ from pymongo import MongoClient
 
 from filings_common.config import (
     DatabaseSettings,
+    DocumentRetentionSettings,
     KafkaSettings,
     MongoSettings,
     ObjectStoreSettings,
@@ -42,7 +43,7 @@ def main() -> int:
     dead_letters = KafkaPublisher(kafka.bootstrap_servers)
     try:
         parsed = ParsedFilingStore(mongo[mongo_settings.mongodb_database])
-        parsed.ensure_indexes()
+        parsed.ensure_indexes(DocumentRetentionSettings().retention)
         handler = FilingHandler(
             session_factory(engine),
             object_store_from_settings(ObjectStoreSettings()),

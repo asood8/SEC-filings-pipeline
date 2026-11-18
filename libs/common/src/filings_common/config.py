@@ -5,6 +5,7 @@ configuration it actually uses.
 """
 
 import re
+from datetime import timedelta
 from pathlib import Path
 from typing import Literal
 
@@ -88,6 +89,23 @@ class OutboxSettings(BaseSettings):
     # Published events are deleted from the outbox this many days after publishing (Kafka keeps
     # them). Unpublished ones are never deleted.
     retention_days: int = Field(default=7, ge=1)
+
+
+class DocumentRetentionSettings(BaseSettings):
+    """How long the working copies behind each filing are kept (ADR-0006): parsed payloads and
+    call transcripts in MongoDB expire through TTL indexes, raw filings in R2 through a lifecycle
+    rule (Terraform's `raw_retention_days`, which must match). Postgres keeps everything the site
+    shows, so nothing visible expires; what goes is the ability to parse or summarize again."""
+
+    model_config = _config("DOCUMENT_")
+
+    # At most two years: Atlas's free 512 MB and R2's free 10 GB hold about a year of documents
+    # with room to spare at a few hundred companies (docs/runbook.md, "Capacity planning").
+    retention_days: int = Field(default=365, ge=30, le=730)
+
+    @property
+    def retention(self) -> timedelta:
+        return timedelta(days=self.retention_days)
 
 
 class SummarizerSettings(BaseSettings):

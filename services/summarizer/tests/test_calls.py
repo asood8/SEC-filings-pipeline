@@ -219,6 +219,21 @@ def test_the_job_summarizes_each_call_once_newest_first(
     assert len(rows(clean_db)) == 2
 
 
+@pytest.mark.integration
+def test_calls_older_than_the_retention_are_left_alone(
+    clean_db: Engine, mongo_db: Database[dict[str, Any]]
+) -> None:
+    # MongoDB has deleted the older call's transcript by then, so it isn't tried (and failed).
+    seed(clean_db, mongo_db, date(2025, 9, 30), date(2026, 10, 13))
+    mongo_db["call_transcripts"].delete_one({"call_date": "2025-09-30"})
+    sessions = session_factory(clean_db)
+    since = date(2025, 11, 18)
+    with sessions() as session:
+        assert [p.context.call_date for p in pending(session, since=since)] == [date(2026, 10, 13)]
+    report = summarize_calls(sessions, TranscriptStore(mongo_db), *chains(Stub()), since=since)
+    assert (report.summarized, report.failed) == (["EXM 2026-10-13"], [])
+
+
 class Down:
     name = "ollama"
     model = "stub"

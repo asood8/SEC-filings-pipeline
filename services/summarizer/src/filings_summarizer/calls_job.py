@@ -8,6 +8,9 @@ writes nothing twice: the same provider, model and prompt version replace their 
 
 A call's first summary is announced on `calls.summarized` (through the outbox, in the same
 transaction) so the notifier alerts about it; later summaries of the call are not.
+
+Calls older than the document retention are left alone: MongoDB has deleted their transcripts by
+then (DocumentRetentionSettings), so they keep the summaries they have.
 """
 
 import argparse
@@ -16,6 +19,7 @@ import signal
 import time
 from collections.abc import Callable
 from dataclasses import dataclass, field
+from datetime import UTC, date, datetime
 from types import FrameType
 from typing import Any
 
@@ -28,6 +32,7 @@ from sqlalchemy.orm import Session, sessionmaker
 
 from filings_common.config import (
     DatabaseSettings,
+    DocumentRetentionSettings,
     GeminiSettings,
     LlmSettings,
     MongoSettings,
@@ -72,13 +77,17 @@ class _Pending:
     context: CallContext
 
 
-def pending(session: Session, prompt_version: int = CALL_PROMPT_VERSION) -> list[_Pending]:
-    """Stored transcripts without a summary at `prompt_version`, newest call first."""
+def pending(
+    session: Session, prompt_version: int = CALL_PROMPT_VERSION, *, since: date | None = None
+) -> list[_Pending]:
+    """Stored transcripts without a summary at `prompt_version`, newest call first; with `since`,
+    only calls on or after that day. A transcript is stored after its call and kept for the
+    retention period, so a call within the period still has its text."""
     summarized = sa.exists().where(
         CallSummary.transcript_id == CallTranscript.id,
         CallSummary.prompt_version == prompt_version,
     )
-    rows = session.execute(
+    query = (
         sa.select(
             CallTranscript.id,
             CallTranscript.cik,
@@ -90,7 +99,10 @@ def pending(session: Session, prompt_version: int = CALL_PROMPT_VERSION) -> list
         .join(Company, Company.cik == CallTranscript.cik)
         .where(~summarized, CallTranscript.exchanges > 0)
         .order_by(CallTranscript.call_date.desc(), CallTranscript.id)
-    ).all()
+    )
+    if since is not None:
+        query = query.where(CallTranscript.call_date >= since)
+    rows = session.execute(query).all()
     return [
         _Pending(id_, cik, url, CallContext(company_name(name), ticker, day))
         for id_, cik, url, day, ticker, name in rows
@@ -103,13 +115,14 @@ def summarize_calls(
     exchange_chain: FailoverChain,
     takeaways_chain: FailoverChain,
     *,
+    since: date | None = None,
     budget_seconds: float = DEFAULT_BUDGET_SECONDS,
     clock: Callable[[], float] = time.monotonic,
 ) -> CallsReport:
     report = CallsReport()
     deadline = clock() + budget_seconds
     with sessions() as session:
-        calls = pending(session)
+        calls = pending(session, since=since)
     for position, call in enumerate(calls):
         label = f"{call.context.ticker} {call.context.call_date}"
         if clock() >= deadline:
@@ -216,6 +229,7 @@ def _run(budget_seconds: float) -> int:
             TranscriptStore(mongo[mongo_settings.mongodb_database]),
             exchange_chain,
             takeaways_chain,
+            since=(datetime.now(UTC) - DocumentRetentionSettings().retention).date(),
             budget_seconds=budget_seconds,
         )
     finally:

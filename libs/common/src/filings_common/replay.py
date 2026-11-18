@@ -6,6 +6,10 @@
 - `parsed` re-publishes `filings.parsed`, so the summarizer summarizes again: after a prompt or
   model change.
 
+Both work only within the document retention (DocumentRetentionSettings, a year by default):
+older raw filings have expired from R2 and older parsed payloads from MongoDB, so `discovered`
+leaves filings discovered before then out, and `parsed` skips those without a payload.
+
 Events go through the outbox, so they are published by the relay with the usual at-least-once
 guarantee. Consumers are idempotent, so replaying is always safe.
 
@@ -17,6 +21,7 @@ import argparse
 import logging
 from collections.abc import Sequence
 from contextlib import AbstractContextManager
+from datetime import UTC, datetime
 from itertools import batched
 from typing import Any
 
@@ -26,7 +31,7 @@ from opentelemetry.trace import Span
 from pymongo import MongoClient
 from sqlalchemy.orm import Session, sessionmaker
 
-from filings_common.config import DatabaseSettings, MongoSettings
+from filings_common.config import DatabaseSettings, DocumentRetentionSettings, MongoSettings
 from filings_common.db import Filing, FilingStatus, create_engine, session_factory
 from filings_common.events import FilingDiscovered, FilingParsed, Topic
 from filings_common.mongo import ParsedFilingStore
@@ -70,12 +75,24 @@ def replay_discovered(
     form_type: str | None = None,
     statuses: Sequence[FilingStatus] | None = None,
     accession_nos: Sequence[str] | None = None,
+    since: datetime | None = None,
 ) -> int:
-    """Enqueue `filings.discovered` for matching filings. Returns how many."""
+    """Enqueue `filings.discovered` for matching filings; with `since`, only those discovered
+    then or later (older raw filings have expired from R2). Returns how many."""
     with sessions() as session:
         filings = _filings(
             session, form_type=form_type, statuses=statuses, accession_nos=accession_nos
         )
+    if since is not None:
+        kept = [f for f in filings if f.created_at >= since]
+        if len(kept) < len(filings):
+            logger.warning(
+                "left out %d filings discovered before %s: their raw documents have expired "
+                "from R2 (DOCUMENT_RETENTION_DAYS)",
+                len(filings) - len(kept),
+                since.date(),
+            )
+        filings = kept
     for batch in batched(filings, BATCH_SIZE):
         with sessions.begin() as session:
             for filing in batch:
@@ -158,6 +175,7 @@ def main(argv: list[str] | None = None) -> int:
                     form_type=args.form_type,
                     statuses=statuses,
                     accession_nos=args.accession,
+                    since=datetime.now(UTC) - DocumentRetentionSettings().retention,
                 )
             else:
                 count = _replay_parsed(

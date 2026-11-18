@@ -142,6 +142,12 @@ variable "r2_location" {
   default     = null
 }
 
+variable "raw_retention_days" {
+  description = "Days R2 keeps each raw filing (keep equal to DOCUMENT_RETENTION_DAYS)."
+  type        = number
+  default     = 365
+}
+
 variable "backup_retention_days" {
   description = "Days R2 keeps each nightly Postgres backup."
   type        = number

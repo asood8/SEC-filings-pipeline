@@ -347,6 +347,17 @@ def test_workers_are_probed_by_their_heartbeat(production: list[dict[str, Any]])
         assert {"name": "tmp", "mountPath": "/tmp"} in container["volumeMounts"], workload
 
 
+def test_the_backup_waits_for_postgres_before_dumping(production: list[dict[str, Any]]) -> None:
+    # A new pod's connections are refused until the network policy controller admits it, and
+    # pg_dump connects at once: every try failed that way on 2026-11-18.
+    [pod] = [p for p in pods(production) if p.workload == "CronJob/postgres-backup"]
+    [dump] = [c for c in pod.containers() if c["name"] == "dump"]
+    script = dump["command"][-1]
+    assert dump["command"][:2] == ["/bin/sh", "-c"]
+    assert script.index("until pg_isready --host=postgres") < script.index("exec pg_dump")
+    assert "exit 1" in script  # it gives up rather than waiting forever
+
+
 def test_the_api_is_ready_only_with_its_database(production: list[dict[str, Any]]) -> None:
     container = _container(production, "Deployment/api")
     assert container["readinessProbe"]["httpGet"]["path"] == "/readyz"

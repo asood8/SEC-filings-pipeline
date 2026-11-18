@@ -40,7 +40,7 @@ applying, reaching the cluster, Terraform state).
 - [Oracle idle reclamation and capacity errors](#oracle-idle-reclamation-and-capacity-errors)
 - [Backups and restores](#backups-and-restores)
 - [Capacity planning](#capacity-planning)
-- [Enforce the website's Content-Security-Policy](#enforce-the-websites-content-security-policy)
+- [The website's Content-Security-Policy](#the-websites-content-security-policy)
 
 ## Before you start
 
@@ -1201,16 +1201,28 @@ The generator resumes where it stopped if interrupted (rerun the same command); 
 `--years`, `--embeddings`, and `--users` scale it. The measurement flags statements that scan a
 large table sequentially, sort on disk, or spend time on JIT; `--only` picks scenarios.
 
-## Enforce the website's Content-Security-Policy
+## The website's Content-Security-Policy
 
-The website's CSP ships as `Content-Security-Policy-Report-Only` (ADR-0015): browsers report
-violations in the console without blocking anything. After the first deploy, open the live site,
-sign in with Google, use search and the alerts page, and check the console for CSP reports. If
-there are none, rename the header to `Content-Security-Policy` in `web/src/lib/securityHeaders.ts`
-and redeploy. If a violation is expected (for example Google changed a domain), add that source to
-the policy first.
+The website enforces a CSP (`web/src/lib/securityHeaders.ts`, ADR-0015): pages may load scripts
+only from the site and Google's sign-in, and call only the site, the API, and Google's sign-in.
+A source missing from it shows in the browser console as `... violates the following Content
+Security Policy directive`, and the browser blocks it: typically Google's sign-in button missing
+or misdrawn after Google moves something.
 
-Expected and fine: a report for `static.cloudflareinsights.com/beacon.min.js` means the zone's
-Cloudflare Web Analytics "automatic setup" is on and Cloudflare is adding its beacon to every page.
-The site promises no analytics (the Privacy page), so the policy leaves it out: turn Web Analytics
-off for filingwire.app in the Cloudflare dashboard rather than allowing it.
+1. **Find the blocked source.** Open the page with the console open, or check every page signed
+   out with Windows Chrome headless from WSL (a throwaway profile; delete it afterwards):
+
+   ```
+   "/mnt/c/Program Files/Google/Chrome/Application/chrome.exe" --headless=new \
+     --user-data-dir='C:\Users\<you>\AppData\Local\Temp\csp-check' --enable-logging=stderr \
+     --v=0 --virtual-time-budget=15000 --dump-dom https://www.filingwire.app/alerts 2>&1 >/dev/null \
+     | grep 'Content Security Policy'
+   ```
+2. **Fix it:** add that source to the narrowest directive in `contentSecurityPolicy` and deploy
+   (Pages builds each push to main). If sign-in is broken and the fix needs time, rename the header
+   to `Content-Security-Policy-Report-Only` for the meantime: browsers then only report.
+
+Expected and fine: a violation for `static.cloudflareinsights.com/beacon.min.js` means the zone's
+Cloudflare Web Analytics "automatic setup" is on and Cloudflare adds its beacon to every page. The
+site promises no analytics (the Privacy page), so the policy blocks it; turning Web Analytics off
+for filingwire.app in the Cloudflare dashboard stops the console message too.

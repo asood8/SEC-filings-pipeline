@@ -246,7 +246,9 @@ the production ranking.
 - **Security headers** (added 2026-10-08): every response, CORS preflights and cached responses
   included, carries `X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY`, and
   `Referrer-Policy: no-referrer` (URLs can carry search terms). The website sends its own
-  (ADR-0015).
+  (ADR-0015). Since 2026-11-18 also `Strict-Transport-Security: max-age=63072000;
+  includeSubDomains`: browsers already use HTTPS for any .app domain (the TLD is HSTS-preloaded),
+  but other clients don't know that list.
 - **Redis failures are fast and fail open.** The API's Redis client has 0.5 s timeouts and no
   retries. After an error, Redis is skipped for 10 s, so an outage costs one timeout, not one per
   request. Before this change, an outage added about 8 s to every request (redis-py retries by

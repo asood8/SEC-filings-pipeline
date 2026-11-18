@@ -111,6 +111,11 @@ We will build the website as a single-page app with **Vite, React, and TypeScrip
     the policy enforced the button rendered as a page-sized logo. `style-src` now allows inline
     styles (`'unsafe-inline'`): a hash would break whenever Google changes that CSS, and inline
     styles can't run code, while scripts stay limited to the site and Google's sign-in.
+  - Enforced 2026-11-18: under the report-only header, every page of the live site (17, signed
+    out, headless Chrome) reported only Cloudflare's Web Analytics beacon, which the zone adds
+    and the Privacy page rules out; enforcing the policy blocks it. Signed-in pages add nothing
+    but API calls (no profile pictures; webhook addresses are only form hints). The site also
+    sends `Strict-Transport-Security` (two years; .app is HSTS-preloaded anyway).
 - **Local development:** `make web` serves the site on port 3000, the origin the API's CORS
   settings and the Google OAuth client allow.
 

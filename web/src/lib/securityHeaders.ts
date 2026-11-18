@@ -4,8 +4,8 @@
 const GOOGLE_SIGN_IN = 'https://accounts.google.com/gsi/'
 
 /** The Content-Security-Policy: only this site, the API, and Google's sign-in button may load or
- * be called. It ships report-only (violations show in the browser console without blocking
- * anything) until it has been checked against the live site; then rename the header. */
+ * be called. Enforced since 2026-11-18, after every page of the live site showed no violation
+ * under the report-only header except Cloudflare's analytics beacon, which stays blocked. */
 export function contentSecurityPolicy(apiBaseUrl: string): string {
   const api = new URL(apiBaseUrl).origin
   return [
@@ -29,7 +29,10 @@ export function contentSecurityPolicy(apiBaseUrl: string): string {
 
 export function pagesHeaders(apiBaseUrl: string): string {
   const headers = {
-    'Content-Security-Policy-Report-Only': contentSecurityPolicy(apiBaseUrl),
+    'Content-Security-Policy': contentSecurityPolicy(apiBaseUrl),
+    // HTTPS only, for two years. Browsers already force it on every .app domain (the TLD is on
+    // their HSTS preload list); this covers clients that don't ship that list.
+    'Strict-Transport-Security': 'max-age=63072000; includeSubDomains',
     'X-Content-Type-Options': 'nosniff',
     'X-Frame-Options': 'DENY',
     'Referrer-Policy': 'strict-origin-when-cross-origin',

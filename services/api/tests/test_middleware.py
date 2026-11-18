@@ -328,6 +328,7 @@ def test_every_response_carries_the_security_headers(client: TestClient, path: s
     assert response.headers["X-Content-Type-Options"] == "nosniff"
     assert response.headers["X-Frame-Options"] == "DENY"
     assert response.headers["Referrer-Policy"] == "no-referrer"
+    assert response.headers["Strict-Transport-Security"] == "max-age=63072000; includeSubDomains"
 
 
 def test_preflights_carry_the_security_headers(client: TestClient) -> None:

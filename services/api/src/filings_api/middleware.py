@@ -28,7 +28,7 @@ logger = logging.getLogger(__name__)
 # see the current state). Not traced either (`app.instrument`).
 PROBE_PATHS = frozenset({"/healthz", "/readyz"})
 UNLIMITED_PATHS = PROBE_PATHS
-UNCACHED_PATHS = PROBE_PATHS | {"/openapi.json", "/docs", "/redoc"}
+UNCACHED_PATHS = PROBE_PATHS | {"/openapi.json", "/docs"}
 # Per-user responses: never cached here, and marked no-store so browsers and proxies don't either.
 PRIVATE_PATH_PREFIXES = (
     "/auth",

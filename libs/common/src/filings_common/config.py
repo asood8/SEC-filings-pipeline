@@ -169,6 +169,10 @@ class ApiSettings(BaseSettings):
     trust_proxy_headers: bool = False
     # How long a sign-in lasts before the user has to sign in again.
     session_lifetime_days: int = Field(default=7, ge=1, le=90)
+    # Postgres cancels any API statement that runs longer, and the API answers 503. The slowest
+    # real query, a keyword search for a very common word, takes 1-2 s on 10 years of 500
+    # companies (runbook, "Capacity planning").
+    statement_timeout_seconds: float = Field(default=5.0, gt=0)
     # Browsers then send the session cookie over https only (and to http://localhost).
     cookie_secure: bool = True
     # The website's origins, allowed to call the API with the session cookie (CORS), as JSON in

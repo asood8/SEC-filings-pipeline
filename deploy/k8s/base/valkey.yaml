@@ -1,6 +1,8 @@
 # Valkey: the SEC and Gemini rate-limit buckets, the API's rate limits, and its response cache.
 # All of it is disposable, so there is no volume and no persistence. As in docker-compose.yml,
-# the default noeviction policy makes writes fail loudly when it is full.
+# a full Valkey evicts the least recently used keys (ADR-0003): old response-cache entries, since
+# the rate-limit buckets are touched constantly. Refusing writes instead would let anyone who
+# fills the cache switch off the API's rate limit and stop discovery's SEC rate limiter.
 apiVersion: v1
 kind: Service
 metadata:
@@ -42,7 +44,16 @@ spec:
       containers:
         - name: valkey
           image: valkey/valkey:9.1.2-alpine
-          command: ["valkey-server", "--save", "", "--appendonly", "no", "--maxmemory", "128mb"]
+          command:
+            - valkey-server
+            - --save
+            - ""
+            - --appendonly
+            - "no"
+            - --maxmemory
+            - 128mb
+            - --maxmemory-policy
+            - allkeys-lru
           ports:
             - name: redis
               containerPort: 6379

@@ -6,17 +6,20 @@ unlimited rather than failing. After an error, Redis is skipped for a few second
 costs one timeout rather than one per request.
 """
 
+import ipaddress
 import logging
 import math
+import re
 import time
 from collections.abc import Callable
 from urllib.parse import urlencode, urlsplit
 
 import redis
-from fastapi import Request, Response
+from fastapi import FastAPI, Request, Response
 from fastapi.responses import JSONResponse
 from starlette.datastructures import Headers
 from starlette.middleware.base import BaseHTTPMiddleware, RequestResponseEndpoint
+from starlette.routing import compile_path
 from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
 from filings_api.auth import SESSION_COOKIE_NAMES
@@ -44,6 +47,9 @@ TOKEN_PATHS = frozenset({"/unsubscribe"})
 CACHE_PREFIX = "api-cache:v1"
 STATE_CHANGING_METHODS = frozenset({"POST", "PUT", "PATCH", "DELETE"})
 MAX_BODY_BYTES = 64 * 1024  # the largest real body, a batch of alerts, is a few KB
+# Rate limits count an IPv6 client by its /64: one home or server usually gets a whole /64
+# (billions of addresses), so counting single addresses would give it a fresh bucket per address.
+IPV6_CLIENT_PREFIX = 64
 
 
 class RedisBackoff:
@@ -64,10 +70,24 @@ class RedisBackoff:
         self._until = self._clock() + self._seconds
 
 
+def client_key(address: str) -> str:
+    """What the rate limit counts a client address as: an IPv4 address itself (also when written
+    as IPv4-mapped IPv6), an IPv6 address its /64 network. Anything else as given."""
+    try:
+        ip = ipaddress.ip_address(address.strip())
+    except ValueError:
+        return address
+    if isinstance(ip, ipaddress.IPv6Address):
+        if ip.ipv4_mapped is not None:
+            return str(ip.ipv4_mapped)
+        return str(ipaddress.IPv6Network((ip, IPV6_CLIENT_PREFIX), strict=False))
+    return str(ip)
+
+
 def client_id(request: Request, *, trust_proxy_headers: bool) -> str:
     if trust_proxy_headers and (forwarded := request.headers.get("CF-Connecting-IP")):
-        return forwarded
-    return request.client.host if request.client else "unknown"
+        return client_key(forwarded)
+    return client_key(request.client.host) if request.client else "unknown"
 
 
 class RateLimitMiddleware(BaseHTTPMiddleware):
@@ -91,8 +111,46 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         return await call_next(request)
 
 
-def cache_key(request: Request) -> str:
-    query = urlencode(sorted(request.query_params.multi_items()))
+def declared_query_parameters(app: FastAPI) -> dict[str, frozenset[str]]:
+    """Each GET route's query parameters, by path template, as its OpenAPI schema lists them:
+    the ones FastAPI reads. It ignores any others, so they can't change a response."""
+    paths = app.openapi().get("paths", {})
+    return {
+        path: frozenset(p["name"] for p in get.get("parameters", []) if p.get("in") == "query")
+        for path, operations in paths.items()
+        if (get := operations.get("get")) is not None
+    }
+
+
+QueryParameterTable = list[tuple[re.Pattern[str], frozenset[str]]]
+
+
+def route_query_parameters(request: Request) -> frozenset[str] | None:
+    """The query parameters the route serving this GET path reads; None for a path no route in
+    the API's schema serves (the probes, or a 404).
+
+    Matched against the schema's path templates, not the router: FastAPI nests included routers
+    in internal objects. Should a path ever match several templates, the key keeps the
+    parameters of all of them: an extra parameter in a key only costs a cache hit, while a
+    missing one would serve one request's response to another."""
+    app: FastAPI = request.app
+    table: QueryParameterTable | None = app.state.query_parameters
+    if table is None:
+        table = app.state.query_parameters = [
+            (compile_path(path)[0], names) for path, names in declared_query_parameters(app).items()
+        ]
+    path = request.scope["path"]
+    matched = [names for pattern, names in table if pattern.match(path)]
+    return frozenset().union(*matched) if matched else None
+
+
+def cache_key(request: Request, parameters: frozenset[str]) -> str:
+    """The path and the query parameters the route reads, sorted. Others are left out: they
+    can't change the response, and keeping them would let anyone mint endless keys for one
+    response (`?x=1`, `?x=2`, ...) and fill Redis."""
+    query = urlencode(
+        sorted((k, v) for k, v in request.query_params.multi_items() if k in parameters)
+    )
     return f"{CACHE_PREFIX}:{request.url.path}?{query}"
 
 
@@ -114,9 +172,11 @@ class CacheMiddleware(BaseHTTPMiddleware):
     """Caches successful JSON GET responses for a short time. Data changes slowly (new filings
     arrive minutes apart), so a short TTL needs no invalidation.
 
-    The cache key is only the URL, so anything that could differ between users stays out of the
-    cache: private paths, requests with a session cookie or an Authorization header, and
-    responses that set a cookie or say Cache-Control private or no-store.
+    The cache key is only the path and the query parameters the route reads, so anything that
+    could differ between users stays out of the cache: private paths, requests with a session
+    cookie or an Authorization header, and responses that set a cookie or say Cache-Control
+    private or no-store. Redis evicts the least recently used keys when it is full (its
+    maxmemory-policy), so a flood of distinct requests only pushes older entries out.
     """
 
     async def dispatch(self, request: Request, call_next: RequestResponseEndpoint) -> Response:
@@ -134,9 +194,10 @@ class CacheMiddleware(BaseHTTPMiddleware):
             or request.url.path in UNCACHED_PATHS
             or _is_per_user(request)
             or not backoff.available()
+            or (parameters := route_query_parameters(request)) is None
         ):
             return await call_next(request)
-        key = cache_key(request)
+        key = cache_key(request, parameters)
         try:
             cached = cache.get(key)
         except redis.RedisError:

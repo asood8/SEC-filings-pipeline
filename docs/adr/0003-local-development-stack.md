@@ -38,9 +38,14 @@ The services need Postgres (with pgvector), Redpanda, Valkey, and MongoDB to run
   | MongoDB | 768 MB | 200 MiB | WiredTiger cache 0.25 GB |
   | **Total** | **3.3 GB** | **~440 MiB** | |
 
-  Valkey keeps the default `noeviction` policy: when it is full, writes fail loudly instead of
-  silently evicting rate-limit or dedupe keys. Its contents are all disposable, so it doesn't
-  persist to disk.
+  Valkey evicts the least recently used keys when it is full (`allkeys-lru`). Its contents are
+  all disposable, so it doesn't persist to disk. _Changed 2026-11-18: it first kept the default
+  `noeviction` policy, so writes would fail loudly instead of silently dropping rate-limit keys.
+  But the API's response cache is filled by the public, one key per distinct URL: anyone could
+  fill Valkey, after which the API's rate limit fails open (it is built to survive a Redis outage)
+  and discovery's SEC rate limiter stops discovery. With LRU eviction a flood only pushes old
+  cache entries out; rate-limit buckets are touched constantly, so they stay, and one that is
+  evicted restarts full, at most one extra burst. Nothing in Valkey is dedupe state (ADR-0012)._
 - **Safe by default.** Ports bind to `127.0.0.1` only. Credentials come from a gitignored `.env`;
   `make up` creates it from `.env.example` on first run. They protect throwaway local containers
   only.

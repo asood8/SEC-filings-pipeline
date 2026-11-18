@@ -1,4 +1,4 @@
-from datetime import date
+from datetime import UTC, date, datetime, timedelta
 from typing import Any
 
 import pytest
@@ -65,6 +65,22 @@ def test_replay_one_filing_by_accession_number(seeded: Engine) -> None:
 def test_replay_discovered_everything_in_filing_order(seeded: Engine) -> None:
     assert replay_discovered(session_factory(seeded)) == 4
     assert [r.key for r in outbox(seeded)] == [f[0] for f in FILINGS]
+
+
+def test_replay_discovered_leaves_out_filings_whose_raw_documents_expired(
+    seeded: Engine, caplog: pytest.LogCaptureFixture
+) -> None:
+    now = datetime.now(UTC)
+    with session_factory(seeded).begin() as session:
+        session.execute(
+            sa.update(Filing)
+            .where(Filing.accession_no.in_(["0000320193-26-000001", "0000320193-26-000003"]))
+            .values(created_at=now - timedelta(days=400))
+        )
+    count = replay_discovered(session_factory(seeded), since=now - timedelta(days=365))
+    assert count == 2
+    assert [r.key for r in outbox(seeded)] == ["0000320193-26-000002", "0000320193-26-000004"]
+    assert "left out 2 filings discovered before" in caplog.text
 
 
 def test_replay_parsed_uses_stored_parser_versions_and_skips_unparsed(

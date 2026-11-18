@@ -928,8 +928,8 @@ add it to `EXPECTED` in `libs/common/src/filings_common/oci_inventory.py`.
 | Data | Where | Backup | If it is lost |
 |---|---|---|---|
 | Postgres: filings, summaries, search index, users, subscriptions, alerts sent | postgres-0's 10 Gi volume | Nightly `pg_dump --format=custom` at 03:30 UTC to R2: `filings-backups/postgres/filings-<UTC time>.dump`, kept 30 days (Terraform `backup_retention_days`, at most 90) | Restore (below) |
-| MongoDB Atlas M0: parsed filings | Atlas | None (M0 has no backups) | Parse again from the raw filings: `filings-replay discovered` (the parser reads R2, not SEC) |
-| Raw filings and exhibits | R2 `filings-raw` (no expiry) | None beyond R2's own durability | Public on EDGAR, but no tool fetches them again today |
+| MongoDB Atlas M0: parsed filings and call transcripts, kept a year (`DOCUMENT_RETENTION_DAYS`) | Atlas | None (M0 has no backups) | Parse the last year's filings again from the raw filings: `filings-replay discovered` (the parser reads R2, not SEC); transcripts are fetched again only within their 120-day lookback |
+| Raw filings and exhibits, kept a year (Terraform `raw_retention_days`) | R2 `filings-raw` | None beyond R2's own durability | Public on EDGAR, but no tool fetches them again today |
 | Redpanda topics | redpanda-0's volume | None | The relay recreates topics; `filings-replay` republishes from Postgres |
 | Valkey | Memory | None | Disposable (rate limits, cache) |
 | Sealed Secrets key | kube-system | Exported by hand to a password manager (deploy/k8s/README.md) | Every secret must be sealed again |
@@ -1042,19 +1042,24 @@ companies**, so about 2.8 times every rate below: about 10,000 filings and 700 8
 
 | Store | Growth per year | Free limit | Room at this rate |
 |---|---|---|---|
-| MongoDB Atlas M0 (parsed filings) | ~11 MB | 512 MB | ~45 years |
-| R2: raw filings | ~80 MB | 10 GB, shared with backups | ~30 years, counting the backups below |
+| MongoDB Atlas M0 (parsed filings, call transcripts) | ~85 MB at 99 companies (measured 2026-11-18), then flat: documents expire after a year | 512 MB | Bounded at about a year of documents (17% at 99 companies) |
+| R2: raw filings | ~1 GB at 99 companies (measured 2026-11-18), then flat: they expire after a year | 10 GB, shared with backups | Bounded at about a year of filings |
 | R2: backups | 30 kept dumps (below) | the same 10 GB | |
 | Postgres | ~30 MB | 10 Gi volume | Centuries of disk; the data outgrows `shared_buffers` (192 MB) in about 6 years, which only costs speed |
 | Redpanda | A few MB (events are about 200 bytes) | 10 Gi volume | Disk use is set by preallocated segments, not by the events: 32 MiB for each partition's active segment, about 0.7 GB for the 7 topics of 3 partitions (measured locally) |
 
-- **Backups:** dumps compress well (1.3 MB for the 14 MB local database; indexes are rebuilt, not
-  stored). Even at a quarter of the database's size, each year of history adds about 7.5 MB per
-  dump and 225 MB for the 30 kept. With the raw filings that is about 300 MB of R2 per year of
-  history: 3 GB after 10 years, and the 10 GB after about 30.
-- **More companies** scale these linearly. Per company and year: MongoDB ~0.31 MB, R2 raw
-  ~2.3 MB, Postgres ~0.9 MB. Atlas fills first: at 80% of 512 MB, 100 companies last about
-  13 years and 500 about 2.5.
+- **Backups** are now what grows R2 without bound, since Postgres keeps everything. Production's
+  dump was 3.0 MB on 2026-11-17 and grows about 4 KB per filing; the search embeddings are most of
+  it (83% of a local dump, 2026-11-18: they compress poorly; indexes are rebuilt, not stored). At
+  about 7,500 filings a year (99 companies) that is about 30 MB per dump for each year of history,
+  so about 0.9 GB of R2 a year with 30 kept: R2's 10 GB lasts about 9 years at 99 companies and
+  4 to 5 at 200, and the R2 usage alert fires at half. Then keep fewer (`backup_retention_days`)
+  or leave the embeddings out of the dump (`filings-index` rebuilds them after a restore).
+- **More companies** scale these linearly. Per company and year, measured on production over a
+  month that includes an earnings season (so on the high side): MongoDB ~0.85 MB, R2 raw ~10 MB;
+  Postgres ~0.9 MB (measured locally). MongoDB and R2's raw filings hold a year at most
+  ([how long documents are kept](adr/0006-form-4-parsing-and-key-fields.md#how-long-the-working-copies-are-kept-added-2026-11-18)),
+  so Atlas holds about 170 MB at 200 companies; past about 450, lower `DOCUMENT_RETENTION_DAYS`.
 - **SEC:** discovery's run takes about 7 s for 35 companies at 5 requests/s (about 20 s for 99,
   40 s for 199); within its 9-minute deadline one run could poll about 2,500 companies.
 - **The local LLM:** up to about 5 minutes per 8-K on two laptop cores (the A1 is measured by the
@@ -1072,9 +1077,10 @@ Where to look: Atlas UI (Metrics, data size); `rclone size r2:filings-raw` and
 `kubectl -n filings exec redpanda-0 -- df -h /var/lib/redpanda/data`; Grafana Cloud's usage
 dashboards.
 
-If one nears its limit: parsed payloads in MongoDB can be deleted and re-derived from the raw
-filings (`filings-replay discovered`); `backup_retention_days` can be lowered; anything else is a
-design decision for an ADR.
+If one nears its limit: lower `DOCUMENT_RETENTION_DAYS` (MongoDB; in deploy/k8s/base/config.env,
+applied when the parser and the nightly transcript job next start, and MongoDB deletes the
+now-expired documents within minutes) together with Terraform's `raw_retention_days` (R2);
+`backup_retention_days` can be lowered; anything else is a design decision for an ADR.
 
 ### Query speed at volume (measured 2026-10-08)
 

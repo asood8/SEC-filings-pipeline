@@ -321,11 +321,14 @@ class BodySizeLimitMiddleware:
 
 # Sent with every response. The API serves JSON (and its own docs page), so none of these limits a
 # legitimate client; they stop browsers from guessing content types, framing the API in another
-# site, or leaking full URLs (which can carry search terms) in the Referer header.
+# site, leaking full URLs (which can carry search terms) in the Referer header, or calling the API
+# over plain HTTP. (Browsers already use HTTPS for every .app domain, whose TLD is on their HSTS
+# preload list; the header covers clients without that list. Over plain HTTP they ignore it.)
 SECURITY_HEADERS = {
     "X-Content-Type-Options": "nosniff",
     "X-Frame-Options": "DENY",
     "Referrer-Policy": "no-referrer",
+    "Strict-Transport-Security": "max-age=63072000; includeSubDomains",
 }
 
 

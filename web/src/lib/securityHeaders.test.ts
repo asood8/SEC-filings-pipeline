@@ -25,6 +25,11 @@ describe('security headers', () => {
     expect(path).toBe('/*')
     expect(lines.every((line) => /^ {2}[A-Za-z-]+: \S/.test(line))).toBe(true)
     expect(file).toContain('  X-Content-Type-Options: nosniff\n')
-    expect(file).toContain('Content-Security-Policy-Report-Only:')
+    // Enforced, not report-only.
+    expect(file).toContain('  Content-Security-Policy: default-src ')
+    expect(file).not.toContain('Report-Only')
+    expect(file).toContain(
+      '  Strict-Transport-Security: max-age=63072000; includeSubDomains\n',
+    )
   })
 })

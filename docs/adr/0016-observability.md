@@ -31,9 +31,9 @@ The metrics from brief §7, dashboards, alerts, and a local viewer are the secon
   instrumentation for the API's request spans and metrics. No other auto-instrumentation.
 - **One setup call per process**, `filings_common.telemetry.setup_telemetry(service_name)`. It
   configures logging and, when an endpoint is set, a tracer provider with a batching span
-  processor and gzip compression, and a meter provider (see Metrics). The CLIs shut it down on
-  exit (after their SIGTERM handling), which exports the spans still buffered and the metrics'
-  final values.
+  processor and gzip compression, a meter provider (see Metrics), and, since 2026-11-18, a logger
+  provider (see Logs). The CLIs shut it down on exit (after their SIGTERM handling), which exports
+  the spans and log lines still buffered and the metrics' final values.
 - **Standard configuration variables**, read through a settings class so they also work from
   `.env`:
   - `OTEL_EXPORTER_OTLP_ENDPOINT`: base URL; spans go to `<endpoint>/v1/traces` and metrics to
@@ -45,8 +45,9 @@ The metrics from brief §7, dashboards, alerts, and a local viewer are the secon
   - `OTEL_SERVICE_NAME` (replaces the service's own name), `OTEL_RESOURCE_ATTRIBUTES` (such as
     `deployment.environment.name`), and `OTEL_SDK_DISABLED`. The SDK's own variables still apply,
     such as `OTEL_TRACES_SAMPLER` (default: keep every trace).
-  - `OTEL_TRACES_EXPORTER` and `OTEL_METRICS_EXPORTER` (`otlp` or `none`) turn off one signal,
-    and `OTEL_METRIC_EXPORT_INTERVAL` sets the milliseconds between metric exports (60000).
+  - `OTEL_TRACES_EXPORTER`, `OTEL_METRICS_EXPORTER`, and `OTEL_LOGS_EXPORTER` (`otlp` or `none`)
+    turn off one signal, and `OTEL_METRIC_EXPORT_INTERVAL` sets the milliseconds between metric
+    exports (60000).
 - **Log correlation:** while a span is active, each log line ends with `trace_id=… span_id=…`, so
   a trace's log lines can be found from the trace and vice versa.
 
@@ -111,8 +112,42 @@ session token, an API key, or LLM prompt or answer text.
   redacted. Behind Cloudflare Tunnel, the client address is the tunnel connector's, not the
   visitor's.
 - An SMTP "recipient refused" error used to quote the address; it now gives only the SMTP code.
+- An unsubscribe token is a credential: the API records `/unsubscribe`'s query as
+  `token=REDACTED` on its spans and, since 2026-11-18, in uvicorn's access log too
+  (`AccessLogTokenFilter`), whose lines stay on stderr anyway (see Logs).
 - Tests check this: delivery spans, LLM and embedding spans, and sign-in requests are searched for
   the private values they handled.
+
+### Logs (added 2026-11-18)
+
+Until 2026-11-18 log lines went only to the containers' stderr: Kubernetes keeps the current and
+previous run of each container, so after a restart or two, or once a CronJob's pod was cleaned up,
+the record of a fault was gone. Now `setup_telemetry` also exports them over OTLP, through the
+cluster's collector (whose `logs` pipeline already forwarded to Grafana Cloud), into Grafana
+Cloud's Loki, kept 14 days (the free tier's retention, and what the Privacy page promises).
+
+- **What is exported:** each process's log lines at INFO and up, with the trace and span that were
+  active, the service's resource attributes, and, for an exception, its type, message, and stack
+  trace. Under uvicorn also uvicorn's own logger (start, stop, errors in the app), which doesn't
+  propagate to the root logger. The handler is the one OpenTelemetry now maintains
+  (`opentelemetry-instrumentation-logging`; the SDK's own is deprecated).
+- **What isn't:** uvicorn's access log, one line per request, since every request already has a
+  span (and the client address is the tunnel connector's); the OpenTelemetry SDK's own lines, so a
+  failing export can't feed itself; and lines over **120 a minute per process**
+  (`LOG_EXPORT_LIMIT_PER_MINUTE`), where one stderr line says the limit was hit. Everything still
+  goes to stderr.
+- **Volume:** the services log a few lines per filing, poll, or alert, megabytes a month. The
+  limit bounds a fault that logs in a loop: seven long-running services at the limit all month
+  come to about 11 GB, under the free tier's 50 GB.
+- **Memory:** about 4 MB more per process (83 vs 79 MB peak with the services' libraries).
+- **Privacy:** the rules above apply to log lines as they always did; they are now kept off the
+  VM. The messages that quote delivery errors carry only the service and status or the network
+  error, never the target.
+- **Finding them:** Grafana Cloud, Explore, Loki: `{service_name="filings-notifier"}`, with
+  `|= "dead-lettering"` and the like; a line logged during a span links to its trace.
+- **Checked** against the local viewer: a script's lines and the API under uvicorn arrived in Loki
+  with service name, severity, and trace ID; an error in the app arrived with its stack trace; no
+  access-log line and no unsubscribe token did.
 
 ## Alternatives considered
 

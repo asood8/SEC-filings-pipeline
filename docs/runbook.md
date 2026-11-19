@@ -66,9 +66,12 @@ kubectl -n filings exec -it postgres-0 -- sh -c 'psql -U "$POSTGRES_USER" -d "$P
   instead: `kubectl -n filings exec deploy/parser -- filings-rebuild-key-fields --form-type 4`
   rewrites Form 4 key fields and transaction lines from MongoDB, for example after a migration
   adds a key-field table (it calls nothing at SEC and publishes nothing).
-- **Logs** stay in the cluster (only traces and metrics go to Grafana Cloud), and only the current
-  and previous run of each container are kept. Lines logged while a filing or a request is being
-  handled end with `trace_id=… span_id=…`; look the trace up in Grafana Cloud's Tempo.
+- **Logs** go to Grafana Cloud as well as stderr (since 2026-11-18, kept 14 days; ADR-0016):
+  Explore, Loki, `{service_name="filings-summarizer"}` (or `filings-api`, `filings-notifier`, ...),
+  narrowed with `|= "dead-lettering"` and the like. A line logged during a span links to its trace
+  in Tempo; on stderr the same line ends with `trace_id=… span_id=…`. Not exported, so only in
+  `kubectl -n filings logs` (current and previous run of each container): uvicorn's access log
+  (one line per request; each request has a span instead) and lines past 120 a minute per process.
 - **Dashboards:** "Filingwire: Pipeline" and "Filingwire: API", in the "Filingwire" folder.
 - **Locally**, the same tools: `docker compose exec redpanda rpk ...`, `uv run filings-replay ...`.
 

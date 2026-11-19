@@ -181,6 +181,8 @@ which the notifier adds and the API checks. Two links, the same token:
 Email only: a Discord or Slack alert goes to a channel others can read, and a link there would
 let any of them stop the owner's alert. Tokens don't expire; changing the secret voids them.
 Without the secret (or `ALERTS_API_URL`), emails carry no links and `/unsubscribe` answers 404.
+The token works as a credential, so it never appears in the API's traces or (since 2026-11-18) in
+uvicorn's access log: both show `token=REDACTED` (ADR-0016, Privacy).
 
 ## Alternatives considered
 

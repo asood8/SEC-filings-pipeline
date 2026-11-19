@@ -209,7 +209,10 @@ kubectl -n filings logs job/<the newest> -c upload               # rclone's erro
 - **upload failed with 401 or 403:** the `r2-backups` token was revoked or lost access to the
   bucket ([Rotating secrets](#rotating-secrets)).
 - **dump failed:** Postgres was down or the password changed; or the dump outgrew the job's
-  2 GiB scratch volume (`sizeLimit` in deploy/k8s/base/postgres-backup.yaml).
+  2 GiB scratch volume (`sizeLimit` in deploy/k8s/base/postgres-backup.yaml). "Connection
+  refused" in the dump's first second while Postgres runs normally is the network policy not yet
+  admitting the new pod: the dump waits for `pg_isready` since 2026-11-18, when that failed every
+  try (`kubectl -n filings get pod postgres-0` shows no restart in that case).
 - **No job at all:** the node was down at 03:30 for over an hour (`startingDeadlineSeconds`).
 - **report failed** while upload succeeded: the dump is in R2; the alert clears after the next
   night. The report's log says why.

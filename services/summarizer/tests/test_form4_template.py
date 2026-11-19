@@ -93,6 +93,26 @@ def test_derivative_award() -> None:
     assert s.headline == "Brad D Smith received 4,086 Restricted Stock Unit Award (AMZN)"
 
 
+def test_a_form_4_without_transactions_says_so() -> None:
+    # Truist: an insider's last Form 4, reporting only that the status ended (no trades, no
+    # holdings). It dead-lettered on 2026-11-19, when the template assumed at least one trade.
+    s = summary("0001681329-26-000008")
+    assert s.headline.endswith(" filed a Form 4 with no transactions")
+    assert "Truist Financial Corp (TFC) for the period ending Oct 16, 2026 that reports no" in (
+        s.summary
+    )
+    assert s.summary.endswith(
+        "The filer's remarks: “The reporting person's status as an insider terminated on"
+        " October 16, 2026.”"
+    )
+    assert s.key_points == ["No transactions reported"]
+    again = summarize_form4(
+        parse_form4((FIXTURES / "0001681329-26-000008.xml").read_bytes()),
+        Amended(original_filed_at=date(2026, 10, 17)),
+    )
+    assert again.headline.startswith("Amended: ")
+
+
 @pytest.mark.parametrize("path", sorted(FIXTURES.glob("*.xml")), ids=lambda p: p.stem)
 def test_every_fixture_gets_a_clean_summary(path: Path) -> None:
     s = summarize_form4(parse_form4(path.read_bytes()))

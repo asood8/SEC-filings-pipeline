@@ -69,6 +69,8 @@ class Source(BaseModel):
     ticker: str
     # A page that links every transcript, and a pattern for the links (matched against absolute
     # URLs). Named groups order them, newest first: `date` (YYYY-MM-DD), or `year` and `quarter`.
+    # A link in a page's embedded JSON may leave `year` out (its group unmatched): the year of
+    # the document list it is in ({"year":2026,"documents":[...]}) dates it.
     listing: str | None = None
     link: re.Pattern[str] | None = None
     keep: int = Field(default=2, ge=1)  # how many of the newest links to consider
@@ -330,6 +332,14 @@ _LINKS = re.compile(
     r'''|"(?:link|url|href)"\s*:\s*"(?P<json>[^"]+)"''',
     re.IGNORECASE,
 )
+# The year of a JSON document list: {"year":2026,"documents":[...]}.
+_JSON_YEAR = re.compile(r'"year"\s*:\s*"?(?P<year>\d{4})\b')
+
+
+def _json_year(page: str, position: int) -> int | None:
+    """The year of the JSON document list a link at `position` is in: the last "year" before it."""
+    years = list(_JSON_YEAR.finditer(page, 0, position))
+    return int(years[-1]["year"]) if years else None
 
 
 def listing_candidates(page: str, base_url: str, source: Source) -> list[Candidate]:
@@ -343,8 +353,16 @@ def listing_candidates(page: str, base_url: str, source: Source) -> list[Candida
             continue
         groups = match.groupdict()
         day = date.fromisoformat(groups["date"]) if groups.get("date") else None
-        order = (day.toordinal(),) if day else (int(groups["year"]), int(groups["quarter"]))
-        found[url] = (order, day)
+        if day:
+            found[url] = ((day.toordinal(),), day)
+            continue
+        year = groups.get("year")
+        if year is None and found_link["json"]:
+            # A file named without its year (Ford's newest, at first): its list's year.
+            year = _json_year(page, found_link.start())
+        if year is None or groups.get("quarter") is None:
+            continue  # can't be ordered, so can't be told apart from an old one
+        found[url] = ((int(year), int(groups["quarter"])), None)
     newest = sorted(found.items(), key=lambda item: item[1][0], reverse=True)[: source.keep]
     return [Candidate(url, day) for url, (_, day) in newest]
 

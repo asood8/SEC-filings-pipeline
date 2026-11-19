@@ -57,10 +57,10 @@ link = 'webcast_transcript/NIKE[-+]Inc\.?[-+]Q(?P<quarter>[1-4])FY(?P<year>\d{2}
 [[source]]
 ticker = "F"
 # The links are in the JSON the page embeds for its document lists. A new transcript can first
-# appear under a name without its year (content_files/Ford-Q3-Earnings-Transcript.pdf), which
-# can't be dated, so it's read once it moves under doc_financials/<year>/q<quarter>/.
+# appear under a name without its year (content_files/Ford-Q3-Earnings-Transcript.pdf), dated by
+# the year of the list it is in, before it moves under doc_financials/<year>/q<quarter>/.
 listing = "https://shareholder.ford.com/financials/default.aspx"
-link = 'doc_financials/(?P<year>\d{4})/q(?P<quarter>[1-4])/Ford-[^/]*Transcript[^/]*\.pdf$'
+link = '(?:doc_financials/(?P<year>\d{4})/q[1-4]|content_files)/Ford-Q(?P<quarter>[1-4])[^/]*Transcript[^/]*\.pdf$'
 
 [[source]]
 ticker = "DELL"

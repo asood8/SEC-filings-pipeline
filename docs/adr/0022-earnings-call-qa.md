@@ -70,8 +70,11 @@ pages for transcripts.
 So **3 of 64 are usable**, again all through their own transcripts. Home Depot, Lowe's and Delta
 publish transcripts, but their terms couldn't be read here; reading them in a browser could add
 them. Ford's newest transcript can first appear under a name without its year
-(`content_files/Ford-Q3-Earnings-Transcript.pdf`), which can't be dated safely, so its source reads
-only the dated names under `doc_financials/`.
+(`content_files/Ford-Q3-Earnings-Transcript.pdf`), which at first couldn't be dated safely, so its
+source read only the dated names under `doc_financials/`. That left Ford's Q3 2026 call unread
+for weeks and raised the overdue alert (2026-11-18). Since then a JSON-listed link without a
+year takes the year of the document list it sits in (`{"year":2026,"documents":[...]}`), and the
+transcript's own date still decides the call day; a link with no year anywhere is still skipped.
 
 Three changes came with it: listing pages are also read for links in the JSON some sites embed
 for their document lists (Ford's); an analyst's firm may be written with initials ("J.P. Morgan"

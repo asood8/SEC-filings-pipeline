@@ -4,6 +4,7 @@ Sites' pages and transcripts are written for these tests: their terms don't allo
 the real ones."""
 
 import re
+import socket
 from datetime import date
 from pathlib import Path
 from typing import Any
@@ -218,6 +219,7 @@ class FakeSite:
         self.requests: list[str] = []
         self.waits: list[float] = []
         self.now = 0.0
+        self.addresses: dict[str, list[str]] = {}
 
     def handler(self, request: httpx2.Request) -> httpx2.Response:
         self.requests.append(str(request.url))
@@ -230,8 +232,16 @@ class FakeSite:
             self.now += seconds
 
         return SiteClient(
-            AGENT, transport=httpx2.MockTransport(self.handler), sleep=sleep, clock=lambda: self.now
+            AGENT,
+            transport=httpx2.MockTransport(self.handler),
+            sleep=sleep,
+            clock=lambda: self.now,
+            resolve=self.resolve,
         )
+
+    def resolve(self, host: str) -> list[str]:
+        """Every test host is public, unless the test says otherwise."""
+        return self.addresses.get(host, ["1.1.1.1"])
 
 
 def ok(body: bytes | str, content_type: str = "text/html") -> httpx2.Response:
@@ -310,6 +320,49 @@ def test_redirects_are_followed_checking_each_sites_robots_txt() -> None:
         document = client.get("https://a.example/hop")
     assert document is not None
     assert document.url == "https://a.example/there"
+
+
+@pytest.mark.parametrize(
+    "location",
+    [
+        "http://a.example/doc",  # not https
+        "https://a.example:8443/doc",  # not the default port
+        "https://169.254.169.254/opc/v2/instance/",  # Oracle's metadata service
+        "https://10.43.0.10/",  # a cluster address
+        "https://[::1]/doc",
+        "https://internal.example/doc",  # a name that resolves to a private address
+        "https://mixed.example/doc",  # one public address and one private
+        "https://gone.example/doc",  # a name that doesn't resolve
+    ],
+)
+def test_redirects_only_go_to_public_https_addresses(location: str) -> None:
+    site = FakeSite({"https://a.example/go": httpx2.Response(302, headers={"location": location})})
+    site.addresses = {
+        "internal.example": ["10.0.0.5"],
+        "mixed.example": ["1.1.1.1", "fd00::1"],
+        "gone.example": [],
+    }
+    with site.client() as client, pytest.raises(SourceError, match=re.escape(location)):
+        client.get("https://a.example/go")
+    # Nothing was asked of the address it was sent to, not even its robots.txt.
+    assert site.requests == ["https://a.example/robots.txt", "https://a.example/go"]
+
+
+def test_the_first_address_is_checked_too() -> None:
+    site = FakeSite({})
+    site.addresses = {"a.example": ["127.0.0.1"]}
+    with site.client() as client, pytest.raises(SourceError, match="not a public address"):
+        client.get("https://a.example/doc")
+    assert site.requests == []
+
+
+def test_a_name_that_fails_to_resolve_fails_the_source() -> None:
+    def broken(host: str) -> list[str]:
+        raise socket.gaierror(-2, "Name or service not known")
+
+    client = SiteClient(AGENT, transport=httpx2.MockTransport(lambda r: ok("x")), resolve=broken)
+    with client, pytest.raises(SourceError, match="Name or service not known"):
+        client.get("https://a.example/doc")
 
 
 def test_server_errors_and_oversized_documents_fail_the_source() -> None:

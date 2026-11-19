@@ -190,3 +190,9 @@ On the laptop, against the real sites and the local model only (no Gemini):
 - The small model's known weakness (who did what) matters more in Q&A, which is mostly who said
   what. The labels make that measurable.
 - The brief's open decision on earnings-call Q&A is closed.
+- _Added 2026-11-18 (security review):_ the site client fetches only https on the default port
+  from hosts whose addresses are all public, for every request and redirect, checked before the
+  host's robots.txt. A redirect from a company's site or CDN therefore can't send the job to the
+  cluster's services, the node, or Oracle's metadata service (whose legacy endpoints are off
+  anyway, ADR-0018). The connection resolves the host again, so DNS that changes its answer in
+  between could still get through; the sources are the companies' own sites.

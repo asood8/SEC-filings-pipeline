@@ -4,17 +4,23 @@ from collections.abc import Callable, Iterator
 from typing import Any
 
 import pytest
+import sqlalchemy as sa
 from fastapi import FastAPI
 from fastapi.responses import JSONResponse
 from fastapi.testclient import TestClient
+from sqlalchemy.engine import Engine
 
 from filings_api.app import api_redis_client
 from filings_api.middleware import (
     MAX_BODY_BYTES,
     BodySizeLimitMiddleware,
     RedisBackoff,
+    client_key,
+    declared_query_parameters,
     is_private_path,
 )
+from filings_api.queries import SessionDep
+from filings_common.db import create_engine, session_factory
 
 ClientFactory = Callable[..., TestClient]
 
@@ -42,6 +48,93 @@ def test_untrusted_proxy_header_is_ignored(make_client: ClientFactory) -> None:
     assert client.get("/companies", headers={"CF-Connecting-IP": "1.1.1.1"}).status_code == 200
     # A spoofed header doesn't buy a fresh bucket.
     assert client.get("/companies", headers={"CF-Connecting-IP": "2.2.2.2"}).status_code == 429
+
+
+@pytest.mark.parametrize(
+    ("address", "key"),
+    [
+        ("203.0.113.7", "203.0.113.7"),
+        (" 203.0.113.7 ", "203.0.113.7"),
+        ("::ffff:203.0.113.7", "203.0.113.7"),  # IPv4 written as IPv6 is still that IPv4 client
+        ("2001:db8:1:2:aaaa:bbbb:cccc:dddd", "2001:db8:1:2::/64"),
+        ("2001:db8:1:2::1", "2001:db8:1:2::/64"),
+        ("2001:db8:1:3::1", "2001:db8:1:3::/64"),
+        ("testclient", "testclient"),  # not an address: as given
+    ],
+)
+def test_clients_are_counted_by_ipv4_address_or_ipv6_64(address: str, key: str) -> None:
+    assert client_key(address) == key
+
+
+def test_one_ipv6_network_shares_one_bucket(make_client: ClientFactory) -> None:
+    client = make_client(rate_limit_per_minute=60, rate_limit_burst=1, trust_proxy_headers=True)
+
+    def status(address: str) -> int:
+        return client.get("/companies", headers={"CF-Connecting-IP": address}).status_code
+
+    assert status("2001:db8:1:2::1") == 200
+    # Another address in the same /64 is the same client: no fresh bucket.
+    assert status("2001:db8:1:2:ffff:ffff:ffff:ffff") == 429
+    assert status("2001:db8:1:3::1") == 200  # the next /64 is someone else
+
+
+def test_cache_keys_ignore_parameters_the_route_does_not_read(make_client: ClientFactory) -> None:
+    client = make_client(cache_ttl_seconds=60)
+    first = client.get("/companies", params={"watchlist": "true"})
+    # FastAPI ignores unknown parameters, so these are the same request: served from the cache
+    # rather than each stored under a key of its own.
+    junk = [client.get("/companies", params={"watchlist": "true", "x": n}) for n in range(3)]
+    assert first.headers["X-Cache"] == "MISS"
+    assert [r.headers["X-Cache"] for r in junk] == ["HIT"] * 3
+    assert all(r.json() == first.json() for r in junk)
+    # A parameter the route reads still makes a different key.
+    assert client.get("/companies", params={"watchlist": "false"}).headers["X-Cache"] == "MISS"
+
+
+def test_routes_outside_the_schema_are_not_cached(make_client: ClientFactory) -> None:
+    client = make_client(cache_ttl_seconds=60)
+    calls = {"n": 0}
+
+    def hidden() -> JSONResponse:
+        calls["n"] += 1
+        return JSONResponse({"calls": calls["n"]})
+
+    assert isinstance(client.app, FastAPI)
+    client.app.add_api_route("/hidden", hidden, methods=["GET"], include_in_schema=False)
+    assert [client.get("/hidden").json()["calls"] for _ in range(2)] == [1, 2]
+
+
+def test_every_public_get_route_declares_its_query_parameters(client: TestClient) -> None:
+    """The cache key keeps only these; a route reading request.query_params directly would see
+    parameters the key leaves out, and cached responses would mix up requests."""
+    assert isinstance(client.app, FastAPI)
+    declared = declared_query_parameters(client.app)
+    assert declared["/filings"] >= {"limit", "cursor", "form_type", "cik"}
+    assert declared["/search"] >= {"q", "mode", "limit"}
+    assert declared["/companies"] >= {"watchlist", "q", "cursor"}
+    assert declared["/filings/{accession_no}"] == frozenset()
+
+
+def test_statements_over_the_timeout_answer_503(make_client: ClientFactory, seeded: Engine) -> None:
+    url = seeded.url.render_as_string(hide_password=False)
+    engine = create_engine(url, hide_parameters=True, statement_timeout_seconds=0.1)
+    try:
+        client = make_client(sessions=session_factory(engine))
+
+        def slow(session: SessionDep) -> dict[str, int]:
+            session.execute(sa.text("SELECT pg_sleep(2)"))
+            return {"done": 1}
+
+        assert isinstance(client.app, FastAPI)
+        client.app.add_api_route("/slow", slow, methods=["GET"])
+        response = client.get("/slow")
+        assert response.status_code == 503
+        assert response.headers["Retry-After"] == "5"
+        assert response.json() == {"detail": "the database took too long; try again shortly"}
+        assert response.headers["X-Content-Type-Options"] == "nosniff"  # still a normal response
+        assert client.get("/companies").status_code == 200  # the connection is fine afterwards
+    finally:
+        engine.dispose()
 
 
 def test_responses_are_cached_per_url(make_client: ClientFactory) -> None:

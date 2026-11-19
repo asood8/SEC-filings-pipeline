@@ -618,11 +618,27 @@ class OutboxEvent(Base):
     published_at: Mapped[datetime | None]
 
 
-def create_engine(url: str, *, hide_parameters: bool = False) -> sa.Engine:
+# Postgres's SQLSTATE when statement_timeout cancels a statement.
+QUERY_CANCELED = "57014"
+
+
+def create_engine(
+    url: str, *, hide_parameters: bool = False, statement_timeout_seconds: float | None = None
+) -> sa.Engine:
     """`hide_parameters` keeps bound values out of SQLAlchemy's error messages and logs, for
     services whose queries carry user secrets (the API stores webhook URLs). Postgres's own error
-    details can still quote a row, e.g. the key in a unique violation."""
-    return sa.create_engine(url, pool_pre_ping=True, hide_parameters=hide_parameters)
+    details can still quote a row, e.g. the key in a unique violation.
+
+    `statement_timeout_seconds` makes Postgres cancel any statement that runs longer (SQLSTATE
+    `QUERY_CANCELED`), for services that answer the public (the API), so a burst of slow queries
+    can't hold every connection."""
+    connect_args: dict[str, str] = {}
+    if statement_timeout_seconds is not None:
+        milliseconds = max(1, round(statement_timeout_seconds * 1000))
+        connect_args["options"] = f"-c statement_timeout={milliseconds}"
+    return sa.create_engine(
+        url, pool_pre_ping=True, hide_parameters=hide_parameters, connect_args=connect_args
+    )
 
 
 def session_factory(engine: sa.Engine) -> sessionmaker[Session]:

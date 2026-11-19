@@ -9,6 +9,7 @@ from datetime import timedelta
 from typing import Any
 
 import redis
+import sqlalchemy as sa
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
@@ -51,7 +52,7 @@ from filings_common.config import (
     RedisSettings,
     UnsubscribeSettings,
 )
-from filings_common.db import create_engine, session_factory
+from filings_common.db import QUERY_CANCELED, create_engine, session_factory
 from filings_common.embeddings import Embedder, embedder_from_settings
 from filings_common.ratelimit import RedisRateLimit
 from filings_common.telemetry import Telemetry, setup_telemetry
@@ -158,7 +159,9 @@ def create_app(
             yield
             return
         engine = create_engine(
-            DatabaseSettings().database_url.get_secret_value(), hide_parameters=True
+            DatabaseSettings().database_url.get_secret_value(),
+            hide_parameters=True,
+            statement_timeout_seconds=settings.statement_timeout_seconds,
         )
         client = api_redis_client(RedisSettings().redis_url)
         google_keys = GoogleSigningKeys()
@@ -187,6 +190,7 @@ def create_app(
     app.state.cache = None
     app.state.query_embeddings = None
     app.state.rate_limit = None
+    app.state.query_parameters = None  # filled on first use (middleware.route_query_parameters)
     app.state.redis_backoff = RedisBackoff()
     app.state.readiness = DatabaseReadiness()
     app.state.cache_ttl_seconds = settings.cache_ttl_seconds
@@ -221,6 +225,23 @@ def create_app(
     )
     # Outside everything, so even CORS preflights and cached responses carry them.
     app.add_middleware(SecurityHeadersMiddleware)
+
+    @app.exception_handler(sa.exc.OperationalError)
+    async def database_timeout(request: Request, exc: sa.exc.OperationalError) -> JSONResponse:
+        """A statement the API's statement timeout cancelled: 503, so the client tries again
+        later. Any other database error is a 500, as before."""
+        if getattr(exc.orig, "sqlstate", None) != QUERY_CANCELED:
+            raise exc
+        logger.warning(
+            "database statement cancelled after the timeout: %s %s",
+            request.method,
+            request.url.path,
+        )
+        return JSONResponse(
+            {"detail": "the database took too long; try again shortly"},
+            status_code=503,
+            headers={"Retry-After": "5"},
+        )
 
     @app.get("/healthz", include_in_schema=False)
     def healthz() -> dict[str, str]:

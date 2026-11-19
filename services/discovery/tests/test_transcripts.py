@@ -200,12 +200,31 @@ def test_a_listing_reads_links_from_the_json_a_page_embeds() -> None:
     source = Source(
         ticker="X",
         listing="https://x.example/financials",
-        link=r"files/(?P<year>\d{4})/q(?P<quarter>[1-4])/X-Q[1-4]-\d{4}-Transcript\.pdf$",
+        link=r"files/(?:(?P<year>\d{4})/q[1-4]/)?X-Q(?P<quarter>[1-4])[^/]*Transcript\.pdf$",
+        keep=3,
     )
+    # The Q3 file's name gives no year: the list it is in does (Ford's newest, 2026-11).
     assert listing_candidates(page, "https://x.example/financials", source) == [
+        Candidate("https://cdn.example/files/X-Q3-Transcript.pdf", None),
         Candidate("https://cdn.example/files/2026/q2/X-Q2-2026-Transcript.pdf", None),
         Candidate("https://cdn.example/files/2026/q1/X-Q1-2026-Transcript.pdf", None),
-    ]  # not the Q3 file, whose name gives no year
+    ]
+    # Each list's year: last year's Q4 comes after this year's quarters.
+    two_years = page.replace(
+        '{"year":2026,',
+        '{"year":2025,"documents":[{"text":"Q4","link":"//cdn.example/files/X-Q4-Transcript.pdf"}]},'
+        '{"year":2026,',
+    )
+    assert [c.url for c in listing_candidates(two_years, "https://x.example/f", source)] == [
+        "https://cdn.example/files/X-Q3-Transcript.pdf",
+        "https://cdn.example/files/2026/q2/X-Q2-2026-Transcript.pdf",
+        "https://cdn.example/files/2026/q1/X-Q1-2026-Transcript.pdf",
+    ]
+    # Without a year anywhere (a plain link, or JSON without one), it can't be dated: left out.
+    undated = '<a href="//cdn.example/files/X-Q3-Transcript.pdf">Q3</a>'
+    assert listing_candidates(undated, "https://x.example/f", source) == []
+    no_year = '{"documents":[{"text":"Q3","link":"//cdn.example/files/X-Q3-Transcript.pdf"}]}'
+    assert listing_candidates(no_year, "https://x.example/f", source) == []
 
 
 # --- Reading sites --------------------------------------------------------------------------------

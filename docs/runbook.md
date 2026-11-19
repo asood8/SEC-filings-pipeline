@@ -31,6 +31,7 @@ applying, reaching the cluster, Terraform state).
 - [Updating a GitHub Action](#updating-a-github-action)
 - [Dependency update pull requests](#dependency-update-pull-requests)
 - [Updating a container image](#updating-a-container-image)
+- [Updating Swagger UI](#updating-swagger-ui)
 - [SEC 429s and fair access](#sec-429s-and-fair-access)
 - [Swapping the local LLM model](#swapping-the-local-llm-model)
 - [Changing search ranking or the embedding model](#changing-search-ranking-or-the-embedding-model)
@@ -564,6 +565,22 @@ request, after reading the release notes:
 
 `docker compose config` and the manifest tests run in CI; build the images (`make images`) and
 start the stack (`make up`) before merging.
+
+## Updating Swagger UI
+
+The API's `/docs` page loads Swagger UI from jsDelivr, pinned to one version with Subresource
+Integrity hashes (`services/api/src/filings_api/docs_page.py`): the browser refuses a file whose
+hash differs, so a changed file breaks the page (blank, with an integrity error in the console)
+instead of running. Dependabot doesn't see this pin. To move it:
+
+1. Pick a `swagger-ui-dist` release at least a week old (`npm view swagger-ui-dist time`).
+2. Download its tarball from the npm registry and check it against the registry's
+   `dist.integrity` (`npm view swagger-ui-dist@<version> dist`).
+3. Hash `package/swagger-ui-bundle.js` and `package/swagger-ui.css` from the tarball:
+   `openssl dgst -sha384 -binary <file> | base64 -w0`, and check that
+   `https://cdn.jsdelivr.net/npm/swagger-ui-dist@<version>/<file>` gives the same hash.
+4. Put the version and both hashes in `docs_page.py`, run the API (`make api`), and open
+   http://127.0.0.1:8000/docs: the operations list must render, with no console errors.
 
 ## SEC 429s and fair access
 

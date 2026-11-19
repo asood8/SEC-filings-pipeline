@@ -12,13 +12,14 @@ import redis
 import sqlalchemy as sa
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import HTMLResponse, JSONResponse
 from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor
 from opentelemetry.trace import Span
 from redis.backoff import NoBackoff
 from redis.retry import Retry
 from sqlalchemy.orm import Session, sessionmaker
 
+from filings_api.docs_page import docs_page
 from filings_api.embedding_cache import QueryEmbeddingCache
 from filings_api.google import GoogleIdTokenVerifier, GoogleSigningKeys
 from filings_api.middleware import (
@@ -181,8 +182,14 @@ def create_app(
         engine.dispose()
         telemetry.shutdown()
 
+    # /docs is served below with a pinned, integrity-checked Swagger UI; ReDoc isn't offered.
     app = FastAPI(
-        title="Filingwire API", version="0.2.0", description=DESCRIPTION, lifespan=lifespan
+        title="Filingwire API",
+        version="0.2.0",
+        description=DESCRIPTION,
+        lifespan=lifespan,
+        docs_url=None,
+        redoc_url=None,
     )
     app.state.sessions = None
     app.state.embedder = None
@@ -242,6 +249,11 @@ def create_app(
             status_code=503,
             headers={"Retry-After": "5"},
         )
+
+    @app.get("/docs", include_in_schema=False)
+    def docs() -> HTMLResponse:
+        """Interactive API docs (Swagger UI)."""
+        return docs_page(f"{app.title} docs", app.openapi_url or "/openapi.json")
 
     @app.get("/healthz", include_in_schema=False)
     def healthz() -> dict[str, str]:

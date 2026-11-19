@@ -229,7 +229,13 @@ the production ranking.
   (`5.02`, officer changes; `2.02`, results), an `EXISTS` on the 8-K's `items` array. The website's
   feed page offers the items alerts offer once "Current reports (8-K)" is chosen, and its feed
   link follows. A feed's id gains the item only when one is set, so existing feeds keep theirs.
-- **Docs:** typed response models generate the OpenAPI docs at `/docs`.
+- **Docs:** typed response models generate the OpenAPI docs at `/docs`. _Since 2026-11-18 the
+  page is our own (`filings_api.docs_page`): FastAPI's loads whatever `swagger-ui-dist@5` is
+  newest from jsDelivr, unchecked, on the API's origin, where a signed-in user's cookie works.
+  Ours pins one version with Subresource Integrity hashes and sends a Content-Security-Policy that
+  allows only that script and its own start-up script; Swagger UI's validator badge (a request to
+  validator.swagger.io) is off, and ReDoc (`/redoc`, unused, also unpinned) is gone. Updating:
+  runbook, "Updating Swagger UI"._
 - **Keyset cursors** encode the last row's sort key, so pages stay correct while new filings
   arrive. Offsets would repeat or skip rows.
 - **Rate limiting:** per client through Redis. It's a non-blocking token bucket (default 60/minute,

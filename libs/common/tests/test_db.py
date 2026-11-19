@@ -7,6 +7,7 @@ from alembic.migration import MigrationContext
 from sqlalchemy.engine import Engine
 
 from filings_common.db import (
+    QUERY_CANCELED,
     Base,
     Company,
     Filing,
@@ -121,6 +122,20 @@ def test_engine_can_keep_parameters_out_of_errors(db_engine: Engine) -> None:
         finally:
             engine.dispose()
         assert ("webhook-token" in str(excinfo.value)) is shown
+
+
+def test_engine_can_cancel_slow_statements(db_engine: Engine) -> None:
+    url = db_engine.url.render_as_string(hide_password=False)
+    engine = create_engine(url, statement_timeout_seconds=0.1)
+    try:
+        with engine.connect() as conn:
+            assert conn.execute(sa.text("SHOW statement_timeout")).scalar_one() == "100ms"
+            assert conn.execute(sa.text("SELECT 1")).scalar_one() == 1
+        with pytest.raises(sa.exc.OperationalError) as excinfo, engine.connect() as conn:
+            conn.execute(sa.text("SELECT pg_sleep(2)"))
+    finally:
+        engine.dispose()
+    assert getattr(excinfo.value.orig, "sqlstate", None) == QUERY_CANCELED
 
 
 def test_outbox_ids_increase_and_rows_start_unpublished(clean_db: Engine) -> None:

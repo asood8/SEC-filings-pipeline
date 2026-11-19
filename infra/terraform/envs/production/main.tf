@@ -45,6 +45,7 @@ module "cloudflare" {
   api_subdomain            = var.api_subdomain
   web_subdomain            = var.web_subdomain
   r2_location              = var.r2_location
+  raw_retention_days       = var.raw_retention_days
   backup_retention_days    = var.backup_retention_days
   pages_github_integration = var.pages_github_integration
   google_client_id         = var.google_client_id

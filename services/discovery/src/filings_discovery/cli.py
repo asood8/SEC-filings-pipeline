@@ -15,6 +15,7 @@ from sqlalchemy.orm import Session, sessionmaker
 
 from filings_common.config import (
     DatabaseSettings,
+    DocumentRetentionSettings,
     EdgarSettings,
     MongoSettings,
     ObjectStoreSettings,
@@ -145,13 +146,15 @@ def _fetch_transcripts(settings: DiscoverySettings, sessions: sessionmaker[Sessi
     mongo_settings = MongoSettings()
     mongo: MongoClient[dict[str, Any]] = MongoClient(mongo_settings.mongodb_url.get_secret_value())
     try:
+        store = TranscriptStore(mongo[mongo_settings.mongodb_database])
+        store.ensure_indexes(DocumentRetentionSettings().retention)
         with (
             tracer.start_as_current_span("fetch transcripts"),
             SiteClient(settings.transcript_user_agent) as client,
         ):
             report = fetch_transcripts(
                 sessions,
-                TranscriptStore(mongo[mongo_settings.mongodb_database]),
+                store,
                 client,
                 sources,
                 today=datetime.now(UTC).date(),

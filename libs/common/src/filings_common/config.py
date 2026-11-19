@@ -5,6 +5,7 @@ configuration it actually uses.
 """
 
 import re
+from datetime import timedelta
 from pathlib import Path
 from typing import Literal
 
@@ -90,6 +91,23 @@ class OutboxSettings(BaseSettings):
     retention_days: int = Field(default=7, ge=1)
 
 
+class DocumentRetentionSettings(BaseSettings):
+    """How long the working copies behind each filing are kept (ADR-0006): parsed payloads and
+    call transcripts in MongoDB expire through TTL indexes, raw filings in R2 through a lifecycle
+    rule (Terraform's `raw_retention_days`, which must match). Postgres keeps everything the site
+    shows, so nothing visible expires; what goes is the ability to parse or summarize again."""
+
+    model_config = _config("DOCUMENT_")
+
+    # At most two years: Atlas's free 512 MB and R2's free 10 GB hold about a year of documents
+    # with room to spare at a few hundred companies (docs/runbook.md, "Capacity planning").
+    retention_days: int = Field(default=365, ge=30, le=730)
+
+    @property
+    def retention(self) -> timedelta:
+        return timedelta(days=self.retention_days)
+
+
 class SummarizerSettings(BaseSettings):
     """Forms that get their own queue inside the summarizer: each is consumed by a second Kafka
     consumer, on its own thread and in its own consumer group, so its filings never wait behind
@@ -169,6 +187,10 @@ class ApiSettings(BaseSettings):
     trust_proxy_headers: bool = False
     # How long a sign-in lasts before the user has to sign in again.
     session_lifetime_days: int = Field(default=7, ge=1, le=90)
+    # Postgres cancels any API statement that runs longer, and the API answers 503. The slowest
+    # real query, a keyword search for a very common word, takes 1-2 s on 10 years of 500
+    # companies (runbook, "Capacity planning").
+    statement_timeout_seconds: float = Field(default=5.0, gt=0)
     # Browsers then send the session cookie over https only (and to http://localhost).
     cookie_secure: bool = True
     # The website's origins, allowed to call the API with the session cookie (CORS), as JSON in

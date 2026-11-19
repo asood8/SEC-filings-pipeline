@@ -6,6 +6,7 @@ import sqlalchemy as sa
 from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter
 from opentelemetry.trace import StatusCode
 from sqlalchemy.engine import Engine
+from sqlalchemy.orm import Session
 
 from filings_common import unsubscribe
 from filings_common.consumer import PermanentError, Received
@@ -498,6 +499,87 @@ def test_8k_item_filters_choose_which_subscriptions_are_alerted(
     assert [target for target, _ in fakes[Channel.EMAIL].sent] == ["ops@example.com"]  # every 8-K
 
 
+def add_buyback_filing(session: Session, accession_no: str, discovered_at: datetime) -> int:
+    """An Apple 8-K filed 2026-10-01 about a buyback, searchable, discovered at `discovered_at`.
+    Returns its summary's id."""
+    session.add(
+        Filing(
+            accession_no=accession_no,
+            cik=320193,
+            form_type="8-K",
+            filed_at=date(2026, 10, 1),
+            primary_doc_url="https://www.sec.gov/aapl-buyback.htm",
+            raw_object_key="filings/aapl-buyback.htm",
+            status=FilingStatus.READY,
+            created_at=discovered_at,
+        )
+    )
+    session.flush()
+    summary = Summary(
+        accession_no=accession_no,
+        provider="gemini",
+        model="gemini-flash",
+        prompt_version=1,
+        summary={
+            "headline": "Apple authorizes a $110 billion buyback",
+            "summary": "Apple's board authorized repurchasing up to $110 billion of stock.",
+            "key_points": [],
+        },
+    )
+    session.add(summary)
+    session.flush()
+    upsert_document(
+        session,
+        accession_no,
+        summary.id,
+        SearchDocument(
+            title="Apple authorizes a $110 billion buyback",
+            company="Apple Inc.",
+            body="Apple's board authorized repurchasing up to $110 billion of stock.",
+            ticker="AAPL",
+        ),
+    )
+    return summary.id
+
+
+def test_keyword_alerts_skip_filings_discovered_long_after_filing(
+    clean_db: Engine, world: dict[str, int]
+) -> None:
+    # A company that joins the watchlist brings its past month of filings: a keyword alert on
+    # every company doesn't send them, the company's own subscribers (none yet, in practice) do.
+    accession_no = "0000320193-26-000093"
+    early = datetime(2026, 1, 1, tzinfo=UTC)
+    keyword = "https://discord.com/api/webhooks/11/any-buyback"
+    company = "https://discord.com/api/webhooks/12/apple"
+    with session_factory(clean_db).begin() as session:
+        user_id = session.scalar(sa.select(User.id).where(User.email == "ops@example.com"))
+        summary_id = add_buyback_filing(
+            session, accession_no, discovered_at=datetime(2026, 10, 31, 12, tzinfo=UTC)
+        )
+        for cik, query, target in [(None, "buyback", keyword), (320193, None, company)]:
+            session.add(
+                Subscription(
+                    user_id=user_id,
+                    cik=cik,
+                    query=query,
+                    form_types=["8-K"],
+                    channel=Channel.DISCORD,
+                    target=target,
+                    created_at=early,
+                )
+            )
+    fakes = senders()
+    event = FilingReady(
+        accession_no=accession_no, cik=320193, form_type="8-K", summary_id=summary_id
+    )
+    NotificationHandler(session_factory(clean_db), fakes)(
+        Received(Topic.FILINGS_READY, 0, 0, accession_no, event.model_dump_json().encode())
+    )
+    sent = {target for target, _ in fakes[Channel.DISCORD].sent}
+    assert company in sent
+    assert keyword not in sent
+
+
 def test_keyword_alerts_match_the_filings_search_document(
     clean_db: Engine, world: dict[str, int]
 ) -> None:
@@ -511,41 +593,9 @@ def test_keyword_alerts_match_the_filings_search_document(
     }
     with session_factory(clean_db).begin() as session:
         user_id = session.scalar(sa.select(User.id).where(User.email == "ops@example.com"))
-        session.add(
-            Filing(
-                accession_no=accession_no,
-                cik=320193,
-                form_type="8-K",
-                filed_at=date(2026, 10, 1),
-                primary_doc_url="https://www.sec.gov/aapl-buyback.htm",
-                raw_object_key="filings/aapl-buyback.htm",
-                status=FilingStatus.READY,
-            )
-        )
-        session.flush()
-        summary = Summary(
-            accession_no=accession_no,
-            provider="gemini",
-            model="gemini-flash",
-            prompt_version=1,
-            summary={
-                "headline": "Apple authorizes a $110 billion buyback",
-                "summary": "Apple's board authorized repurchasing up to $110 billion of stock.",
-                "key_points": [],
-            },
-        )
-        session.add(summary)
-        session.flush()
-        upsert_document(
-            session,
-            accession_no,
-            summary.id,
-            SearchDocument(
-                title="Apple authorizes a $110 billion buyback",
-                company="Apple Inc.",
-                body="Apple's board authorized repurchasing up to $110 billion of stock.",
-                ticker="AAPL",
-            ),
+        # Discovered the evening it was filed (00:30 UTC the next day): news.
+        summary_id = add_buyback_filing(
+            session, accession_no, discovered_at=datetime(2026, 10, 2, 0, 30, tzinfo=UTC)
         )
         for name, cik, query in [
             ("any buyback", None, "buybacks"),  # stemmed: matches "buyback"
@@ -563,7 +613,6 @@ def test_keyword_alerts_match_the_filings_search_document(
                     created_at=early,
                 )
             )
-        summary_id = summary.id
     fakes = senders()
     event = FilingReady(
         accession_no=accession_no, cik=320193, form_type="8-K", summary_id=summary_id

@@ -1,11 +1,16 @@
-# Companies discovery polls on EDGAR: the Fortune 100 (the 2026 list, ranked by 2025 revenue)
-# that trade on a market, plus 7 widely followed companies below the top 100 (Adobe, AMD,
-# Mastercard, McDonald's, Netflix, Salesforce, Visa). They file Form 4s (insider trades) and 8-Ks
-# (major events) often, so the pipeline always has activity.
+# Companies discovery polls on EDGAR (199):
 #
-# Not here: the 7 customer-owned insurers on the list (State Farm, New York Life, Nationwide,
-# USAA, TIAA, Liberty Mutual, MassMutual), which have no stock and so no insider trades, and
-# Publix, which has stock but no ticker.
+# - The Fortune 100 (the 2026 list, ranked by 2025 revenue) that trade on a market, plus 7 widely
+#   followed companies below the top 100 (Adobe, AMD, Mastercard, McDonald's, Netflix, Salesforce,
+#   Visa). Not here: the 7 customer-owned insurers on the list (State Farm, New York Life,
+#   Nationwide, USAA, TIAA, Liberty Mutual, MassMutual), which have no stock and so no insider
+#   trades, and Publix, which has stock but no ticker.
+# - The next 100 largest by 2025 revenue (added 2026-11-18), ranked from the companies' own SEC
+#   filings by scripts/rank_companies.py: US companies on a US exchange that file 10-Ks and whose
+#   insiders file Form 4s; roughly the Fortune 101-200. Each group below lists them after the first.
+#
+# They file Form 4s (insider trades) and 8-Ks (major events) often, so the pipeline always has
+# activity.
 #
 # After editing, run `uv run filings-discovery load-companies`; it reports any unknown ticker.
 # New companies' filings from the previous 30 days are collected on the next discovery run.
@@ -14,17 +19,30 @@ tickers = [
     "AAPL", "MSFT", "NVDA", "GOOGL", "AMZN", "META", "TSLA", "AVGO", "ORCL", "CRM",
     "AMD", "ADBE", "INTC", "NFLX", "CSCO", "IBM", "DELL", "HPQ", "SNX", "INGM",
     "VZ", "T", "CMCSA", "CHTR", "UBER",
+    "TMUS", "QCOM", "MU", "HPE", "AMAT", "LRCX", "APH", "JBL", "FLEX", "ARW",
+    "AVT", "CDW", "SKYD", "LYV",
     # Financials
     "JPM", "BAC", "GS", "V", "MA", "BRK-B", "C", "WFC", "MS", "AXP",
     "COF", "PGR", "ALL", "MET", "PRU", "TRV", "FNMA", "FMCC", "SNEX", "GLXY",
+    "USB", "BNY", "PNC", "TFC", "SCHW", "STT", "SYF", "AIG", "HIG", "RGA",
+    "MRSH", "APO", "BLK", "PYPL", "XYZ", "CBRE", "JLL",
     # Health care
     "UNH", "JNJ", "LLY", "PFE", "CVS", "MCK", "COR", "CI", "CAH", "ELV",
     "CNC", "HUM", "HCA", "MRK", "ABBV", "BMY",
+    "MOH", "TMO", "ABT", "AMGN", "GILD", "SYK", "DHR", "MDLN",
     # Consumer
     "WMT", "COST", "KO", "PEP", "MCD", "NKE", "DIS", "HD", "KR", "TGT",
     "LOW", "PG", "SYY", "ACI", "TJX", "PFGC", "TSN", "ADM", "F", "GM",
-    # Energy
+    "DG", "BBY", "PM", "MO", "USFD", "MDLZ", "KHC", "SBUX", "UNFI", "LAD",
+    "PAG", "AN", "KMX", "GPI", "GPC", "ROST", "M", "CPNG", "BKNG", "MAR",
+    "CCL", "DHI", "LEN",
+    # Energy and utilities
     "XOM", "CVX", "PSX", "MPC", "VLO", "COP", "ET", "EPD",
-    # Industrials and transport
+    "PAGP", "SUNC", "OKE", "SLB", "BKR", "PBF", "DINO", "EOG", "WKC", "NRG",
+    "DUK", "SO", "NEE", "CEG", "EXC", "PCG",
+    # Industrials, materials and transport
     "BA", "CAT", "UPS", "FDX", "RTX", "LMT", "GD", "DAL", "UAL", "AAL",
+    "GE", "DE", "NOC", "HON", "GEV", "CMI", "PCAR", "PWR", "LUV", "UNP",
+    "WM", "MMM", "FERG", "WCC", "LEA", "DOW", "LYB", "NUE", "FCX", "NEM",
+    "IP", "SHW",
 ]

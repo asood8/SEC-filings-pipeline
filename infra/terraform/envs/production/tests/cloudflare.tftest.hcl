@@ -145,6 +145,11 @@ run "r2_buckets_are_free_standard_buckets_and_backups_expire" {
   }
 
   assert {
+    condition     = cloudflare_r2_bucket_lifecycle.raw.bucket_name == "filings-raw" && cloudflare_r2_bucket_lifecycle.raw.rules[0].delete_objects_transition.condition.max_age == 365 * 86400
+    error_message = "Raw filings should expire after a year by default, like their parsed copies in MongoDB."
+  }
+
+  assert {
     condition     = output.r2_endpoint_url == "https://fedcba9876543210fedcba9876543210.r2.cloudflarestorage.com"
     error_message = "The S3 endpoint is per account."
   }
@@ -254,6 +259,20 @@ run "refuses_unbounded_backup_retention" {
   }
 
   expect_failures = [var.backup_retention_days]
+}
+
+run "refuses_unbounded_raw_retention" {
+  command = plan
+
+  module {
+    source = "../../modules/cloudflare"
+  }
+
+  variables {
+    raw_retention_days = 3650
+  }
+
+  expect_failures = [var.raw_retention_days]
 }
 
 run "refuses_a_malformed_domain" {

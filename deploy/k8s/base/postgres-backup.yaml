@@ -38,13 +38,27 @@ spec:
               type: RuntimeDefault
           initContainers:
             # The Postgres image itself, so pg_dump always matches the server's major version.
+            # It waits for Postgres to answer first: k3s's network policy controller admits a new
+            # pod's address a moment after the pod starts, and until then Postgres's policy
+            # refuses it ("Connection refused"). pg_dump connects at once, so it lost that race on
+            # every try on 2026-11-18 (runbook, "Alert: Postgres backup missing").
             - name: dump
               image: pgvector/pgvector:0.8.7-pg18
               command:
-                - pg_dump
-                - --host=postgres
-                - --format=custom
-                - --file=/backup/filings.dump
+                - /bin/sh
+                - -c
+                - |
+                  set -eu
+                  tries=0
+                  until pg_isready --host=postgres --timeout=5 --quiet; do
+                    tries=$((tries + 1))
+                    if [ "$tries" -ge 60 ]; then
+                      echo "postgres did not answer within 2 minutes" >&2
+                      exit 1
+                    fi
+                    sleep 2
+                  done
+                  exec pg_dump --host=postgres --format=custom --file=/backup/filings.dump
               env:
                 - name: PGDATABASE
                   valueFrom:

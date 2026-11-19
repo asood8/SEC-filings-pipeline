@@ -223,6 +223,47 @@ Discovery fills it for already-stored filings from the list it reads on every po
 request goes to SEC. The Atom feed's entry ids stay the raw URL: a changed id would show every
 entry again in feed readers.
 
+### How long the working copies are kept (added 2026-11-18)
+
+Every filing leaves three copies behind: the raw document and exhibits in R2, the parsed payload
+in MongoDB, and the key fields, summary and search text in Postgres. The website and the API read
+only Postgres; the first two are working copies, used to parse a filing (and to parse it again
+after a parser change) and to summarize it. Left alone they grow for as long as the project runs,
+and both sit on free tiers with hard limits: Atlas's 512 MB counts every document and index, and
+R2's 10 GB is shared with the nightly backups. Measured on production on 2026-11-18 (99
+companies, a month that includes the Q3 earnings season): a parsed 8-K is about 33 KB and a
+Form 4 about 3 KB, about 7 MB of MongoDB and 90 MB of R2 a month.
+
+So the working copies expire after **a year** (`DOCUMENT_RETENTION_DAYS`, 30 to 730, default
+365), which bounds MongoDB at about a year of filings, roughly 85 MB at 99 companies and twice
+that at 200:
+
+- **MongoDB** deletes each parsed payload a year after it was last parsed (a TTL index on
+  `parsed_at`, set by the parser at startup) and each call transcript a year after it was
+  stored (`stored_at`, set by `fetch-transcripts`). MongoDB's own TTL monitor does the deleting,
+  about once a minute; no job of ours runs. A changed retention updates the index in place.
+- **R2** deletes each raw filing a year after upload, through a bucket lifecycle rule
+  (Terraform's `raw_retention_days`, which a test keeps equal to the Python default), like the
+  backups' 30-day rule.
+- **What stops working for older filings:** parsing again (`filings-replay discovered` leaves
+  filings discovered before the retention out and says so), summarizing again (`filings-replay
+  parsed` and `filings-rebuild-key-fields` already skip filings without a payload), and
+  summarizing an old call again after a prompt change (the nightly job leaves calls older than
+  the retention alone, so they keep their summaries instead of failing every night). Nothing the
+  site shows changes: summaries, key fields, transactions, search and the link to SEC are in
+  Postgres, which keeps everything.
+
+Postgres is not pruned: it is the product's history, and it grows about 1 MB per company a year
+on a 10 Gi volume. Its nightly dumps in R2 grow with it, which is what R2's usage alert (50%)
+watches for over the years.
+
+Alternatives considered: a nightly job deleting old documents (the same result with code and a
+schedule to maintain, where MongoDB's TTL index and R2's lifecycle rule are built in and free);
+deleting by size instead of age (keeps the most history, but needs a measurement of Atlas's usage
+that the M0 tier limits, and an age is easier to reason about); keeping raw filings longer than
+the parsed copies (raw filings can be fetched again from EDGAR, which keeps them forever, so a
+longer R2 retention buys little).
+
 ## Alternatives considered
 
 - **A per-transaction relational table** (`insider_transactions`). It is the natural next step for

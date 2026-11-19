@@ -54,9 +54,14 @@ services:
 
   valkey:
     image: valkey/valkey:9.1.2-alpine
-    # No persistence: rate-limit buckets, cache, and short-lived dedupe keys are all disposable.
-    # Default noeviction policy: when full, writes fail loudly instead of silently dropping keys.
-    command: ["valkey-server", "--save", "", "--appendonly", "no", "--maxmemory", "128mb"]
+    # No persistence: rate-limit buckets and the API's cache are all disposable. When full it
+    # evicts the least recently used keys (ADR-0003): rate-limit buckets are touched constantly,
+    # so it's old cache entries that go.
+    command:
+      [
+        "valkey-server", "--save", "", "--appendonly", "no",
+        "--maxmemory", "128mb", "--maxmemory-policy", "allkeys-lru",
+      ]
     ports:
       - "127.0.0.1:6379:6379"
     healthcheck:

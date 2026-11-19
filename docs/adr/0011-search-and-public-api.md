@@ -240,9 +240,20 @@ the production ranking.
   arrive. Offsets would repeat or skip rows.
 - **Rate limiting:** per client through Redis. It's a non-blocking token bucket (default 60/minute,
   burst 20) that returns 429 with `Retry-After`. `CF-Connecting-IP` is honoured only when
-  `API_TRUST_PROXY_HEADERS` is set, because otherwise clients could spoof it.
+  `API_TRUST_PROXY_HEADERS` is set, because otherwise clients could spoof it. _Since 2026-11-18,
+  an IPv6 client is counted by its /64 network (`middleware.client_key`): one home or server
+  usually gets a whole /64, so counting single addresses gave it billions of buckets._
 - **Caching:** successful JSON GETs are cached for 60 s. New filings arrive minutes apart, so a
-  short TTL needs no invalidation.
+  short TTL needs no invalidation. _Since 2026-11-18, the key is the path plus only the query
+  parameters the route declares (read from the OpenAPI schema; FastAPI ignores any others), so
+  `?x=1`, `?x=2`, ... can't mint a key each, and Valkey evicts least recently used keys when full
+  (ADR-0003): a flood of distinct requests only pushes old entries out, where before it could fill
+  Valkey and switch the rate limit off._
+- **Statement timeout** (added 2026-11-18): the API's database connections set
+  `statement_timeout` (`API_STATEMENT_TIMEOUT_SECONDS`, default 5 s), and a cancelled statement
+  answers 503 with `Retry-After: 5`, so a burst of slow queries can't hold every connection. The
+  slowest real query, a keyword search for a very common word, takes 1-2 s on 10 years of 500
+  companies.
 - **Query embeddings are cached too** (added 2026-10-07), for 10 minutes, keyed by the model and a
   SHA-256 of the query: one vector serves every mode, filter, and page of a query, which the
   URL-keyed response cache can't. Each is 3 KB (32-bit floats, the precision pgvector keeps).

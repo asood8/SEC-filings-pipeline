@@ -6,6 +6,10 @@ unknown; the template never guesses.
 
 A Form 4/A reads the same, as "Amended: ...", and says first which Form 4 it amends, whether it
 changed any reported trade, and why, in the filer's words (ADR-0021).
+
+A Form 4 can report no transaction at all, typically to say that its filer is no longer an
+insider ("The reporting person's status as an insider terminated on ..."): it says so, and
+quotes the filer's remarks.
 """
 
 from collections.abc import Sequence
@@ -25,6 +29,7 @@ PROVIDER = "template"
 MODEL = "form4-template"
 
 MAX_GROUP_SENTENCES = 4
+MAX_REMARKS_CHARS = 300  # quoted from a Form 4 without transactions
 
 # Non-derivative transactions, by SEC transaction code. {qty} is e.g. "1,000 AMZN shares".
 _PHRASES = {
@@ -221,6 +226,10 @@ def summarize_form4(form: Form4, amends: Amended | None = None) -> FilingSummary
     def phrase(group: _Group) -> str:
         return _phrase(group, ticker, name_security=name_security)
 
+    if not groups:
+        headline, sentences, key_points = _without_transactions(form, who, issuer, ticker)
+        return _finish(form, amends, headline, sentences, key_points)
+
     lead = _headline_group(groups)
     headline = f"{who} {phrase(lead)}"
     if len(groups) > 1:
@@ -251,7 +260,37 @@ def summarize_form4(form: Form4, amends: Amended | None = None) -> FilingSummary
         key_points.append("Some prices are given only in the filing's footnotes")
     if len(form.reporting_owners) > 1:
         key_points.append(f"Filed jointly by {len(form.reporting_owners)} reporting owners")
+    return _finish(form, amends, headline, sentences, key_points)
 
+
+def _without_transactions(
+    form: Form4, who: str, issuer: str, ticker: str
+) -> tuple[str, list[str], list[str]]:
+    """A Form 4 that reports no transaction: its headline, sentences and key points."""
+    holdings = len(form.holdings)
+    listed = f", only {holdings} {'holding' if holdings == 1 else 'holdings'}" if holdings else ""
+    sentences = [
+        f"{_who_with_roles(form.reporting_owners)} filed a Form 4 for {issuer} ({ticker}) for "
+        f"the period ending {_date(form.period_of_report)} that reports no transactions{listed}."
+    ]
+    if form.remarks and form.remarks.strip():
+        remarks = _squash(form.remarks)
+        if len(remarks) > MAX_REMARKS_CHARS:
+            remarks = remarks[: MAX_REMARKS_CHARS - 3].rstrip() + "..."
+        sentences.append(f"The filer's remarks: “{remarks}”")
+    key_points = ["No transactions reported"]
+    if len(form.reporting_owners) > 1:
+        key_points.append(f"Filed jointly by {len(form.reporting_owners)} reporting owners")
+    return f"{who} filed a Form 4 with no transactions", sentences, key_points
+
+
+def _finish(
+    form: Form4,
+    amends: Amended | None,
+    headline: str,
+    sentences: list[str],
+    key_points: list[str],
+) -> FilingSummary:
     if amends is not None:
         headline = f"Amended: {headline}"
         first, points = _amendment_sentences(amends, form)

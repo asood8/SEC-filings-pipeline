@@ -115,6 +115,19 @@ variable "r2_storage_class" {
   }
 }
 
+variable "raw_retention_days" {
+  description = "Days R2 keeps each raw filing and exhibit before deleting it. Keep it equal to DOCUMENT_RETENTION_DAYS (libs/common/src/filings_common/config.py), which expires the parsed copies in MongoDB."
+  type        = number
+  default     = 365
+
+  validation {
+    # About 1 GB of raw filings a year at 99 companies (measured 2026-11-18), so two years of
+    # them leave most of the 10 GB of free storage, which the backups share.
+    condition     = var.raw_retention_days >= 30 && var.raw_retention_days <= 730 && floor(var.raw_retention_days) == var.raw_retention_days
+    error_message = "raw_retention_days must be a whole number of days from 30 to 730."
+  }
+}
+
 variable "backup_retention_days" {
   description = "Days a Postgres backup is kept before R2 deletes it (the backup job itself never deletes)."
   type        = number

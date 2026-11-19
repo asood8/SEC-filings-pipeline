@@ -11,6 +11,7 @@ from filings_common.parsed import Form4
 from filings_parser.form4 import Form4ParseError, parse, parse_form4
 
 FIXTURES = Path(__file__).parents[3] / "tests" / "fixtures" / "form4"
+NO_TRANSACTIONS = "0001681329-26-000008"  # Truist, 2026-10
 
 
 def fixture(accession_no: str) -> Form4:
@@ -22,10 +23,21 @@ def test_every_fixture_parses_consistently(path: Path) -> None:
     form = parse_form4(path.read_bytes())
     assert form.document_type == "4"
     assert form.reporting_owners
-    assert form.transactions
+    # Every fixture reports a transaction but one: an insider's last Form 4, which only says that
+    # the status ended (tested below).
+    assert form.transactions or path.stem == NO_TRANSACTIONS
     assert all(t.code for t in form.transactions)
     for row in [*form.transactions, *form.holdings]:
         assert set(row.footnote_ids) <= set(form.footnotes), "cites a footnote that isn't there"
+
+
+def test_a_form_4_can_report_no_transaction() -> None:
+    form = fixture(NO_TRANSACTIONS)
+    assert (form.transactions, form.holdings) == ([], [])
+    assert form.issuer.trading_symbol == "TFC"
+    assert form.remarks == (
+        "The reporting person's status as an insider terminated on October 16, 2026."
+    )
 
 
 def test_open_market_sale_under_a_10b5_1_plan() -> None:

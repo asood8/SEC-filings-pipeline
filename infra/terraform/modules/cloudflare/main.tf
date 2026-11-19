@@ -110,9 +110,37 @@ resource "cloudflare_r2_bucket" "backups" {
   storage_class = var.r2_storage_class
 }
 
+# Raw filings expire after raw_retention_days (a year), as their parsed copies do in MongoDB, so
+# storage stays bounded however long the project runs: within that time a filing can be parsed
+# again without asking SEC; after it, the site keeps everything it shows (in Postgres) and links
+# the original on EDGAR.
+resource "cloudflare_r2_bucket_lifecycle" "raw" {
+  account_id  = var.account_id
+  bucket_name = cloudflare_r2_bucket.raw.name
+
+  rules = [
+    {
+      id         = "expire-raw-filings"
+      enabled    = true
+      conditions = { prefix = "" }
+      delete_objects_transition = {
+        condition = {
+          type    = "Age"
+          max_age = var.raw_retention_days * 24 * 60 * 60 # seconds
+        }
+      }
+      abort_multipart_uploads_transition = {
+        condition = {
+          type    = "Age"
+          max_age = 7 * 24 * 60 * 60
+        }
+      }
+    },
+  ]
+}
+
 # Backups expire after backup_retention_days, which keeps storage bounded and inside the free
-# tier. Raw filings have no expiry: they are small, and keeping them is what allows reparsing
-# without asking SEC again.
+# tier.
 resource "cloudflare_r2_bucket_lifecycle" "backups" {
   account_id  = var.account_id
   bucket_name = cloudflare_r2_bucket.backups.name

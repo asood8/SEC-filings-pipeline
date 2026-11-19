@@ -107,11 +107,24 @@ def test_display_name(name: str, shown: str) -> None:
         ("HP INC", "HP Inc"),
         ("TD SYNNEX CORP", "TD SYNNEX Corp"),
         ("TJX COMPANIES INC /DE/", "TJX Companies Inc"),
+        ("PNC FINANCIAL SERVICES GROUP, INC.", "PNC Financial Services Group, Inc."),
+        ("FREEPORT-MCMORAN INC", "Freeport-McMoRan Inc"),
+        ("PLAINS GP HOLDINGS LP", "Plains GP Holdings LP"),
+        ("ONEOK INC /NEW/", "ONEOK Inc"),
+        ("SLB LIMITED/NV", "SLB Limited"),
         # Whole names: a brand in a name not all in capitals, a surname, nicknames.
         ("CVS HEALTH Corp", "CVS Health Corp"),
         ("LOWES COMPANIES INC", "Lowe's Companies Inc"),
         ("FEDERAL NATIONAL MORTGAGE ASSOCIATION FANNIE MAE", "Fannie Mae"),
         ("FEDERAL HOME LOAN MORTGAGE CORP", "Freddie Mac"),
+        ("HORTON D R INC /DE/", "D.R. Horton Inc"),  # last name first
+        ("SCHWAB CHARLES CORP", "Charles Schwab Corp"),
+        ("JONES LANG LASALLE INC", "Jones Lang LaSalle Inc"),
+        ("Duke Energy CORP", "Duke Energy Corp"),
+        # A state tag with backslashes, and one run in without separators.
+        ("US BANCORP \\DE\\", "U.S. Bancorp"),
+        ("US BANCORP DE", "U.S. Bancorp"),
+        ("NEWMONT Corp /DE/", "Newmont Corp"),
         ("BOOKING COM", "Booking.com"),
         ("COM DEV INTERNATIONAL", "Com Dev International"),  # made up: a first word stays one
     ],

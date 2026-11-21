@@ -39,6 +39,8 @@ meter = metrics.get_meter("filings")
 ALERT_CHANNEL = "filings.alert.channel"
 STATUS_CLASS = "filings.status_class"
 R2_MEASURE = "filings.r2.measure"  # storage, class_a, class_b
+# The tables whose rows a Postgres dump left out (comma-separated), absent when it has them all.
+BACKUP_EXCLUDED_DATA = "filings.backup.excluded_data"
 
 
 class LatestValues:
@@ -270,7 +272,8 @@ BACKUP_SIZE = meter.create_observable_gauge(
     unit="By",
     description=(
         "Size of the Postgres dump the nightly backup just uploaded to R2. Reported only after the "
-        "upload succeeded, so a missing night means a failed or skipped backup."
+        "upload succeeded, so a missing night means a failed or skipped backup. Labeled with the "
+        "tables whose rows the dump left out, so only dumps of the same tables are compared."
     ),
 )
 

@@ -478,6 +478,9 @@ groups:
       # alone, the nightly empty dumps would look healthy while the bucket's 30-day lifecycle rule
       # deletes the last good one. Each run is its own series; runs are a day apart, so the
       # 20-hour window holds only the newest (the alert then clears itself until the next run).
+      # Only dumps that leave out the same tables' rows are compared (the report labels them with
+      # pg_dump's --exclude-table-data), so leaving the search embeddings out (2026-11-21), which
+      # cut a dump to about a fifth, doesn't fire it.
       - uid: filings-backup-shrank
         title: Postgres backup shrank
         condition: C
@@ -490,9 +493,9 @@ groups:
               instant: true
               range: false
               expr: |
-                min by (job) (last_over_time(filings_backup_size_bytes[20h]))
-                / on (job)
-                max by (job) (max_over_time(filings_backup_size_bytes[8d]))
+                min by (job, filings_backup_excluded_data) (last_over_time(filings_backup_size_bytes[20h]))
+                / on (job, filings_backup_excluded_data)
+                max by (job, filings_backup_excluded_data) (max_over_time(filings_backup_size_bytes[8d]))
           - refId: C
             datasourceUid: __expr__
             model:

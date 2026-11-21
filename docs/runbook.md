@@ -225,9 +225,10 @@ Then [run a backup now](#backups-and-restores) and check that the alert clears.
 
 ## Alert: Postgres backup shrank
 
-Critical. Last night's dump is under half the size of the largest in the past 8 days. The
-database only grows, so it probably lost data: a volume recreated empty, a mistaken restore, or a
-dump of the wrong database. The backups from before the drop are the good ones, and the bucket's
+Critical. Last night's dump is under half the size of the largest in the past 8 days (among dumps
+that leave out the same tables: the report labels each with its `--excluded-data`, so changing
+what the dump leaves out doesn't fire it). The database only grows, so it probably lost data: a
+volume recreated empty, a mistaken restore, or a dump of the wrong database. The backups from before the drop are the good ones, and the bucket's
 lifecycle rule deletes each one 30 days after it was made: act before they expire.
 
 ```
@@ -954,7 +955,7 @@ add it to `EXPECTED` in `libs/common/src/filings_common/oci_inventory.py`.
 
 | Data | Where | Backup | If it is lost |
 |---|---|---|---|
-| Postgres: filings, summaries, search index, users, subscriptions, alerts sent | postgres-0's 10 Gi volume | Nightly `pg_dump --format=custom` at 03:30 UTC to R2: `filings-backups/postgres/filings-<UTC time>.dump`, kept 30 days (Terraform `backup_retention_days`, at most 90) | Restore (below) |
+| Postgres: filings, summaries, search index, users, subscriptions, alerts sent | postgres-0's 10 Gi volume | Nightly `pg_dump --format=custom` at 03:30 UTC to R2: `filings-backups/postgres/filings-<UTC time>.dump`, kept 30 days (Terraform `backup_retention_days`, at most 90). Without the search embeddings' rows (`filing_embeddings`), which `filings-index` rebuilds | Restore (below), then rebuild the embeddings |
 | MongoDB Atlas M0: parsed filings and call transcripts, kept a year (`DOCUMENT_RETENTION_DAYS`) | Atlas | None (M0 has no backups) | Parse the last year's filings again from the raw filings: `filings-replay discovered` (the parser reads R2, not SEC); transcripts are fetched again only within their 120-day lookback |
 | Raw filings and exhibits, kept a year (Terraform `raw_retention_days`) | R2 `filings-raw` | None beyond R2's own durability | Public on EDGAR, but no tool fetches them again today |
 | Redpanda topics | redpanda-0's volume | None | The relay recreates topics; `filings-replay` republishes from Postgres |
@@ -982,12 +983,13 @@ kubectl -n filings delete job postgres-backup-manual
 **Restore drill.**
 
 - **Locally: `make backup-drill`** (`scripts/backup-drill.sh`). It dumps the local database the way
-  the CronJob does (`pg_dump --format=custom`, with the Postgres image's own tools), restores the
-  dump into a new, throwaway database, and compares every table, by row count and by a checksum of
-  its rows, with the snapshot the dump was taken from. Then it drops the copy and deletes the dump.
-  It only reads the source database; the copy is the only database it writes to. Last run,
-  2026-10-07: 14 tables and 10,635 rows (277 filings) from a 14 MB database, a 1.3 MB dump,
-  dumped and restored in about a second each: passed.
+  the CronJob does (`pg_dump --format=custom --exclude-table-data=filing_embeddings`, with the
+  Postgres image's own tools), restores the dump into a new, throwaway database, and compares every
+  table, by row count and by a checksum of its rows, with the snapshot the dump was taken from
+  (`filing_embeddings` must come back empty). Then it drops the copy and deletes the dump. It only
+  reads the source database; the copy is the only database it writes to. Last run, 2026-11-21:
+  18 tables and 15,534 rows (834 filings) from a 23 MB database, a 0.64 MB dump (3.8 MB with the
+  embeddings), dumped and restored in about a second each: passed.
 - **In production,** after the first nightly backup and then every few months: steps 1 to 3 below,
   into `filings_restore`, compare counts with the live database (they differ only by what arrived
   since 03:30), then `DROP DATABASE filings_restore;`.
@@ -1050,6 +1052,16 @@ kubectl -n filings delete job postgres-backup-manual
      kubectl -n filings exec redpanda-0 -- rpk group seek notifier --to end --topics filings.ready
      ```
 
+   - **Rebuild the search embeddings**, which the nightly dump leaves out (it keeps the table,
+     not its rows). Until then keyword search works and semantic search finds only the filings
+     embedded so far. It embeds every filing again, as fast as the embeddings server goes (8 to 30
+     filings a minute on the A1 while the LLM was busy, 2026-11-14), and can be stopped and run
+     again: it skips what is already embedded.
+
+     ```
+     kubectl -n filings exec deploy/summarizer -- filings-index
+     ```
+
    - Keep `filings_before_restore` until you are satisfied, then drop it.
    - Delete `filings.dump` from your machine.
 
@@ -1076,12 +1088,14 @@ companies**, so about 2.8 times every rate below: about 10,000 filings and 700 8
 | Redpanda | A few MB (events are about 200 bytes) | 10 Gi volume | Disk use is set by preallocated segments, not by the events: 32 MiB for each partition's active segment, about 0.7 GB for the 7 topics of 3 partitions (measured locally) |
 
 - **Backups** are now what grows R2 without bound, since Postgres keeps everything. Production's
-  dump was 3.0 MB on 2026-11-17 and grows about 4 KB per filing; the search embeddings are most of
-  it (83% of a local dump, 2026-11-18: they compress poorly; indexes are rebuilt, not stored). At
-  about 7,500 filings a year (99 companies) that is about 30 MB per dump for each year of history,
-  so about 0.9 GB of R2 a year with 30 kept: R2's 10 GB lasts about 9 years at 99 companies and
-  4 to 5 at 200, and the R2 usage alert fires at half. Then keep fewer (`backup_retention_days`)
-  or leave the embeddings out of the dump (`filings-index` rebuilds them after a restore).
+  dump was 6.2 MB on 2026-11-21 (1,372 filings), about 4.5 KB per filing, of which the search
+  embeddings were 83% (a local dump: 3.8 MB with them, 0.64 MB without, 2026-11-21; they compress
+  poorly, and indexes are rebuilt, not stored). Since 2026-11-21 the dump leaves their rows out
+  (`filings-index` rebuilds them after a restore), which leaves under 1 KB per filing: at about
+  7,500 filings a year per 100 companies, about 6 MB per dump for each year of history, so about
+  0.2 GB of R2 a year per 100 companies with 30 kept. With the raw filings (bounded at a year)
+  R2's 10 GB lasts over a decade at 300 companies, and the R2 usage alert fires at half. If it
+  ever gets close, keep fewer (`backup_retention_days`).
 - **More companies** scale these linearly. Per company and year, measured on production over a
   month that includes an earnings season (so on the high side): MongoDB ~0.85 MB, R2 raw ~10 MB;
   Postgres ~0.9 MB (measured locally). MongoDB and R2's raw filings hold a year at most

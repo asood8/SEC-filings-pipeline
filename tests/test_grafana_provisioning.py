@@ -49,6 +49,7 @@ ATTRIBUTES = {
     metrics.ALERT_CHANNEL,
     metrics.STATUS_CLASS,
     metrics.R2_MEASURE,
+    metrics.BACKUP_EXCLUDED_DATA,
     "http.request.method",
     "http.route",
     "http.response.status_code",

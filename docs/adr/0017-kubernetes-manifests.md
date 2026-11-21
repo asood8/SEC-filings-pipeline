@@ -59,7 +59,7 @@ first install, and upgrades.
 | load-companies | CronJob, daily | `filings-discovery load-companies` | 1 | Run once by hand after the first install |
 | call-transcripts | CronJob, nightly | `filings-discovery fetch-transcripts`, then `filings-summarize-calls` | 1 | Earnings-call transcripts from companies' own sites, then their Q&A summaries (ADR-0022); no SEC calls |
 | migrate | Job, Argo CD hook | `filings-discovery`, `run_migrations()` | 1 | Before the services on every sync (below) |
-| postgres-backup | CronJob, nightly | Postgres image (`pg_dump`) + `rclone/rclone:1.75.1` | 1 | Custom-format dump to the R2 backups bucket |
+| postgres-backup | CronJob, nightly | Postgres image (`pg_dump`) + `rclone/rclone:1.75.1` | 1 | Custom-format dump to the R2 backups bucket, without the search embeddings' rows |
 | cloudflared | Deployment | `cloudflare/cloudflared:2026.10.0` | 1 (overlay) | Cloudflare Tunnel to the api Service; no ingress controller |
 | otel-collector | Deployment + Service | `otel/opentelemetry-collector-contrib:0.162.0` | 1 | OTLP/HTTP in, Grafana Cloud out |
 | sealed-secrets-controller | Deployment (`kube-system`) | `bitnami/sealed-secrets-controller:0.40.0` | 1 | Decrypts SealedSecrets |
@@ -408,6 +408,13 @@ it a no-op. `BeforeHookCreation` keeps the last run and its logs until the next 
   Postgres image itself, so the client always matches the server's major version, then rclone
   uploads the file to the R2 backups bucket with a token that can touch only that bucket. Retention
   is a lifecycle rule on the bucket (Terraform), so the job never deletes anything.
+  Since 2026-11-21 the dump leaves out the rows of `filing_embeddings`
+  (`--exclude-table-data`): they were over 80% of every dump and compress poorly, while
+  `filings-index` rebuilds them from the summaries after a restore. That cut a dump to about a
+  fifth and backups' share of R2 by as much; the price is a slower restore (embedding every filing
+  again) during which semantic search has gaps and keyword search works. The report step names
+  the same table, and the "backup shrank" alert compares only dumps that leave out the same
+  tables, so the change itself doesn't fire it.
 - **Telemetry:** the services send traces and metrics over OTLP/HTTP to the in-cluster collector
   (`OTEL_EXPORTER_OTLP_ENDPOINT=http://otel-collector:4318`, the contract from ADR-0016). The
   collector batches them, refuses data rather than run out of memory (`memory_limiter`), and

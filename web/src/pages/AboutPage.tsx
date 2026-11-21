@@ -12,9 +12,9 @@ export function AboutPage() {
       <p>
         This site follows new SEC filings from a{' '}
         <Link to="/companies">watchlist of large US companies</Link>: the
-        Fortune 100 companies whose shares trade on a market, the next hundred
-        largest by revenue, and a few other widely followed names. It summarizes
-        each filing in plain English, lets you{' '}
+        Fortune 100 companies whose shares trade on a market, the next two
+        hundred largest by revenue, and a few other widely followed names. It
+        summarizes each filing in plain English, lets you{' '}
         <Link to="/search">search them</Link> by keyword or by meaning, and can{' '}
         <Link to="/alerts">alert you</Link> on Discord, Slack, or email when a
         company you follow files.

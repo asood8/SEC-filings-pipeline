@@ -1,13 +1,15 @@
-# Companies discovery polls on EDGAR (199):
+# Companies discovery polls on EDGAR (300):
 #
 # - The Fortune 100 (the 2026 list, ranked by 2025 revenue) that trade on a market, plus 7 widely
 #   followed companies below the top 100 (Adobe, AMD, Mastercard, McDonald's, Netflix, Salesforce,
 #   Visa). Not here: the 7 customer-owned insurers on the list (State Farm, New York Life,
 #   Nationwide, USAA, TIAA, Liberty Mutual, MassMutual), which have no stock and so no insider
 #   trades, and Publix, which has stock but no ticker.
-# - The next 100 largest by 2025 revenue (added 2026-11-18), ranked from the companies' own SEC
-#   filings by scripts/rank_companies.py: US companies on a US exchange that file 10-Ks and whose
-#   insiders file Form 4s; roughly the Fortune 101-200. Each group below lists them after the first.
+# - The next 201 largest by 2025 revenue, ranked from the companies' own SEC filings by
+#   scripts/rank_companies.py: US companies on a US exchange that file 10-Ks and whose insiders
+#   file Form 4s, roughly the Fortune 101-300. 100 were added on 2026-11-18 and 101 on 2026-11-21
+#   (Santander Holdings USA was skipped: only its preferred stock trades). Each group below lists
+#   the Fortune 100 first, then the 2026-11-18 additions, then the 2026-11-21 ones.
 #
 # They file Form 4s (insider trades) and 8-Ks (major events) often, so the pipeline always has
 # activity.
@@ -21,28 +23,40 @@ tickers = [
     "VZ", "T", "CMCSA", "CHTR", "UBER",
     "TMUS", "QCOM", "MU", "HPE", "AMAT", "LRCX", "APH", "JBL", "FLEX", "ARW",
     "AVT", "CDW", "SKYD", "LYV",
+    "SMCI", "CTSH", "INTU", "TXN", "OMC", "LDOS", "FOXA", "GLW", "KD", "ECHO",
     # Financials
     "JPM", "BAC", "GS", "V", "MA", "BRK-B", "C", "WFC", "MS", "AXP",
     "COF", "PGR", "ALL", "MET", "PRU", "TRV", "FNMA", "FMCC", "SNEX", "GLXY",
     "USB", "BNY", "PNC", "TFC", "SCHW", "STT", "SYF", "AIG", "HIG", "RGA",
     "MRSH", "APO", "BLK", "PYPL", "XYZ", "CBRE", "JLL",
+    "FISV", "KKR", "AMP", "CRBG", "L", "LNC", "AFL", "LPLA", "RJF", "PFG",
+    "MKL", "SPGI", "CNA", "WRB", "FCNCA", "BX", "FNF",
     # Health care
     "UNH", "JNJ", "LLY", "PFE", "CVS", "MCK", "COR", "CI", "CAH", "ELV",
     "CNC", "HUM", "HCA", "MRK", "ABBV", "BMY",
     "MOH", "TMO", "ABT", "AMGN", "GILD", "SYK", "DHR", "MDLN",
+    "BDX", "THC", "GEHC", "BSX", "UHS", "IQV", "REGN",
     # Consumer
     "WMT", "COST", "KO", "PEP", "MCD", "NKE", "DIS", "HD", "KR", "TGT",
     "LOW", "PG", "SYY", "ACI", "TJX", "PFGC", "TSN", "ADM", "F", "GM",
     "DG", "BBY", "PM", "MO", "USFD", "MDLZ", "KHC", "SBUX", "UNFI", "LAD",
     "PAG", "AN", "KMX", "GPI", "GPC", "ROST", "M", "CPNG", "BKNG", "MAR",
     "CCL", "DHI", "LEN",
+    "BJ", "CL", "CVNA", "DLTR", "MUSA", "AZO", "ARMK", "PPC", "GIS", "ABG",
+    "RCL", "ORLY", "CASY", "MGM", "PHM", "DKS", "KDP", "KMB", "SFD", "KSS",
+    "TSCO", "WHR", "GAP", "SAH", "EXPE", "EL",
     # Energy and utilities
     "XOM", "CVX", "PSX", "MPC", "VLO", "COP", "ET", "EPD",
     "PAGP", "SUNC", "OKE", "SLB", "BKR", "PBF", "DINO", "EOG", "WKC", "NRG",
     "DUK", "SO", "NEE", "CEG", "EXC", "PCG",
+    "HAL", "AEP", "OXY", "LNG", "EIX", "GLP", "VST", "DVN", "ED", "TRGP",
+    "KMI", "D", "FE", "FANG", "WMB",
     # Industrials, materials and transport
     "BA", "CAT", "UPS", "FDX", "RTX", "LMT", "GD", "DAL", "UAL", "AAL",
     "GE", "DE", "NOC", "HON", "GEV", "CMI", "PCAR", "PWR", "LUV", "UNP",
     "WM", "MMM", "FERG", "WCC", "LEA", "DOW", "LYB", "NUE", "FCX", "NEM",
     "IP", "SHW",
+    "CARR", "LHX", "ADP", "PH", "RSG", "CLF", "GT", "STLD", "EMR", "MAN",
+    "GWW", "CTVA", "EME", "CHRW", "ACM", "URI", "ECL", "ITW", "PPG", "FLR",
+    "BLDR", "SWK", "TXT", "OTIS", "AMTM", "BWA",
 ]

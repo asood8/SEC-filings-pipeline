@@ -22,7 +22,7 @@ Tunnel, and OpenTelemetry with Grafana Cloud.
 ## What it does today
 
 On a live run against EDGAR, for the first watchlist of 35 large US companies (it now follows
-199: the Fortune 100 companies that trade on a market, plus 7 more, and the next 100 largest US
+300: the Fortune 100 companies that trade on a market, plus 7 more, and the next 201 largest US
 companies by 2025 revenue, ranked from their own SEC filings by `scripts/rank_companies.py`):
 
 - **Discovery** found 275 recent filings (255 Form 4 insider trades and 20 Form 8-K current

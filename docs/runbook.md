@@ -1065,7 +1065,8 @@ the tested path.
 Measured with the watchlist of **35 companies, about 3,500 filings a year** (mostly Form 4s;
 about 7% are 8-Ks, which is roughly 250 a year). Since 2026-11-06 the watchlist had **99
 companies**, so about 2.8 times every rate below: about 10,000 filings and 700 8-Ks a year; since
-2026-11-18 it has **199**, about twice that again.
+2026-11-18 it had **199**, about twice that again, and since 2026-11-21 it has **300**, about 1.5
+times that.
 
 | Store | Growth per year | Free limit | Room at this rate |
 |---|---|---|---|
@@ -1086,9 +1087,11 @@ companies**, so about 2.8 times every rate below: about 10,000 filings and 700 8
   month that includes an earnings season (so on the high side): MongoDB ~0.85 MB, R2 raw ~10 MB;
   Postgres ~0.9 MB (measured locally). MongoDB and R2's raw filings hold a year at most
   ([how long documents are kept](adr/0006-form-4-parsing-and-key-fields.md#how-long-the-working-copies-are-kept-added-2026-11-18)),
-  so Atlas holds about 170 MB at 200 companies; past about 450, lower `DOCUMENT_RETENTION_DAYS`.
+  so Atlas holds about 255 MB at 300 companies (half of M0's 512 MB); past about 450, lower
+  `DOCUMENT_RETENTION_DAYS`.
 - **SEC:** discovery's run takes about 7 s for 35 companies at 5 requests/s (about 20 s for 99,
-  40 s for 199); within its 9-minute deadline one run could poll about 2,500 companies.
+  40 s for 199, about a minute for 300); within its 9-minute deadline one run could poll about
+  2,500 companies.
 - **The local LLM:** up to about 5 minutes per 8-K on two laptop cores (the A1 is measured by the
   benchmark), so at most about 60 hours of both cores a year at 99 companies; re-summarizing a
   year of 8-Ks takes up to about 2.5 days.

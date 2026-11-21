@@ -112,6 +112,10 @@ def test_display_name(name: str, shown: str) -> None:
         ("PLAINS GP HOLDINGS LP", "Plains GP Holdings LP"),
         ("ONEOK INC /NEW/", "ONEOK Inc"),
         ("SLB LIMITED/NV", "SLB Limited"),
+        ("PPG INDUSTRIES INC", "PPG Industries Inc"),
+        ("PULTEGROUP INC/MI/", "PulteGroup Inc"),
+        ("CNA FINANCIAL CORP", "CNA Financial Corp"),
+        ("BORGWARNER INC", "BorgWarner Inc"),
         # Whole names: a brand in a name not all in capitals, a surname, nicknames.
         ("CVS HEALTH Corp", "CVS Health Corp"),
         ("LOWES COMPANIES INC", "Lowe's Companies Inc"),
@@ -121,6 +125,11 @@ def test_display_name(name: str, shown: str) -> None:
         ("SCHWAB CHARLES CORP", "Charles Schwab Corp"),
         ("JONES LANG LASALLE INC", "Jones Lang LaSalle Inc"),
         ("Duke Energy CORP", "Duke Energy Corp"),
+        ("KOHLS Corp", "Kohl's Corp"),  # an apostrophe EDGAR dropped
+        ("O REILLY AUTOMOTIVE INC", "O'Reilly Automotive Inc"),
+        ("COLGATE PALMOLIVE CO", "Colgate-Palmolive Co"),
+        ("BERKLEY W R CORP", "W. R. Berkley Corp"),  # last name first
+        ("FIRST CITIZENS BANCSHARES INC /DE/", "First Citizens BancShares Inc"),
         # A state tag with backslashes, and one run in without separators.
         ("US BANCORP \\DE\\", "U.S. Bancorp"),
         ("US BANCORP DE", "U.S. Bancorp"),

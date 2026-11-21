@@ -105,17 +105,23 @@ _AMPERSAND_WORD = re.compile(r"[A-Z]+&[A-Z]+")
 # Jpmorgan), keyed as EDGAR writes them in capitals: well-known brands among large US companies.
 _SPELLINGS = {
     "ABBVIE": "AbbVie",
+    "AECOM": "AECOM",
     "AUTONATION": "AutoNation",
+    "AUTOZONE": "AutoZone",
     "BLACKROCK": "BlackRock",
+    "BORGWARNER": "BorgWarner",
     "CARMAX": "CarMax",
     "CBRE": "CBRE",
+    "CNA": "CNA",
     "CONOCOPHILLIPS": "ConocoPhillips",
     "EOG": "EOG",
     "EXXONMOBIL": "ExxonMobil",
     "FEDEX": "FedEx",
+    "FIRSTENERGY": "FirstEnergy",
     "FREEPORT-MCMORAN": "Freeport-McMoRan",
     "GP": "GP",  # a general partner: "PLAINS GP HOLDINGS LP"
     "HP": "HP",
+    "IQVIA": "IQVIA",
     "JPMORGAN": "JPMorgan",
     "MCDONALDS": "McDonald's",
     "METLIFE": "MetLife",
@@ -127,6 +133,8 @@ _SPELLINGS = {
     "PAYPAL": "PayPal",
     "PEPSICO": "PepsiCo",
     "PNC": "PNC",
+    "PPG": "PPG",
+    "PULTEGROUP": "PulteGroup",
     "SAP": "SAP",
     "SLB": "SLB",
     "SYNNEX": "SYNNEX",
@@ -136,9 +144,10 @@ _SPELLINGS = {
 }
 # Whole company names that word rules can't fix, keyed as EDGAR writes them (without a state tag):
 # a brand inside a name not all in capitals, a brand that is also a surname (a reporting owner
-# named Lowes or Lasalle keeps the spelling), names EDGAR lists last name first or with a state
-# tag run in ("US BANCORP DE"), and two companies better known by their nicknames, which their
-# own filings use.
+# named Lowes or Lasalle keeps the spelling), an apostrophe or hyphen EDGAR dropped ("KOHLS",
+# "COLGATE PALMOLIVE"), names EDGAR lists last name first or with a state tag run in ("US BANCORP
+# DE"), a word only one company spells its way (First Citizens BancShares), and two companies
+# better known by their nicknames, which their own filings use.
 _COMPANY_NAMES = {
     "CVS HEALTH Corp": "CVS Health Corp",
     "Duke Energy CORP": "Duke Energy Corp",
@@ -152,6 +161,16 @@ _COMPANY_NAMES = {
     "US BANCORP DE": "U.S. Bancorp",
     "FEDERAL NATIONAL MORTGAGE ASSOCIATION FANNIE MAE": "Fannie Mae",
     "FEDERAL HOME LOAN MORTGAGE CORP": "Freddie Mac",
+    "CARRIER GLOBAL Corp": "Carrier Global Corp",
+    "EchoStar CORP": "EchoStar Corp",
+    "KOHLS Corp": "Kohl's Corp",
+    "CASEYS GENERAL STORES INC": "Casey's General Stores Inc",
+    "COLGATE PALMOLIVE CO": "Colgate-Palmolive Co",
+    "KIMBERLY CLARK CORP": "Kimberly-Clark Corp",
+    "O REILLY AUTOMOTIVE INC": "O'Reilly Automotive Inc",
+    "PILGRIMS PRIDE CORP": "Pilgrim's Pride Corp",
+    "BERKLEY W R CORP": "W. R. Berkley Corp",
+    "FIRST CITIZENS BANCSHARES INC": "First Citizens BancShares Inc",
 }
 # Officer titles shown as the abbreviations people know them by, and what they stand for. The
 # search index treats each pair as synonyms (filings_common.search.ABBREVIATIONS starts with

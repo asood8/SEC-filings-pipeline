@@ -358,6 +358,21 @@ def test_the_backup_waits_for_postgres_before_dumping(production: list[dict[str,
     assert "exit 1" in script  # it gives up rather than waiting forever
 
 
+def test_the_backup_reports_the_tables_it_leaves_out(production: list[dict[str, Any]]) -> None:
+    # The report labels the dump's size with the tables whose rows pg_dump left out, and the
+    # "backup shrank" alert compares only dumps labeled alike, so the two lists must agree. The
+    # restore drill (make backup-drill) dumps the same way, so it tests what production uploads.
+    [pod] = [p for p in pods(production) if p.workload == "CronJob/postgres-backup"]
+    containers = {c["name"]: c for c in pod.containers()}
+    left_out = re.findall(r"--exclude-table-data=(\w+)", containers["dump"]["command"][-1])
+    report = containers["report"]["command"]
+    reported = [report[i + 1] for i, arg in enumerate(report) if arg == "--excluded-data"]
+    assert left_out == ["filing_embeddings"]  # rebuilt by filings-index after a restore
+    assert sorted(reported) == sorted(left_out)
+    drill = (ROOT / "scripts" / "backup-drill.sh").read_text()
+    assert re.search(r"^EXCLUDED_DATA=\((.*)\)$", drill, re.M)[1].split() == left_out  # type: ignore[index]
+
+
 def test_the_api_is_ready_only_with_its_database(production: list[dict[str, Any]]) -> None:
     container = _container(production, "Deployment/api")
     assert container["readinessProbe"]["httpGet"]["path"] == "/readyz"

@@ -378,7 +378,7 @@ Nine rules, in `deploy/grafana/alerting/filings.yaml`:
 | Oracle reports spend | the budget's figure for the month is above zero | at once |
 | Oracle account not checked | that job reported in the last week, but not in the last 50 hours | at once |
 | Postgres backup missing | the nightly backup reported an upload to R2 in the last 8 days, but not in the last 28 hours | at once |
-| Postgres backup shrank | the newest backup is under half the size of the largest in the last 8 days | at once |
+| Postgres backup shrank | the newest backup is under half the size of the largest in the last 8 days that left out the same tables | at once |
 | Earnings-call transcript overdue | the nightly `call-transcripts` job found a company whose earnings 8-K is three weeks old with no transcript of the call (ADR-0022) | at once |
 
 The fourth (critical) is not in the brief, but the other rules can't see a stopped consumer: its

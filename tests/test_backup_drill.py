@@ -1,5 +1,7 @@
 """The backup restore drill (`scripts/backup-drill.sh`, `make backup-drill`) on a throwaway
-database with the real schema: the dump restores, every table matches, and nothing is left behind.
+database with the real schema: the dump restores, every table matches except the search
+embeddings (which the nightly backup leaves out, so they come back empty), and nothing is left
+behind.
 
 The drill runs its tools inside the Compose stack's postgres container, so these tests need Docker
 as well as the database.
@@ -105,7 +107,8 @@ def test_drill_restores_every_table_and_cleans_up(clean_db: Engine) -> None:
     assert result.returncode == 0, result.stdout + result.stderr
     assert "PASSED" in result.stdout
     assert re.search(r"public\.filings\s+3\s+same", result.stdout)
-    assert re.search(r"public\.filing_embeddings\s+3\s+same", result.stdout)
+    # Left out of the dump as in production: the table comes back, its rows don't.
+    assert re.search(r"public\.filing_embeddings\s+0\s+empty: rows left out", result.stdout)
     assert re.search(r"public\.alembic_version\s+1\s+same", result.stdout)
     restored = re.search(r"restored into (\w+)", result.stdout)
     assert restored is not None

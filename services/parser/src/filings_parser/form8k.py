@@ -40,6 +40,10 @@ MAX_NOTE_TEXT = 5_000
 _ITEM_HEADING = re.compile(
     r"^item\s*(\d{1,2})\.(\d{2})(?!\d)[\s.:\-\u2013\u2014]*(.*)$", re.IGNORECASE
 )
+# A source line break inside a heading's text splits it: Carrier's filing agent writes
+# "<b>Item\n1.01 Entry into...</b>", read as "Item" and "1.01 Entry into..." on two lines.
+_LONE_ITEM_WORD = re.compile(r"^item$", re.IGNORECASE)
+_ITEM_NUMBER_START = re.compile(r"^\d{1,2}\.\d{2}(?!\d)")
 _SIGNATURES = re.compile(r"^signatures?\b", re.IGNORECASE)
 # Lines that are only layout: page numbers ("3", "- 3 -") and "Table of Contents" back-links.
 _LAYOUT_LINE = re.compile(
@@ -184,7 +188,18 @@ def _item_runs(lines: list[str]) -> Iterator[_Run]:
 
 def _content_lines(raw: bytes) -> list[str]:
     lines = html_to_lines(raw.decode("utf-8", errors="replace"))
-    return [line for line in lines if not _LAYOUT_LINE.match(line)]
+    return _join_split_headings([line for line in lines if not _LAYOUT_LINE.match(line)])
+
+
+def _join_split_headings(lines: list[str]) -> list[str]:
+    """Put a lone "Item" back together with the item number that starts the next line."""
+    joined: list[str] = []
+    for line in lines:
+        if joined and _LONE_ITEM_WORD.match(joined[-1]) and _ITEM_NUMBER_START.match(line):
+            joined[-1] = f"{joined[-1]} {line}"
+        else:
+            joined.append(line)
+    return joined
 
 
 def parse_form8k(raw: bytes) -> Form8K:

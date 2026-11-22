@@ -30,6 +30,7 @@ SEC_ITEMS = {
     "0001018724-26-000036": ["5.02"],
     "0001104659-26-107526": ["8.01", "9.01"],
     "0001108524-26-000210": ["7.01", "9.01"],
+    "0001213900-26-115944": ["1.01", "2.03", "9.01"],  # "Item" and its number on two lines
     "0001628280-26-063820": ["1.01", "1.02", "2.03", "9.01"],
     "0001628280-26-064366": ["2.02", "9.01"],
 }
@@ -66,6 +67,20 @@ def test_a_title_flush_against_the_item_number() -> None:
     [results, _] = fixture("0000007084-26-000054").items
     assert results.title == "Results of Operations and Financial Condition"
     assert results.text.startswith("On November 3, 2026, Archer-Daniels-Midland Company (ADM)")
+
+
+def test_a_heading_split_after_the_word_item() -> None:
+    # Carrier's filing agent breaks the source line inside the heading ("<b>Item\n1.01 ...</b>").
+    items = {i.number: i for i in fixture("0001213900-26-115944").items}
+    assert items["1.01"].text.startswith("On November 4, 2026, Carrier Global Corporation")
+    assert items["2.03"].text.startswith("The information set forth in Item 1.01")
+
+
+def test_a_lone_item_word_before_other_text_stays_as_it_is() -> None:
+    html = b"<p>Item</p><p>Item 8.01 Other Events.</p><p>Text.</p><p>Item</p><p>4 of the plan</p>"
+    [other] = parse_form8k(html).items
+    assert other.number == "8.01"
+    assert other.text == "Text.\nItem\n4 of the plan"
 
 
 def test_references_inside_sentences_do_not_split_items() -> None:

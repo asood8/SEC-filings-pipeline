@@ -27,6 +27,17 @@ def test_a_dump_is_reported_with_its_size(tmp_path: Path, measured: Any) -> None
     assert measured.gauge(GAUGE) == {"": 1234}
 
 
+def test_a_dump_is_labeled_with_the_tables_it_left_out(tmp_path: Path, measured: Any) -> None:
+    # Dumps that leave out different tables aren't comparable: the "backup shrank" alert compares
+    # only dumps with the same label.
+    dump = tmp_path / "filings.dump"
+    dump.write_bytes(b"P" * 99)
+    assert report(dump, ["filing_embeddings", "b_table", "filing_embeddings"]) == 0
+    assert measured.attribute_sets(GAUGE) == [
+        {metrics.BACKUP_EXCLUDED_DATA: "b_table,filing_embeddings"}
+    ]
+
+
 @pytest.mark.parametrize("content", [None, b""], ids=["missing", "empty"])
 def test_no_usable_dump_fails_and_reports_nothing(
     tmp_path: Path, measured: Any, content: bytes | None
@@ -43,4 +54,5 @@ def test_the_command_takes_the_dump_path(tmp_path: Path, monkeypatch: pytest.Mon
     dump = tmp_path / "filings.dump"
     dump.write_bytes(b"PGDMP")
     assert main([str(dump)]) == 0
+    assert main([str(dump), "--excluded-data", "filing_embeddings"]) == 0
     assert main([str(tmp_path / "nope.dump")]) == 1

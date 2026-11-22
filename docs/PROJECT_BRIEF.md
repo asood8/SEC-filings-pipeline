@@ -111,8 +111,9 @@ Pipeline: `discovery → filings.discovered → parser → filings.parsed → su
 - **Alerts:** no filings ingested in 24h on a weekday, DLQ not empty, consumer lag high (plus,
   added later: a service stopped reporting, R2 free tier half used or not measured, a backup
   missing or shrunk; ADR-0016).
-- **Backups:** a nightly `pg_dump` CronJob to R2, which reports each dump's size once it is
-  uploaded (the backup alerts read it).
+- **Backups:** a nightly `pg_dump` CronJob to R2 (without the search embeddings, which
+  `filings-index` rebuilds), which reports each dump's size once it is uploaded (the backup alerts
+  read it).
 - **VM memory budget (estimates; measure and update):**
 
   | Component | Est. RAM |

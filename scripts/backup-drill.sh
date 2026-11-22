@@ -9,6 +9,8 @@
 # Everything runs in the Compose stack's postgres container (`make up`), with its own pg_dump,
 # pg_restore, and psql, so the tools always match the server, as in the production CronJob
 # (deploy/k8s/base/postgres-backup.yaml): `pg_dump --format=custom`, restored with pg_restore.
+# Like the CronJob, it leaves out the search embeddings' rows (filings-index rebuilds them after a
+# restore), so those tables must come back empty and every other table identical.
 # The source database is only read. The throwaway database is created from template0 under a new
 # name, and it is the only database the drill writes to or drops.
 #
@@ -28,6 +30,13 @@ fi
 user=$(docker exec "$container" printenv POSTGRES_USER)
 source_db=${1:-$(docker exec "$container" printenv POSTGRES_DB)}
 drill_db="restore_drill_$(date -u +%Y%m%d_%H%M%S)_$$"
+# The tables whose rows the nightly backup leaves out: the same list as its pg_dump's
+# --exclude-table-data (tests/test_k8s_manifests.py checks they agree).
+EXCLUDED_DATA=(filing_embeddings)
+exclude_args=()
+for table in "${EXCLUDED_DATA[@]}"; do
+  exclude_args+=("--exclude-table-data=$table")
+done
 if [[ $drill_db == "$source_db" ]]; then
   echo "refusing to restore over the source database" >&2
   exit 1
@@ -109,10 +118,10 @@ in_snapshot 'SELECT pg_size_pretty(pg_database_size(current_database()));' >"$wo
 
 started=$SECONDS
 docker exec "$container" pg_dump --username="$user" --dbname="$source_db" \
-  --snapshot="$snapshot" --format=custom >"$work/drill.dump"
+  --snapshot="$snapshot" --format=custom "${exclude_args[@]}" >"$work/drill.dump"
 size=$(du -h "$work/drill.dump" | cut -f1)
 echo "  dumped in $((SECONDS - started)) s: $size from a $(<"$work/db-size") database" \
-  "(pg_dump --format=custom, snapshot $snapshot)"
+  "(pg_dump --format=custom ${exclude_args[*]}, snapshot $snapshot)"
 
 in_snapshot "$CHECK_SQL" >"$work/source.txt"
 in_snapshot 'ROLLBACK;'
@@ -128,21 +137,32 @@ docker exec -i "$container" pg_restore --username="$user" --dbname="$drill_db" \
 echo "  restored into $drill_db in $((SECONDS - started)) s"
 run_psql "$drill_db" <<<"$CHECK_SQL" >"$work/restored.txt"
 
+# The left-out tables are expected empty after the restore: in the source's lines, their row count
+# and checksum become those of an empty table before the comparison.
+empty_md5=$(printf '' | md5sum | cut -d' ' -f1)
+awk -F'|' -v OFS='|' -v excluded=" ${EXCLUDED_DATA[*]} " -v empty="$empty_md5" '
+  { split($1, name, "."); if (index(excluded, " " name[2] " ")) { $2 = 0; $3 = empty } print }
+' "$work/source.txt" >"$work/expected.txt"
+
 echo
-awk -F'|' '
+awk -F'|' -v excluded=" ${EXCLUDED_DATA[*]} " '
   NR == FNR { source[$1] = $2 "|" $3; next }
   {
+    split($1, name, ".")
+    left_out = index(excluded, " " name[2] " ") > 0
     status = ($1 in source && source[$1] == $2 "|" $3) ? "same" : "DIFFERENT"
+    if (left_out && status == "same") status = "empty: rows left out, as in the nightly backup"
     printf "  %-28s %9s  %s\n", $1, $2, status
     tables++; rows += $2
   }
   END { printf "  %-28s %9s\n", tables " tables", rows }
-' "$work/source.txt" "$work/restored.txt"
+' "$work/expected.txt" "$work/restored.txt"
 echo
 if ! diff -u --label "$source_db (snapshot)" --label "$drill_db" \
-  "$work/source.txt" "$work/restored.txt" >"$work/diff.txt"; then
+  "$work/expected.txt" "$work/restored.txt" >"$work/diff.txt"; then
   echo "FAILED: the restored database differs from the snapshot that was dumped:" >&2
   cat "$work/diff.txt" >&2
   exit 1
 fi
-echo "PASSED: every table's row count and checksum match the snapshot that was dumped."
+echo "PASSED: every table's row count and checksum match the snapshot that was dumped" \
+  "(${EXCLUDED_DATA[*]}: empty, as the nightly backup leaves its rows out)."

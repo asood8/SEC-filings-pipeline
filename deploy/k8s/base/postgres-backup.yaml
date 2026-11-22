@@ -2,8 +2,9 @@
 # then report its size (filings-backup-report). The three steps run one after another, each only if
 # the one before succeeded, so a report means the dump is in R2; the "Postgres backup missing" and
 # "Postgres backup shrank" alerts (deploy/grafana) read it. The dump uses Postgres's custom format
-# (compressed; restore with pg_restore). How long backups are kept is a lifecycle rule on the
-# bucket (Terraform, Phase 7), so this job never deletes.
+# (compressed; restore with pg_restore, then rebuild the search embeddings it leaves out with
+# filings-index). How long backups are kept is a lifecycle rule on the bucket (Terraform, Phase 7),
+# so this job never deletes.
 apiVersion: batch/v1
 kind: CronJob
 metadata:
@@ -42,6 +43,10 @@ spec:
             # pod's address a moment after the pod starts, and until then Postgres's policy
             # refuses it ("Connection refused"). pg_dump connects at once, so it lost that race on
             # every try on 2026-11-18 (runbook, "Alert: Postgres backup missing").
+            # The search embeddings' rows are left out (the table itself is kept): they were over
+            # 80% of a dump and compress poorly, and filings-index rebuilds them from the
+            # summaries after a restore (runbook, "Backups and restores"). The report step names
+            # the same tables, so the size alerts compare like with like.
             - name: dump
               image: pgvector/pgvector:0.8.7-pg18
               command:
@@ -58,7 +63,8 @@ spec:
                     fi
                     sleep 2
                   done
-                  exec pg_dump --host=postgres --format=custom --file=/backup/filings.dump
+                  exec pg_dump --host=postgres --format=custom \
+                    --exclude-table-data=filing_embeddings --file=/backup/filings.dump
               env:
                 - name: PGDATABASE
                   valueFrom:
@@ -159,7 +165,8 @@ spec:
             - name: report
               # Any service image has filings-common's commands; discovery's is the jobs' image.
               image: filings-discovery
-              command: ["filings-backup-report", "/backup/filings.dump"]
+              command:
+                ["filings-backup-report", "/backup/filings.dump", "--excluded-data", "filing_embeddings"]
               envFrom:
                 - configMapRef:
                     name: filings-config

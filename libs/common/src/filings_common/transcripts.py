@@ -17,7 +17,9 @@ from dataclasses import dataclass
 from datetime import date, datetime
 
 # Bump when splitting changes, so stored transcripts can be counted again.
-SPLITTER_VERSION = 2  # 2: firms written with initials ("J.P. Morgan")
+# 2: firms written with initials ("J.P. Morgan"); 3: a firm starting with one initial ("B. Riley"),
+# names with "de", "van"... ("Carlos de Alba"), and a first question after long queue instructions
+SPLITTER_VERSION = 3
 
 # Curly apostrophes and no-break spaces, as plain ones.
 _PLAIN = str.maketrans({chr(0x2018): "'", chr(0x2019): "'", chr(0xA0): " ", chr(0x202F): " "})
@@ -29,10 +31,11 @@ _BOILERPLATE = re.compile(
 )
 _OPERATOR = re.compile(r"\[?\b(?:OPERATOR|Operator)\b(?!\s+Instructions)\s*[:\]]?")
 _WORD = r"[A-Z][\w.'-]*"
-_NAME = rf"{_WORD}(?:\s+{_WORD}){{1,3}}"
+_PARTICLE = r"(?:de|da|del|della|di|do|dos|du|van|von|der|den|ten|ter|le|la)"  # "Carlos de Alba"
+_NAME = rf"{_WORD}(?:\s+(?:{_PARTICLE}\s+)?{_WORD}){{1,3}}"
 # No dots, so a firm's name ends at its sentence's period; but initials ("J.P." in J.P. Morgan)
-# are one word.
-_FIRM_WORD = r"(?:(?:[A-Z]\.){2,}|[A-Z][\w&'-]*)"
+# are one word, and so is one initial before another word of the name ("B." in B. Riley).
+_FIRM_WORD = r"(?:(?:[A-Z]\.){2,}|[A-Z]\.(?=\s+[A-Z][a-z])|[A-Z][\w&'-]*)"
 _FIRM = rf"{_FIRM_WORD}(?:\s+(?:of\s+|and\s+|&\s+)?{_FIRM_WORD}){{0,4}}"
 _NAMED = re.compile(
     rf"(?:from|to|of)\s+(?:the\s+line\s+of\s+)?(?P<name>{_NAME})\s+(?:with|from|of|at)\s+"
@@ -40,6 +43,15 @@ _NAMED = re.compile(
     rf"|^\s*(?:[(\[]Operator Instructions[)\]]\s*)?(?P<name2>{_NAME}),\s+(?P<firm2>{_FIRM})\.",
 )
 _LOOK = 260  # characters after "Operator" searched for the analyst's name
+# Further on, only an introduction that says it's a question: some operators read the queue
+# instructions first (Cleveland-Cliffs: 528 characters before "Today's first question is coming
+# from..."), and a wider search for any "of <name> at <firm>" also caught job titles ("Head of
+# Investor Relations at TD SYNNEX").
+_LATE_LOOK = 800
+_NAMED_LATE = re.compile(
+    rf"\bquestion\s+(?:[a-z]+\s+){{0,3}}?(?:from|to|of)\s+(?:the\s+line\s+of\s+)?"
+    rf"(?P<name>{_NAME})\s+(?:with|from|of|at)\s+(?P<firm>{_FIRM})"
+)
 
 _MONTHS = "January|February|March|April|May|June|July|August|September|October|November|December"
 _DATES = (  # "October 13, 2026", "OCTOBER 13, 2026", "13-Oct-2026", "2026-10-13"
@@ -78,13 +90,17 @@ def split(text: str) -> Transcript:
     turns = list(_OPERATOR.finditer(text))
     for i, match in enumerate(turns):
         # The operator's own words only: never into the next operator turn.
-        stop = min(match.end() + _LOOK, turns[i + 1].start() if i + 1 < len(turns) else len(text))
-        window = text[match.end() : stop].replace("\n", " ")
+        turn_end = turns[i + 1].start() if i + 1 < len(turns) else len(text)
+        window = text[match.end() : min(match.end() + _LOOK, turn_end)].replace("\n", " ")
         named = _NAMED.search(window)
         if named is None:
+            late = text[match.end() : min(match.end() + _LATE_LOOK, turn_end)].replace("\n", " ")
+            named = _NAMED_LATE.search(late)
+        if named is None:
             continue
-        name = (named.group("name") or named.group("name2")).strip()
-        firm = (named.group("firm") or named.group("firm2")).strip()
+        groups = named.groupdict()  # the late pattern has no name2/firm2
+        name = (groups.get("name") or groups.get("name2") or "").strip()
+        firm = (groups.get("firm") or groups.get("firm2") or "").strip()
         if starts and starts[-1][1] == name:
             continue  # the operator named the same analyst again, for a follow-up
         starts.append((match.start(), name, firm))

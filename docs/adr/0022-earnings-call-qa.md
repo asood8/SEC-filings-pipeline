@@ -82,6 +82,52 @@ was cut to "J"; `SPLITTER_VERSION` 2); and a listed transcript whose link gives 
 is checked against the 120-day lookback once its text gives the date (Ford's and Dell's spring
 calls were stored before; Nike's source had the same gap).
 
+### The third survey (2026-11-25): the 201 companies added on 2026-11-18 and 2026-11-21
+
+The same checks with the same site client. Each company's investor site was found from its
+latest earnings press release (the 8-K's EX-99, through the EDGAR client): the investor address
+it gives, or the usual ones on the company's domain (`investors.`, `investor.`, `ir.`,
+`/investors`). The site's home page and its results and events pages were read for transcript
+links, as plain pages. Terms were read only for the companies that post their own call
+transcripts.
+
+| Verdict | Companies |
+|---|---|
+| **transcript** (6) | **JLL**: own PDFs; downloads for personal, non-commercial use, silent on automation. **WRB**: own PDFs; the investor site links only its insurance disclosures, silent on the site. **CLF**: own PDFs; the site links only a disclaimer, silent. **GE** and **GEV**: own PDFs; "access, copy, download and print" for personal, non-commercial use, silent on automation. **ADP**: own PDFs; automated access allowed at the pace a person could make it, no use for commercial or public purposes. |
+| the site refuses automated requests (HTTP 403, or 429 at the first request) (43) | AMAT, AVT, SKYD, TXN, LDOS, KD, ECHO, SCHW, RGA, FISV, LPLA, PFG, AMGN, MDLN, GEHC, UHS, REGN, GPI, ROST, MAR, AZO, ARMK, ORLY, CASY, PAGP, NRG, CEG, EXC, HAL, ED, TRGP, FANG, WMB, HON, UNP, WM, WCC, LEA, CTVA, ACM, ABT, SLB, ABG (429) |
+| robots.txt disallows the investor pages (5) | RJF, CNA, GPC, WHR, EL |
+| post transcripts, but the terms ban robots, scrapers or automated access (7) | TMUS, LYV, OMC, APO, CBRE, LHX, LUV (southwest.com's terms; its investor site's disclaimer is silent) |
+| post transcripts, but the terms bar downloading, copying or storing the content (5) | CTSH, FOXA, LEN, KDP, MMM |
+| post transcripts, but the terms couldn't be read (5) | HPE (its robots.txt times out), FLEX and BKNG (no terms linked anywhere found), DHI (terms only in a script pop-up), DKS (the terms' host refuses automated requests) |
+| post prepared remarks only, no Q&A (2) | INTU, CPNG |
+| transcripts only in script-built widgets, not on a plain page (2) | HIG, MUSA |
+| investor site not found (3) | MRSH, FNF, FERG |
+| no earnings-call transcripts of their own on their plain pages (123) | the rest; 7 of them post only older or one-off event transcripts (ARW, BLK, THC, GAP, NEE, DE, NEM) |
+
+So **6 of 201 are usable**, again all through their own transcripts. Flex, Booking Holdings,
+HPE, D.R. Horton and Dick's publish transcripts, but their terms couldn't be read here; reading
+them in a browser could add them. A dry run of the job's own fetching on each new source's newest
+transcripts (nothing stored) read 5 to 11 exchanges a call.
+
+Three changes came with it:
+
+- **A JSON-listed link may take its quarter from its entry's label** (`{"text":"Q1","link":...}`),
+  as it already took its year from its list. ADP names its transcripts differently most quarters
+  (`Transcript-FY27-Q1.pdf`, `ADP-Transcript-4QFY26.pdf`, `ADP-USQ_Transcript_2025-04-30.pdf`),
+  and its page lists them by fiscal year and quarter, so the source matches any transcript PDF on
+  its files host and the list dates it.
+- **The splitter reads three more introductions** (`SPLITTER_VERSION` 3), all from
+  Cleveland-Cliffs' call: a firm starting with one initial ("B. Riley Securities" was cut to
+  "B"), a name with a lowercase particle ("Carlos de Alba" wasn't recognized, so his exchange ran
+  into the one before), and a first question introduced after the queue instructions, 528
+  characters past "Operator" where the splitter looked only 260 characters in. A wider search for
+  any "<name> of <firm>" also caught a job title in TD SYNNEX's call ("Investor Relations at TD
+  SYNNEX"), so past the first 260 characters only an introduction that says it is a question
+  counts ("Today's first question is coming from..."). The 13 transcripts stored locally split
+  exactly as before; Cleveland-Cliffs' went from 5 exchanges to its 7 analysts.
+- **GE Vernova dates its transcript "28th October 2026"**, which the date reader doesn't know.
+  Its source is an address template, whose date is used instead.
+
 ### The pilot (laptop, llama3.2:3b)
 
 Seven real transcripts (Microsoft, Alphabet, JPMorgan, Bank of America, J&J, PepsiCo, Nike):
@@ -186,9 +232,14 @@ On the laptop, against the real sites and the local model only (no Gemini):
 
 ## Consequences
 
-- Coverage is 10 of the 300 watchlist companies: 7 of the first 35, 3 of the 64 added on
-  2026-11-06 (Ford, Dell, TD SYNNEX), and none yet of the 100 added on 2026-11-18 or the 101 added
-  on 2026-11-21, which no survey has checked. Adding one means reading its terms first (runbook, "Earnings-call transcripts").
+- Coverage is 16 of the 300 watchlist companies: 7 of the first 35, 3 of the 64 added on
+  2026-11-06 (Ford, Dell, TD SYNNEX), and 6 of the 201 added on 2026-11-18 and 2026-11-21 (JLL,
+  W. R. Berkley, Cleveland-Cliffs, GE Aerospace, GE Vernova, ADP). Adding one means reading its
+  terms first (runbook, "Earnings-call transcripts").
+- _Added 2026-11-25:_ the nightly summaries stop starting new calls after 3 hours, and one call
+  took about 70 minutes on the VM (Ford's, 9 exchanges, 2026-11-19). Sixteen companies' calls
+  cluster in the weeks after each quarter, so some wait a night or two; a first run with the new
+  sources' calls from the last 120 days takes about three nights.
 - Sources are per-site and will break when a site changes; the overdue alert says when.
 - The small model's known weakness (who did what) matters more in Q&A, which is mostly who said
   what. The labels make that measurable.

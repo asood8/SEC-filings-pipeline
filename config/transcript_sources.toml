@@ -1,12 +1,15 @@
 # Where watchlist companies publish their own earnings-call transcripts (ADR-0022). Only companies
 # whose sites' terms don't bar automated downloads, and whose transcripts a plain page links to or
-# an address built from the call's date reaches. Checked 2026-11-04 (the first 35 companies) and
-# 2026-11-06 (the 64 added then); the surveys are in the ADR.
+# an address built from the call's date reaches. Checked 2026-11-04 (the first 35 companies),
+# 2026-11-06 (the 64 added then) and 2026-11-25 (the 201 added on 2026-11-18 and 2026-11-21); the
+# surveys are in the ADR.
 #
 # A source gives either:
 #   listing + link: a page linking every transcript, and a regular expression for those links
 #     (matched against absolute URLs). Named groups order them, newest first: `date`
-#     (YYYY-MM-DD), or `year` and `quarter`. `keep` (default 2) of the newest are considered.
+#     (YYYY-MM-DD), or `year` and `quarter`. A link in the JSON a page embeds for its document
+#     lists may leave both out: its list's year and its entry's label ("Q1") give them.
+#     `keep` (default 2) of the newest are considered.
 #   urls: address templates, filled for each day an earnings 8-K was filed (and the day after):
 #     {date:%Y-%m-%d} and other strftime codes, and the quarter the call reports: {year}, {yy},
 #     {quarter}, {ordinal} ("3rd"), {fiscal_year}, {fiscal_quarter} (with
@@ -71,3 +74,36 @@ link = 'webcast_transcript/(?:DELL_)?Q(?P<quarter>[1-4])_?FY(?P<year>\d{2})_(?:E
 ticker = "SNX"
 listing = "https://ir.tdsynnex.com/overview/default.aspx"
 link = 'content_files/TD-SYNNEX-Corporation-Q(?P<quarter>[1-4])-(?P<year>\d{4})-Earnings-Call[^/]*\.pdf$'
+
+[[source]]
+ticker = "JLL"
+# The overview page links the newest quarter's documents.
+listing = "https://ir.jll.com/overview/default.aspx"
+link = 'doc_financials/(?P<year>\d{4})/q(?P<quarter>[1-4])/(?:[^/]+/)*[^/]*Transcript[^/]*\.pdf$'
+
+[[source]]
+ticker = "WRB"
+# "3Q26-Earnings-2026-10-19.pdf": the day isn't zero-padded, so the quarter orders them.
+listing = "https://ir.berkley.com/financials/quarterly-results/default.aspx"
+link = '/(?P<quarter>[1-4])Q(?P<year>\d{2})-Earnings-\d{4}-\d{1,2}-\d{1,2}\.pdf$'
+
+[[source]]
+ticker = "CLF"
+listing = "https://www.clevelandcliffs.com/investors/financial-information/financial-results"
+link = '/file/Q(?P<quarter>[1-4])(?:\+and\+Full-Year)?\+(?P<year>\d{4})\+Earnings\+Call\+Transcript\.pdf$'
+
+[[source]]
+ticker = "GE"
+urls = ["https://www.geaerospace.com/sites/default/files/geaerospace_webcast_transcript_{date:%m%d%Y}.pdf"]
+
+[[source]]
+ticker = "GEV"
+# The transcript dates itself "28th October 2026", which isn't read: the address's date is used.
+urls = ["https://www.gevernova.com/sites/default/files/gev_webcast_transcript_{date:%m%d%Y}.pdf"]
+
+[[source]]
+ticker = "ADP"
+# The file names change most quarters (Transcript-FY27-Q1.pdf, ADP-Transcript-4QFY26.pdf...): the
+# page's JSON lists them by fiscal year and quarter, which date them.
+listing = "https://investors.adp.com/financials/quarterly-results/default.aspx"
+link = '(?i)q4cdn\.com/\d+/files/(?:[^/]+/)*[^/]*transcript[^/]*\.pdf$'

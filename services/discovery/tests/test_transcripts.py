@@ -5,6 +5,7 @@ the real ones."""
 
 import re
 import socket
+import tomllib
 from datetime import date
 from pathlib import Path
 from typing import Any
@@ -96,7 +97,108 @@ def test_the_source_file_is_valid() -> None:
     assert {s.ticker for s in sources} == {
         *("MSFT", "GOOGL", "JPM", "BAC", "JNJ", "PEP", "NKE"),  # the first survey
         *("F", "DELL", "SNX"),  # the second
+        *("JLL", "WRB", "CLF", "GE", "GEV", "ADP"),  # the third
     }
+    watchlist = tomllib.loads((CONFIG.parent / "watchlist.toml").read_text())["tickers"]
+    assert {s.ticker for s in sources} <= set(watchlist)
+
+
+# Real addresses from the third survey (2026-11-25): each source finds its newest transcripts,
+# and orders them, as its site names them.
+@pytest.mark.parametrize(
+    ("ticker", "url", "order"),
+    [
+        (
+            "JLL",
+            "https://s202.q4cdn.com/536608393/files/doc_financials/2026/q3/vFinal/"
+            "JLL-3Q26-Earnings-Transcript-102826.pdf",
+            ("2026", "3"),
+        ),
+        (
+            "WRB",
+            "https://s21.q4cdn.com/514440399/files/content_files/3Q26-Earnings-2026-10-19.pdf",
+            ("26", "3"),
+        ),
+        (
+            "WRB",
+            "https://s21.q4cdn.com/514440399/files/doc_financials/2025/q4/4Q25-Earnings-2026-1-26.pdf",
+            ("25", "4"),
+        ),
+        (
+            "CLF",
+            "https://www.clevelandcliffs.com/_assets/_d9c4a22944f3e10dbf7537bd2e25203d/"
+            "clevelandcliffs/db/1111/12126/file/Q3+2026+Earnings+Call+Transcript.pdf",
+            ("2026", "3"),
+        ),
+        (
+            "ADP",
+            "https://s205.q4cdn.com/887941133/files/content_files/Transcript-FY27-Q1.pdf",
+            (None, None),  # dated by the page's JSON list
+        ),
+        (
+            "ADP",
+            "https://s205.q4cdn.com/887941133/files/doc_financials/2026/q4/ADP-Transcript-4QFY26.pdf",
+            (None, None),
+        ),
+    ],
+)
+def test_the_third_surveys_listing_sources_match_their_links(
+    ticker: str, url: str, order: tuple[str | None, str | None]
+) -> None:
+    source = next(s for s in load_sources(CONFIG) if s.ticker == ticker)
+    assert source.link is not None
+    match = source.link.search(url)
+    assert match is not None
+    assert (match.groupdict().get("year"), match.groupdict().get("quarter")) == order
+
+
+def test_the_third_surveys_listing_sources_skip_other_documents() -> None:
+    sources = {s.ticker: s for s in load_sources(CONFIG)}
+    for ticker, url in [
+        (
+            "JLL",
+            "https://s202.q4cdn.com/536608393/files/doc_financials/2026/q3/Q3-2026-Earnings-Release.pdf",
+        ),
+        (
+            "WRB",
+            "https://s21.q4cdn.com/514440399/files/content_files/"
+            "W-R-Berkley-Corporation-Reports-Third-Quarter-2026-Results-2026.pdf",
+        ),
+        (
+            "CLF",
+            "https://www.clevelandcliffs.com/_assets/_d9c4a22944f3e10dbf7537bd2e25203d/"
+            "clevelandcliffs/db/1111/12122/file/CLF+-+Third-Quarter+2026+Earnings+Presentation.pdf",
+        ),
+        (
+            "ADP",
+            "https://s205.q4cdn.com/887941133/files/content_files/ADP-1Q27-Earnings-Release.pdf",
+        ),
+    ]:
+        link = sources[ticker].link
+        assert link is not None
+        assert link.search(url) is None, url
+
+
+@pytest.mark.parametrize(
+    ("ticker", "call_day", "url"),
+    [
+        (
+            "GE",
+            date(2026, 10, 20),
+            "https://www.geaerospace.com/sites/default/files/geaerospace_webcast_transcript_10202026.pdf",
+        ),
+        (
+            "GEV",
+            date(2026, 10, 28),
+            "https://www.gevernova.com/sites/default/files/gev_webcast_transcript_10282026.pdf",
+        ),
+    ],
+)
+def test_the_third_surveys_templates_give_their_sites_addresses(
+    ticker: str, call_day: date, url: str
+) -> None:
+    source = next(s for s in load_sources(CONFIG) if s.ticker == ticker)
+    assert [fill(template, call_day) for template in source.urls] == [url]
 
 
 @pytest.mark.parametrize(
@@ -225,6 +327,33 @@ def test_a_listing_reads_links_from_the_json_a_page_embeds() -> None:
     assert listing_candidates(undated, "https://x.example/f", source) == []
     no_year = '{"documents":[{"text":"Q3","link":"//cdn.example/files/X-Q3-Transcript.pdf"}]}'
     assert listing_candidates(no_year, "https://x.example/f", source) == []
+
+
+def test_a_json_listed_link_takes_its_quarter_from_its_entry() -> None:
+    # ADP's list: the fiscal year's list and each entry's label date the files, whose names
+    # change from quarter to quarter.
+    page = (
+        '{"category":"Earnings Transcript","data":[{"year":2027,"documents":['
+        '{"text":"Q1","link":"//cdn.example/files/content_files/Transcript-FY27-Q1.pdf"},'
+        '{"text":"Q2","link":""}]},{"year":2026,"documents":['
+        '{"text":"Q3","link":"//cdn.example/files/doc_financials/2026/q3/X-3QFY26-Transcript.pdf"},'
+        '{"text":"Q4","link":"//cdn.example/files/doc_financials/2026/q4/X-Transcript-4QFY26.pdf"}'
+        "]}]},"
+        '{"category":"Earnings Release","data":[{"year":2027,"documents":['
+        '{"text":"Q1","link":"//cdn.example/files/content_files/X-1Q27-Earnings-Release.pdf"}]}]}'
+    )
+    source = Source(
+        ticker="X",
+        listing="https://x.example/results",
+        link=r"(?i)/files/(?:[^/]+/)*[^/]*transcript[^/]*\.pdf$",
+    )
+    assert listing_candidates(page, "https://x.example/results", source) == [
+        Candidate("https://cdn.example/files/content_files/Transcript-FY27-Q1.pdf", None),
+        Candidate("https://cdn.example/files/doc_financials/2026/q4/X-Transcript-4QFY26.pdf", None),
+    ]
+    # A plain link has no entry to read its quarter from: it can't be ordered, so it's left out.
+    plain = '<a href="//cdn.example/files/content_files/Transcript-FY27-Q1.pdf">Q1</a>'
+    assert listing_candidates(plain, "https://x.example/results", source) == []
 
 
 # --- Reading sites --------------------------------------------------------------------------------

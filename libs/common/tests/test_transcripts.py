@@ -90,6 +90,33 @@ def test_factset_style_transcripts_are_cleaned_and_split() -> None:
             "J.P. Morgan",
         ),
         ("Operator\nAsad Haider, J.P. Morgan.", "Asad Haider", "J.P. Morgan"),
+        # Cleveland-Cliffs: a firm starting with one initial, and a name with "de"
+        (
+            "Operator\nOur next question comes from Nick Giles with B. Riley Securities. "
+            "Please go ahead.",
+            "Nick Giles",
+            "B. Riley Securities",
+        ),
+        (
+            "Operator\nThank you. The next question is coming from Carlos de Alba of Morgan "
+            "Stanley. Please go ahead.",
+            "Carlos de Alba",
+            "Morgan Stanley",
+        ),
+        # Cleveland-Cliffs again: the queue instructions come first, so the name is far from
+        # "Operator"
+        (
+            "Operator\nThank you. The floor is now open for questions. If you would like to ask a "
+            "question, please press star, one on your telephone keypad at this time. A "
+            "confirmation tone will indicate that your line is in the question queue. You may "
+            "press star, two if you would like to remove your question from the queue. For "
+            "participants using speaker equipment, it may be necessary to pick up the handset "
+            "before pressing the star keys. Again, that's star, one to register a question at "
+            "this time.\nToday's first question is coming from Timna Tanners of Wells Fargo. "
+            "Please go ahead.",
+            "Timna Tanners",
+            "Wells Fargo",
+        ),
         # Microsoft
         (
             "OPERATOR: The next question will come from the line of Tal Liani with Bank of "
@@ -135,6 +162,20 @@ def test_operator_turns_that_name_nobody_start_nothing() -> None:
     transcript = split(text)
     assert transcript.exchanges == []
     assert transcript.remarks == text
+
+
+def test_a_job_title_far_from_the_operator_is_not_a_question() -> None:
+    # Only an introduction that says it's a question is looked for past the first few
+    # sentences: TD SYNNEX's "Head of Investor Relations at TD SYNNEX" is not an analyst.
+    text = normalize(
+        "Operator: Good morning, and welcome to the call. All participants are in a "
+        "listen-only mode. A question-and-answer session will follow the formal presentation. "
+        "Please note this call is being recorded, and a replay will be available on the "
+        "company's website for a year. It is now my pleasure to hand the call over to our "
+        "host.\nLiz Morali: Thank you. I'm joined by our CEO, and I lead the team of Investor "
+        "Relations at TD SYNNEX. Remarks."
+    )
+    assert split(text).exchanges == []
 
 
 @pytest.mark.parametrize(
